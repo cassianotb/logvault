@@ -71,7 +71,18 @@ ARGUS_CONFIRM_PURGE=PURGE-EDGE-DATA sh scripts/uninstall-edge.sh --purge-data
 
 ## Comportamento durante falha de internet
 
-Itens não confirmados permanecem no SQLite nos estados `pending` ou `batched`. O sincronizador tenta novamente sem apagar o lote e a API usa identificador e checksum para evitar duplicações. Registros já confirmados permanecem localmente pelo período de `ARGUS_EDGE_ACK_RETENTION_HOURS` e depois podem ser limpos.
+Itens não confirmados permanecem no SQLite nos estados `pending` ou `batched` e
+**não possuem prazo máximo de expiração**. O sincronizador tenta novamente sem
+apagar o lote e a API usa identificador e checksum para evitar duplicações. O
+tempo que o Edge suporta sem internet depende do espaço persistente disponível
+e da taxa de ingestão: dimensione, no mínimo, seis horas na taxa de pico e
+reserve mais disco quando a janela de indisponibilidade aceitável for maior.
+
+Registros já confirmados permanecem localmente pelo período de
+`ARGUS_EDGE_ACK_RETENTION_HOURS` (24 horas por padrão) e depois podem ser
+limpos. Se o disco esgotar, novos datagramas não terão garantia de persistência;
+acompanhe a ocupação e a fila pendente pela tela **Servidores** e por
+`edge-status.sh`.
 
 A garantia começa depois que o datagrama UDP foi recebido e persistido. Uma parada do servidor local ou perda na rede entre equipamento e coletor ainda pode impedir o recebimento inicial.
 

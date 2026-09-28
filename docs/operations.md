@@ -1,11 +1,14 @@
 # Operação do ambiente
 
-## Endereços locais
+## Endereços e portas da plataforma
 
 - Interface publicada: URL configurada em `ARGUS_PUBLIC_URL`
 - API: `http://127.0.0.1:8080`
-- NetFlow v9: `192.168.25.103:2055/udp`
-- Syslog A10: `192.168.25.103:5140/udp`
+- Coletores Cloud: pares UDP atribuídos pelo painel dentro de
+  `ARGUS_MANAGED_CLOUD_PORT_START–ARGUS_MANAGED_CLOUD_PORT_END` (padrão
+  `30000–31999`)
+- Coletores locais (Edge): portas UDP da própria VM Edge, normalmente
+  `2055/UDP` para NetFlow/IPFIX e `5140/UDP` para Syslog
 
 Somente a interface autenticada está publicada pelo Caddy em 80/443. O proxy escuta em `0.0.0.0` e permite o acesso direto de qualquer IP de origem, sem túnel SSH. A API direta permanece em loopback; a interface a acessa pelo proxy interno. Com domínio público, o Caddy emite, valida e renova o certificado automaticamente.
 
@@ -82,19 +85,26 @@ Os containers possuem política `restart: unless-stopped`. O Docker está habili
 
 ## Liberação para equipamentos reais
 
-No `.env`, altere:
+Para um **coletor local (Edge)**, configure as portas na VM local e permita
+entrada somente dos IPs dos equipamentos autorizados. O modelo entregue pelo
+painel utiliza, por padrão:
 
 ```dotenv
-ARGUS_COLLECTOR_BIND=IP_DA_REDE_OU_VPN
+ARGUS_NETFLOW_PORT=2055
+ARGUS_SYSLOG_PORT=5140
 ```
 
-Depois aplique:
+No firewall da VM Edge, restrinja `2055/UDP` e `5140/UDP` às origens dos
+equipamentos. A VM Edge precisa apenas de saída HTTPS até a API do LogVault;
+ela pode permanecer atrás de NAT e não requer uma porta de administração
+aberta pela plataforma.
 
-```bash
-docker compose up -d
-```
-
-Libere UDP 2055 e/ou 5140 no firewall somente a partir dos IPs dos equipamentos. Depois, cadastre cada IP de origem pela opção **Equipamentos**. O cadastro chega ao coletor no próximo heartbeat (até 10 segundos) e fica persistido no SQLite.
+Para um **coletor Cloud**, não configure Edge nem abra `2055/5140` no DC-A.
+Crie o coletor no painel e use o par específico exibido. No firewall externo da
+plataforma, permita o intervalo Cloud configurado, por padrão
+`30000–31999/UDP`, e restrinja as origens quando possível. Depois, cadastre
+cada IP de origem pela opção **Equipamentos**. O cadastro chega ao coletor no
+próximo heartbeat (até 10 segundos) e fica persistido no SQLite.
 
 Uma origem ainda não cadastrada não é descartada nem atribuída ao equipamento padrão: o bruto fica temporariamente associado a uma identidade técnica isolada e o coletor emite um alerta por IP. Use **Descobrir equipamentos** ou faça o cadastro manual para que os próximos pacotes sejam associados ao equipamento correto.
 

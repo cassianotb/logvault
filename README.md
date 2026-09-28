@@ -9,6 +9,55 @@ inclui banco de dados, logs CGNAT, backups, senhas, tokens ou arquivos `.env` de
 nenhuma instalação. O instalador gera as credenciais internas diretamente na
 VM e salva a configuração local com permissão `0600`.
 
+## Topologia de coleta: escolha por cliente
+
+Cada cliente pode usar um coletor **local (Edge)**, um coletor **Cloud
+gerenciado** ou ambos. A escolha é feita no painel em **Coletores** e define
+onde os dados chegam primeiro.
+
+```text
+COLETOR LOCAL (EDGE)                         COLETOR CLOUD GERENCIADO
+
+equipamentos do cliente                      equipamentos do cliente
+        | UDP                                        | UDP pela Internet, VPN ou rede privada
+        v                                            v
+VM local do cliente                            VM principal do LogVault
+coletor + SQLite persistente                   coletor Cloud gerenciado
+        | HTTPS de saída                               | SQLite persistente
+        v                                            v
+API LogVault  <------------------------------------> API LogVault
+```
+
+**Local (Edge).** O painel gera uma credencial individual e um bloco de
+configuração. Esse bloco é colado no instalador da VM próxima aos equipamentos.
+As portas UDP de NetFlow e Syslog ficam nessa VM local — por padrão, `2055/UDP`
+e `5140/UDP`, salvo alteração na configuração do coletor. A VM local abre uma
+conexão HTTPS de saída para a plataforma; ela pode ficar atrás de NAT e não
+precisa receber conexões administrativas do LogVault.
+
+**Cloud gerenciado.** Não há instalação na infraestrutura do cliente. Ao criar
+o coletor no painel, a plataforma reserva automaticamente um par exclusivo de
+portas UDP no servidor LogVault: uma para NetFlow/IPFIX e a seguinte para
+Syslog. Por padrão, os pares são alocados dentro de `30000–31999` — por
+exemplo, `30000/UDP` e `30001/UDP`. Os equipamentos enviam para o DNS/IP público
+do LogVault e para as portas exibidas pelo painel.
+
+### Quando o coletor local fica sem internet
+
+O Edge grava cada datagrama recebido em um SQLite persistente antes de tentar o
+envio. Enquanto a conexão com a API estiver indisponível, os registros
+**pendentes não expiram**: permanecem no disco e são reenviados de forma
+idempotente quando a conectividade retorna. Assim, o tempo suportado sem
+internet é dado pelo espaço disponível no disco dividido pela taxa de coleta,
+e não por um limite automático em horas.
+
+Como referência inicial, dimensione o disco para **ao menos seis horas offline**
+na taxa de pico mostrada em **Capacidade**; amplie essa reserva para cobrir a
+indisponibilidade máxima que o cliente aceita. Após a confirmação da API, os
+dados ainda ficam no SQLite por `24` horas por padrão para reprocessamento e só
+então podem ser removidos. Falta de disco, desligamento da VM ou perda do pacote
+antes de ele chegar ao Edge não são recuperáveis pelo spool.
+
 ### 1. Prepare a VM
 
 Use uma VM nova com **Ubuntu Server 24.04 LTS ou superior** ou **Debian 12 ou
@@ -25,8 +74,11 @@ Você precisará de:
 - portas TCP 80 e 443 encaminhadas até a VM para emissão e renovação do
   certificado HTTPS;
 - uma rede privada, VPN ou túnel entre DC-A e DC-B caso use continuidade;
-- portas UDP 2055 (NetFlow) e 5140 (Syslog) liberadas somente para os
-  equipamentos que enviarão eventos ao coletor.
+- para coletores **Cloud**, a faixa UDP configurada para Cloud — por padrão
+  `30000–31999` — encaminhada à VM principal e restrita às origens autorizadas.
+
+As portas UDP de um coletor **local** são abertas somente na respectiva VM
+local, não na VM do painel/DC-A.
 
 Conecte-se à VM pelo terminal do seu computador. Substitua o exemplo pelo
 usuário e IP reais:
@@ -89,8 +141,8 @@ sudo ./install.sh
 
 O menu mostra a versão instalada e oferece quatro ações:
 
-1. **Sistema LogVault** — instala painel, API, PostgreSQL, ClickHouse, coletor
-   central e backups na VM principal (DC-A).
+1. **Sistema LogVault** — instala painel, API, PostgreSQL, ClickHouse, serviço
+   de coleta Cloud gerenciado e backups na VM principal (DC-A).
 2. **Coletor local** — instala somente o coletor em um servidor próximo aos
    equipamentos.
 3. **Datacenter B** — prepara a segunda VM como standby e inicia a replicação
@@ -153,7 +205,24 @@ linha e pressione `Enter` novamente. A colagem fica oculta e o instalador cria
 `.env.edge` com permissão `0600`, inicia somente o coletor e preserva o spool em
 volume persistente. Confirme o heartbeat na tela **Coletores**.
 
-### 7. Instalar o Datacenter B
+Na VM Edge, permita a entrada UDP somente dos equipamentos autorizados nas
+portas exibidas na configuração — normalmente `2055/UDP` para NetFlow/IPFIX e
+`5140/UDP` para Syslog. Permita também a saída HTTPS para a URL central. O
+coletor não precisa de uma porta TCP de administração aberta para a plataforma.
+
+### 7. Criar um coletor Cloud gerenciado
+
+No painel central, abra **Coletores**, escolha **Cloud gerenciado**, informe o
+nome e conclua o cadastro. O painel mostrará imediatamente as duas portas UDP
+atribuídas. Configure os equipamentos para enviar NetFlow/IPFIX à primeira e
+Syslog à segunda, usando o DNS/IP público do LogVault.
+
+No firewall externo da plataforma, permita o intervalo Cloud configurado —
+por padrão `30000–31999/UDP` — apenas das redes ou IPs de origem dos
+equipamentos quando essa restrição for conhecida. A própria aplicação também
+observa e permite controlar as origens pela tela **Firewall**.
+
+### 8. Instalar o Datacenter B
 
 Instale e valide o DC-A antes do B. Os dois sites devem ter FQDNs estáveis e
 conectividade segura. Nunca exponha as portas de banco de dados à internet
