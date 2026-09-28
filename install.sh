@@ -33,6 +33,7 @@ requested_mode=""
 dry_run="false"
 preview="false"
 disable_color="false"
+force_color="false"
 forwarded_args=()
 
 usage() {
@@ -51,6 +52,7 @@ Sem argumentos, abre o assistente interativo para escolher entre:
   update       atualiza somente o Sistema LogVault instalado nesta VM
 
 Opções do assistente:
+  --color      força cores, inclusive em terminais identificados como básicos
   --no-color   desativa as cores mesmo em um terminal compatível
   --preview    exibe a interface uma vez, sem executar nenhuma ação
   --dry-run    mostra o instalador que seria chamado, sem executá-lo
@@ -75,7 +77,8 @@ shell_quote() {
 
 while (($#)); do
   case "$1" in
-    --no-color) disable_color="true"; shift ;;
+    --color) force_color="true"; shift ;;
+    --no-color) disable_color="true"; force_color="false"; shift ;;
     --preview) preview="true"; shift ;;
     --dry-run) dry_run="true"; shift ;;
     -v|--version) printf 'LogVault %s' "$logvault_version"; [[ -z "$logvault_build" ]] || printf ' (build %s)' "$logvault_build"; printf '\n'; exit 0 ;;
@@ -91,8 +94,12 @@ while (($#)); do
 done
 
 color_enabled="false"
-if [[ "$disable_color" != "true" && -z "${NO_COLOR:-}" && "${TERM:-dumb}" != "dumb" ]]; then
-  if [[ -t 1 || -n "${FORCE_COLOR:-}" ]]; then color_enabled="true"; fi
+if [[ "$disable_color" != "true" ]]; then
+  if [[ "$force_color" == "true" || -n "${FORCE_COLOR:-}" ]]; then
+    color_enabled="true"
+  elif [[ -z "${NO_COLOR:-}" && "${TERM:-dumb}" != "dumb" && -t 1 ]]; then
+    color_enabled="true"
+  fi
 fi
 
 if [[ "$color_enabled" == "true" ]]; then
@@ -229,6 +236,7 @@ confirm_mode() {
   case "$answer" in
     n|N|nao|não|NAO|NÃO)
       if [[ "$disable_color" == "true" ]]; then exec bash "$0" --no-color
+      elif [[ "$force_color" == "true" ]]; then exec bash "$0" --color
       else exec bash "$0"
       fi
       ;;

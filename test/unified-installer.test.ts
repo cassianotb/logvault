@@ -47,6 +47,13 @@ describe('instalador unificado do LogVault', () => {
     expect(result.stdout).toContain('\u001b[38;2;22;131;255m');
   });
 
+  it('permite forçar a prévia colorida mesmo quando NO_COLOR está definido', () => {
+    const result = run(['--preview', '--color'], { TERM: 'dumb', NO_COLOR: '1' });
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('\u001b[38;2;54;215;255m');
+    expect(result.stdout).toContain('\u001b[38;2;22;131;255m');
+  });
+
   it('encaminha as opções do sistema sem executar o instalador', () => {
     const result = run([
       '--dry-run', 'system', '--domain', 'logs.example.com', '--no-apply'
