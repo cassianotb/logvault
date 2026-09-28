@@ -77,7 +77,7 @@ preflight() {
     printf '[FALHA] ClickHouse B: tabelas=%s pendentes=%s heartbeat=%ss\n' "$state_rows" "$pending" "$heartbeat_age"
     failures=$((failures+1))
   fi
-  [[ -z "$(compose --profile failover ps --status running -q api-b web-b collector-b backup-b)" ]] \
+  [[ -z "$(compose --profile failover ps --status running -q api-b web-b proxy-b collector-b backup-b)" ]] \
     && printf '[OK] Serviços ativos permanecem desligados\n' \
     || { printf '[FALHA] Há serviços de produção ligados antes da promoção\n'; failures=$((failures+1)); }
   [[ "$failures" -eq 0 ]]
@@ -123,7 +123,7 @@ case "$command_name" in
     [[ "$(pg_value 'SELECT pg_is_in_recovery()')" == f ]] || die "PostgreSQL B não foi promovido"
     compose exec -T postgres-b psql -U argus -d argus -v ON_ERROR_STOP=1 -c \
       "UPDATE platform_continuity_settings SET enabled=false,last_test_status=NULL,last_test_error='DC-B promovido; reconstrução do DC-A pendente',updated_at=now() WHERE singleton=true" >/dev/null
-    compose --profile failover up -d --build api-b web-b collector-b backup-b
+    compose --profile failover up -d --build api-b web-b proxy-b collector-b backup-b
     rm -f "$pending_file"
     printf 'DC-B promovido e serviços iniciados.\n'
     printf 'O tráfego ainda NÃO foi alterado; execute a mudança de DNS/roteamento somente após validar o painel.\n'

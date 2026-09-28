@@ -1,0 +1,4 @@
+http:// {
+	encode zstd gzip
+	reverse_proxy {$ARGUS_PROXY_UPSTREAM:web:80}
+}

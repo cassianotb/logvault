@@ -33,6 +33,7 @@ describe('instalador unificado do LogVault', () => {
     expect(result.stdout).toContain('Assistente de instalação');
     expect(result.stdout).toMatch(/Versão \d+\.\d+\.\d+/);
     expect(result.stdout).toContain('Sistema LogVault');
+    expect(result.stdout).toContain('proxy e HTTPS automático');
     expect(result.stdout).toContain('Coletor local');
     expect(result.stdout).toContain('Datacenter B');
     expect(result.stdout).toContain('Atualizar LogVault');

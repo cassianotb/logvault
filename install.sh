@@ -158,7 +158,7 @@ render_option() {
 render_menu() {
   render_header
   printf '%bO que deseja fazer neste servidor?%b\n\n' "$text" "$reset"
-  render_option 0 1 'Sistema LogVault' 'Painel, API, bancos de dados e serviços de ingestão'
+  render_option 0 1 'Sistema LogVault' 'Painel, API, bancos, proxy e HTTPS automático'
   render_option 1 2 'Coletor local' 'Coleta e envio seguro de registros para o LogVault'
   render_option 2 3 'Datacenter B' 'Instala a VM standby e sincroniza os bancos com o DC-A'
   render_option 3 4 'Atualizar LogVault' 'Atualiza o sistema preservando configurações e dados'

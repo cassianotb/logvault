@@ -38,7 +38,7 @@ set -eu
 cidr="$1"
 rule="host replication argus_replica $cidr scram-sha-256"
 grep -Fqx "$rule" "$PGDATA/pg_hba.conf" || printf '%s\n' "$rule" >>"$PGDATA/pg_hba.conf"
-psql --dbname argus --set ON_ERROR_STOP=1 --command 'SELECT pg_reload_conf()' >/dev/null
+psql --username argus --dbname argus --set ON_ERROR_STOP=1 --command 'SELECT pg_reload_conf()' >/dev/null
 SH
 
 printf 'DC-A preparado: WAL ativo, usuário exclusivo e regra limitada a %s.\n' "$replication_cidr"

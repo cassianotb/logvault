@@ -39,10 +39,10 @@ as credenciais internas, a conta administrativa e a estrutura de dados.
   --data-root DIRETÓRIO|docker  diretório persistente ou volumes Docker
   --backup-retention-days DIAS  retenção local dos backups (padrão: 15)
   --timezone FUSO               fuso IANA (padrão: America/Sao_Paulo)
-  --domain DOMÍNIO              domínio usado no certificado
+  --public-url URL              URL final do painel (https://logs.exemplo.com)
+  --domain DOMÍNIO              compatibilidade: domínio usado no certificado
   --acme-email EMAIL            contato usado na conta ACME/Let's Encrypt
-  --tls-challenge MÉTODO        http-01, dns-01, existing ou disabled
-  --public-url URL              URL externa completa; pode incluir porta do NAT
+  --tls-challenge MÉTODO        automatic, http-01 ou disabled
   --server-name NOME            identificação exibida no firewall
   --replication-bind IP         IP local da interface segura entre os DCs
   --replication-cidr CIDR       rede autorizada a abrir streaming (padrão: 10.0.0.0/8)
@@ -51,9 +51,9 @@ as credenciais internas, a conta administrativa e a estrutura de dados.
   --no-apply                    grava e valida, mas não inicia os containers
   -h, --help                    exibe esta ajuda
 
-O painel e a API ficam ligados somente ao loopback da VM. A publicação em
-443/TCP exige um proxy HTTPS da infraestrutura; o instalador registra domínio,
-URL e método TLS, mas não expõe os bancos nem altera o roteador/NAT.
+O instalador sobe o proxy Caddy, publica 80/443, emite e renova o certificado
+automaticamente. Antes de executar, faça o DNS apontar para a VM e encaminhe
+80/TCP e 443/TCP até ela. Os bancos e a API não são expostos diretamente.
 EOF
 }
 
@@ -72,6 +72,10 @@ valid_email() {
 
 valid_domain() {
   [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9]$ ]]
+}
+
+is_ipv4() {
+  [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]
 }
 
 valid_password() {
@@ -224,9 +228,10 @@ domain="${domain:-$existing_domain}"
 acme_email="${acme_email:-$existing_acme_email}"
 tls_challenge="${tls_challenge:-${existing_tls_challenge:-disabled}}"
 public_url="${public_url:-$existing_public_url}"
-replication_bind="${existing_replication_bind:-$(detect_primary_ipv4)}"
+if [[ "$public_url" =~ ^http://([^/:]+):8081/?$ ]]; then public_url="http://${BASH_REMATCH[1]}"; fi
+replication_bind="${replication_bind:-${existing_replication_bind:-$(detect_primary_ipv4)}}"
 replication_bind="${replication_bind:-127.0.0.1}"
-replication_cidr="${existing_replication_cidr:-10.0.0.0/8}"
+replication_cidr="${replication_cidr:-${existing_replication_cidr:-10.0.0.0/8}}"
 
 if [[ "$interactive" == "true" ]]; then
   printf '\nConfiguração do Sistema LogVault\n'
@@ -254,12 +259,16 @@ if [[ "$interactive" == "true" ]]; then
   backup_retention_days="$(ask 'Retenção dos backups locais em dias' "$backup_retention_days")"
   timezone="$(ask 'Fuso horário dos equipamentos' "$timezone")"
   server_name="$(ask 'Nome deste servidor' "$server_name")"
-  domain="$(ask 'Domínio do painel (vazio para acesso local)' "$domain")"
-  if [[ -n "$domain" ]]; then
-    tls_challenge="$(ask 'Validação TLS: http-01, dns-01, existing ou disabled' "${tls_challenge:-dns-01}")"
-    if [[ "$tls_challenge" != "disabled" && "$tls_challenge" != "existing" ]]; then
-      acme_email="$(ask 'E-mail para emissão do certificado' "$acme_email")"
-    fi
+  if [[ -z "$public_url" ]]; then
+    if [[ -n "$domain" ]]; then public_url="https://$domain";
+    else detected_public_ip="$(detect_primary_ipv4)"; public_url="http://${detected_public_ip:-127.0.0.1}"; fi
+  fi
+  public_url="$(ask 'URL pública do painel' "$public_url")"
+  if [[ "$public_url" == https://* ]]; then
+    tls_challenge="http-01"
+    acme_email="$(ask 'E-mail para emissão e renovação do certificado' "$acme_email")"
+  else
+    tls_challenge="disabled"
   fi
   replication_bind="$(ask 'IP local da interface segura de replicação' "$replication_bind")"
   replication_cidr="$(ask 'Rede CIDR autorizada entre os datacenters' "$replication_cidr")"
@@ -296,31 +305,39 @@ else
   backup_data_path="$data_root/backups"
 fi
 
-[[ "$tls_challenge" =~ ^(http-01|dns-01|existing|disabled)$ ]] || die "método TLS inválido"
-if [[ "$tls_challenge" != "disabled" ]]; then
-  [[ -n "$domain" ]] || die "--domain é obrigatório quando TLS está ativo"
-  valid_domain "$domain" || die "domínio inválido"
-  if [[ "$tls_challenge" != "existing" ]]; then
-    valid_email "$acme_email" || die "--acme-email válido é obrigatório para registrar a configuração TLS"
-  fi
-elif [[ -n "$domain" ]]; then
-  valid_domain "$domain" || die "domínio inválido"
-fi
-if [[ -n "$acme_email" ]]; then valid_email "$acme_email" || die "e-mail ACME inválido"; fi
-
+[[ "$tls_challenge" != "automatic" ]] || tls_challenge="http-01"
 if [[ -z "$public_url" ]]; then
-  if [[ "$tls_challenge" == "disabled" ]]; then
-    public_url="http://${domain:-localhost}:8081"
+  if [[ -n "$domain" ]]; then
+    if [[ "$tls_challenge" == "disabled" ]]; then public_url="http://$domain";
+    else public_url="https://$domain"; fi
   else
-    public_url="https://$domain"
+    detected_public_ip="$(detect_primary_ipv4)"
+    public_url="http://${detected_public_ip:-127.0.0.1}"
   fi
 fi
-[[ "$public_url" =~ ^https?://[^[:space:]]+$ ]] || die "URL pública inválida"
-cookie_secure="false"
-if [[ "$public_url" == https://* ]]; then cookie_secure="true"; fi
-public_host="${public_url#*://}"
-public_host="${public_host%%/*}"
-public_host="${public_host%%:*}"
+public_url="${public_url%/}"
+if [[ "$public_url" =~ ^https://([A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9])$ ]]; then
+  public_host="${BASH_REMATCH[1],,}"
+  domain="$public_host"
+  tls_challenge="http-01"
+  valid_domain "$domain" || die "domínio da URL pública inválido"
+  ! is_ipv4 "$domain" || die "HTTPS automático exige um nome DNS, não um endereço IP"
+  [[ "$domain" != "localhost" && "$domain" != *.local && "$domain" != *.internal ]] \
+    || die "HTTPS automático exige um domínio público"
+  valid_email "$acme_email" || die "--acme-email válido é obrigatório para emitir o certificado"
+  proxy_config="Caddyfile.https"
+  cookie_secure="true"
+elif [[ "$public_url" =~ ^http://([A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9])$ ]]; then
+  public_host="${BASH_REMATCH[1],,}"
+  domain=""
+  tls_challenge="disabled"
+  proxy_config="Caddyfile.http"
+  cookie_secure="false"
+else
+  die "URL pública inválida; use somente http://IP ou https://dominio sem porta ou caminho"
+fi
+[[ "$tls_challenge" =~ ^(http-01|disabled)$ ]] || die "método TLS inválido; use automatic, http-01 ou disabled"
+if [[ -n "$acme_email" ]]; then valid_email "$acme_email" || die "e-mail ACME inválido"; fi
 dr_site_a_host="$(read_env ARGUS_DR_SITE_A_HOST "$env_file")"
 if [[ -z "$dr_site_a_host" ]]; then dr_site_a_host="$(read_env ARGUS_DR_SITE_A_PRIVATE_HOST "$env_file")"; fi
 if [[ -z "$dr_site_a_host" ]]; then dr_site_a_host="$(hostname -f 2>/dev/null || true)"; fi
@@ -358,9 +375,14 @@ printf '  Dados: %s\n' "$data_root"
 printf '  Backups locais: %s dias\n' "$backup_retention_days"
 printf '  Fuso horário: %s\n' "$timezone"
 printf '  URL pública: %s\n' "$public_url"
-printf '  TLS: %s\n' "$tls_challenge"
-printf '  Acesso local: painel 127.0.0.1:8081 · API 127.0.0.1:8080\n'
-printf '  Publicação HTTPS: exige proxy/certificado da infraestrutura\n'
+if [[ "$tls_challenge" == "http-01" ]]; then
+  printf '  HTTPS: automático, com emissão e renovação pelo Caddy\n'
+  printf '  Pré-requisito externo: DNS de %s e portas 80/443 apontando para esta VM\n' "$domain"
+else
+  printf '  HTTPS: desativado; proxy HTTP integrado na porta 80\n'
+fi
+printf '  Serviços internos: painel 127.0.0.1:8081 · API 127.0.0.1:8080\n'
+printf '  Acesso direto: qualquer IP de origem em 80/TCP e 443/TCP\n'
 printf '  Credenciais internas: geração automática protegida\n\n'
 printf '  Replicação DR: interface %s · rede autorizada %s\n\n' "$replication_bind" "$replication_cidr"
 
@@ -402,8 +424,19 @@ set_env ARGUS_POSTGRES_DATA_PATH "$postgres_data_path"
 set_env ARGUS_CLICKHOUSE_DATA_PATH "$clickhouse_data_path"
 set_env ARGUS_COLLECTOR_DATA_PATH "$collector_data_path"
 set_env ARGUS_BACKUP_DATA_PATH "$backup_data_path"
+if [[ "$data_root" == "docker" ]]; then
+  proxy_data_path="proxy-data"
+  proxy_config_path="proxy-config"
+else
+  proxy_data_path="$data_root/proxy-data"
+  proxy_config_path="$data_root/proxy-config"
+fi
+set_env ARGUS_PROXY_DATA_PATH "$proxy_data_path"
+set_env ARGUS_PROXY_CONFIG_PATH "$proxy_config_path"
 set_env ARGUS_API_BIND 127.0.0.1
 set_env ARGUS_WEB_BIND 127.0.0.1
+set_env ARGUS_HTTP_BIND 0.0.0.0
+set_env ARGUS_HTTPS_BIND 0.0.0.0
 set_env ARGUS_COLLECTOR_BIND 0.0.0.0
 set_env ARGUS_POSTGRES_PASSWORD "$postgres_password"
 set_env ARGUS_POSTGRES_URL "$postgres_url"
@@ -424,6 +457,7 @@ set_env ARGUS_FIREWALL_SERVER_NAME "$server_name"
 set_env ARGUS_TLS_DOMAIN "$domain"
 set_env ARGUS_TLS_EMAIL "$acme_email"
 set_env ARGUS_TLS_CHALLENGE "$tls_challenge"
+set_env ARGUS_PROXY_CONFIG "$proxy_config"
 set_env ARGUS_PUBLIC_URL "$public_url"
 set_env ARGUS_COOKIE_SECURE "$cookie_secure"
 set_env ARGUS_DR_LOCAL_SITE a
@@ -451,8 +485,30 @@ fi
 command -v docker >/dev/null 2>&1 || die "Docker não encontrado; use --no-apply para apenas gravar"
 docker compose version >/dev/null 2>&1 || die "Docker com o plugin Compose é obrigatório"
 
+if ! command -v curl >/dev/null 2>&1; then
+  if [[ $(id -u) -eq 0 ]] && command -v apt-get >/dev/null 2>&1; then
+    apt-get update
+    apt-get install -y curl ca-certificates
+  else
+    die "curl é obrigatório para validar a publicação; instale-o e execute novamente"
+  fi
+fi
+
+if [[ "$tls_challenge" == "http-01" ]]; then
+  getent ahosts "$domain" >/dev/null 2>&1 || die "o domínio $domain ainda não resolve em DNS"
+fi
+
+if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q '^Status: active'; then
+  ufw allow 80/tcp comment 'LogVault HTTP/ACME'
+  ufw allow 443/tcp comment 'LogVault HTTPS'
+elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
+  firewall-cmd --permanent --add-service=http
+  firewall-cmd --permanent --add-service=https
+  firewall-cmd --reload
+fi
+
 if [[ "$data_root" != "docker" ]]; then
-  install -d -m 0750 "$postgres_data_path" "$clickhouse_data_path" "$collector_data_path" "$backup_data_path"
+  install -d -m 0750 "$postgres_data_path" "$clickhouse_data_path" "$collector_data_path" "$backup_data_path" "$proxy_data_path" "$proxy_config_path"
   if [[ $(id -u) -eq 0 ]]; then chown 1000:1000 "$collector_data_path"; fi
 fi
 
@@ -463,4 +519,22 @@ fi
   ARGUS_ENV_FILE="$env_file" "$repo_root/scripts/prepare-dc-a.sh"
   ARGUS_ENV_FILE="$env_file" docker compose --env-file "$env_file" ps
 )
+
+publication_ready="false"
+for attempt in $(seq 1 60); do
+  if [[ "$tls_challenge" == "http-01" ]]; then
+    if curl --silent --show-error --fail --resolve "$domain:443:127.0.0.1" "$public_url/" >/dev/null 2>&1; then
+      publication_ready="true"
+      break
+    fi
+  elif curl --silent --show-error --fail http://127.0.0.1/ >/dev/null 2>&1; then
+    publication_ready="true"
+    break
+  fi
+  sleep 2
+done
+if [[ "$publication_ready" != "true" ]]; then
+  (cd "$repo_root" && ARGUS_ENV_FILE="$env_file" docker compose --env-file "$env_file" logs --tail=80 proxy >&2) || true
+  die "o proxy não conseguiu validar $public_url; confirme DNS, NAT e portas 80/443"
+fi
 printf 'Sistema LogVault instalado. Acesse %s e entre com %s.\n' "$public_url" "$admin_email"

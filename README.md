@@ -22,6 +22,8 @@ Você precisará de:
 - acesso `root` ou uma conta com `sudo`;
 - espaço persistente para PostgreSQL, ClickHouse, spool e backups;
 - DNS apontando para a VM caso o painel seja publicado por domínio;
+- portas TCP 80 e 443 encaminhadas até a VM para emissão e renovação do
+  certificado HTTPS;
 - uma rede privada, VPN ou túnel entre DC-A e DC-B caso use continuidade;
 - portas UDP 2055 (NetFlow) e 5140 (Syslog) liberadas somente para os
   equipamentos que enviarão eventos ao coletor.
@@ -110,13 +112,16 @@ Escolha **1 — Sistema LogVault**. Tenha estas respostas preparadas:
 - retenção dos backups locais — o padrão é 15 dias;
 - fuso horário dos equipamentos — normalmente `America/Sao_Paulo`;
 - nome descritivo do servidor;
-- domínio do painel, se já houver DNS, ou vazio para o primeiro acesso local;
-- método TLS. Se ainda não existe proxy HTTPS configurado, use `disabled`;
+- URL pública do painel, por exemplo `https://logs.seuprovedor.com.br`;
+- e-mail usado pelo emissor do certificado HTTPS;
 - IP da interface privada/VPN usada para replicação e o CIDR autorizado entre
   os datacenters.
 
-Revise o resumo e confirme. O assistente cria o `.env`, gera os segredos
-internos, constrói os containers, inicia os serviços e prepara o DC-A. O
+Antes de confirmar uma URL HTTPS, faça o registro DNS apontar para a VM e
+confirme que 80/TCP e 443/TCP chegam até ela. Revise o resumo e confirme. O
+assistente cria o `.env`, gera os segredos internos, configura o firewall
+local quando UFW ou firewalld estiver ativo, sobe o proxy Caddy, emite o
+certificado, valida a URL, constrói os containers e prepara o DC-A. O
 arquivo `.env` é confidencial: não envie por mensagem, não copie para o GitHub
 e não altere suas permissões.
 
@@ -126,25 +131,16 @@ Confira o resultado:
 cd /opt/logvault
 docker compose --env-file .env ps
 curl -fsS http://127.0.0.1:8080/health/ready
+curl -I https://SEU_DOMINIO
 ```
 
-Todos os serviços principais devem aparecer como ativos e o `curl` deve
-retornar a prontidão da API.
-
-Por segurança, o painel fica inicialmente acessível apenas pela própria VM em
-`127.0.0.1:8081`. Para o primeiro acesso, mantenha sua sessão SSH aberta e, em
-outro terminal do seu computador, crie um túnel:
-
-```bash
-ssh -L 8081:127.0.0.1:8081 usuario@IP_DA_VM
-```
-
-Abra `http://localhost:8081` no navegador e entre com o e-mail e a senha
-informados no instalador. Para publicar o painel na internet, configure um
-proxy reverso HTTPS em frente a `127.0.0.1:8081`; não exponha diretamente
-PostgreSQL, ClickHouse ou a API. Os campos de domínio/ACME do assistente
-registram a configuração desejada, mas não substituem o proxy e o certificado
-da infraestrutura.
+Todos os serviços principais, inclusive `proxy`, devem aparecer como ativos.
+Abra diretamente a URL informada no instalador e entre com o e-mail e a senha
+do administrador. O Caddy redireciona HTTP para HTTPS, encaminha painel e API e
+renova o certificado automaticamente. Não é necessário criar túnel SSH: o
+proxy escuta em todas as interfaces da VM e aceita qualquer IP de origem nas
+portas 80/443. PostgreSQL, ClickHouse e a porta direta da API continuam fora
+da publicação pública.
 
 ### 6. Instalar um coletor local
 
@@ -171,7 +167,7 @@ uma vez.
 O instalador do B detecta sistema, CPU, RAM, discos, interfaces e IPs; instala
 dependências ausentes; clona este repositório; recebe as credenciais sem
 exibi-las; faz a carga inicial do PostgreSQL; e inicia o espelhamento
-assíncrono do ClickHouse. Painel, API, coletor e backup do B permanecem
+assíncrono do ClickHouse. Painel, API, proxy HTTPS, coletor e backup do B permanecem
 desligados até uma promoção explícita.
 
 Verifique o standby na VM B:
@@ -216,6 +212,10 @@ df -h
 curl -I http://127.0.0.1:8081
 curl -fsS http://127.0.0.1:8080/health/ready
 
+# Estado e logs do proxy HTTPS
+docker compose --env-file .env ps proxy
+docker compose --env-file .env logs --tail=100 proxy
+
 # Versão do instalador
 ./install.sh --version
 ```
@@ -233,6 +233,7 @@ salva a configuração anterior em `.env.bak`.
 - `ClickHouse`: mensagens/pacotes originais e eventos normalizados, com retenção automática de 13 meses.
 - `PostgreSQL`: tenants, usuários, equipamentos, coletores, integrações ERP e auditoria.
 - `backup`: gera pontos diários consistentes de PostgreSQL, ClickHouse e spool SQLite, com backup completo semanal e incremental diário, download auditado e réplica SSH/rsync opcional.
+- `proxy`: publica o painel e a API com Caddy, HTTPS automático e renovação do certificado.
 
 O cadastro de assinantes não é copiado. A integração sob demanda com o ERP está prevista, mas ainda não está ativa nesta etapa; consultas e relatórios informam isso explicitamente e não tentam identificar o assinante por inferência.
 
@@ -249,7 +250,7 @@ Em ambos os casos, dados desconhecidos continuam armazenados no formato original
 2. Instale as dependências com `npm install`.
 3. Execute os testes com `npm test`.
 4. Inicie o ambiente com `docker compose up --build -d`.
-5. Abra `http://localhost:8081`, entre com o administrador definido no `.env` e verifique a API em `http://localhost:8080/health/ready`.
+5. Abra a URL configurada em `ARGUS_PUBLIC_URL`, entre com o administrador definido no `.env` e verifique a API em `http://localhost:8080/health/ready`.
 
 O menu de instalação usa a identidade Azul elétrico do LogVault, aceita setas,
 Enter e atalhos numéricos. Em terminais sem cores ou com `NO_COLOR` definido,
@@ -259,14 +260,14 @@ Na instalação do sistema, o assistente solicita a conta administrativa inicial
 
 Para os dados persistentes, o padrão de uma instalação nova é
 `/var/lib/logvault`; também é possível escolher `docker` para manter volumes
-nomeados. O SSH normalmente utiliza `22/TCP`; a publicação HTTPS e eventuais
-redirecionamentos externos pertencem ao proxy, firewall e roteador da
-infraestrutura.
+nomeados. O SSH normalmente utiliza `22/TCP`; o proxy Caddy integrado publica
+80/443 e mantém o certificado. Somente o DNS e, quando houver NAT, o
+encaminhamento dessas portas pertencem à infraestrutura externa.
 
 Em automações, selecione o perfil sem abrir o menu e acrescente as opções do instalador correspondente:
 
 ```bash
-sudo ./install.sh system --admin-email admin@example.com --admin-password-file /root/logvault-admin.pass --data-root /var/lib/logvault --domain logs.example.com --acme-email infra@example.com --tls-challenge dns-01
+sudo ./install.sh system --admin-email admin@example.com --admin-password-file /root/logvault-admin.pass --data-root /var/lib/logvault --public-url https://logs.example.com --acme-email infra@example.com --tls-challenge automatic
 sudo ./install.sh collector --config-file /caminho/seguro/collector.env
 sudo ./install.sh dc-b --argus-url https://logs.example.com --enrollment-token-file /root/logvault-dcb.token --site-a-host logvault-dca.example.com --site-b-host logvault-dcb.example.com --panel-host logs.example.com --ingest-host ingest.example.com --dr-control-host dr.example.com --yes
 ```
@@ -275,7 +276,7 @@ Proteja o arquivo usado em `--admin-password-file` com permissão `0600` e remov
 
 No modo interativo do coletor, a configuração gerada no painel pode ser colada diretamente no instalador; o token não é exibido e o `.env.edge` é criado com permissão `0600` após a validação.
 
-No modo DC-B, o token é digitado de forma oculta ou lido de um arquivo privado. O instalador detecta hostname, IP de saída, interface, gateway, CPU, memória, Docker, NTP e os filesystems; instala dependências ausentes, clona a versão indicada pelo DC-A, executa a carga inicial PostgreSQL, inicia o espelhamento assíncrono do ClickHouse e aguarda o sincronismo. API, painel, coletor e backup permanecem desligados. A instalação não promove o standby nem transfere tráfego.
+No modo DC-B, o token é digitado de forma oculta ou lido de um arquivo privado. O instalador detecta hostname, IP de saída, interface, gateway, CPU, memória, Docker, NTP e os filesystems; instala dependências ausentes, clona a versão indicada pelo DC-A, executa a carga inicial PostgreSQL, inicia o espelhamento assíncrono do ClickHouse e aguarda o sincronismo. API, painel, proxy HTTPS, coletor e backup permanecem desligados. A instalação não promove o standby nem transfere tráfego.
 
 A continuidade de produção usa somente duas VMs: streaming PostgreSQL A → B e espelhamento ClickHouse A → B com checkpoint e lag mensurável. Não há Keeper nem witness. A promoção exige confirmação explícita de fencing e, mesmo concluída, deixa a troca de DNS/NAT para o operador. Consulte [docs/datacenter-b-installation.md](docs/datacenter-b-installation.md).
 
@@ -342,4 +343,7 @@ A tela **Servidores** mede CPU, RAM e armazenamento do servidor principal direta
 
 As consultas e exportações exigem sessão autenticada; o tenant é obtido no servidor a partir da sessão e não é aceito da interface. O administrador global inicia sem contexto operacional, seleciona um cliente por **Acessar ambiente** e pode retornar à plataforma a qualquer momento; ambas as ações são auditadas. As sessões usam token aleatório, hash no banco, cookie `HttpOnly`/`SameSite=Strict`, expiração e revogação no logout. A recuperação de senha usa SMTP administrado globalmente em **Plataforma → Configurações**, credencial criptografada, token de uso único armazenado somente como hash e revogação de todas as sessões após a troca. A ingestão vincula cada chave ao tenant e ao `collectorId` correspondentes. Login, troca e recuperação de senha, gestão de usuários/coletores, consultas e exportações permanecem auditados.
 
-Este pacote continua destinado à homologação em rede controlada. Antes de exposição pública ou uso jurídico em produção ainda serão necessários TLS e gestão externa de segredos. O ensaio de restauração isolada e os alertas externos por webhook já estão disponíveis, mas precisam ser programados e configurados de acordo com a operação do cliente.
+O instalador entrega TLS público e mantém os segredos locais em `.env` com
+permissão restrita. Antes de uso jurídico em produção, ainda é recomendável
+integrar um cofre externo de segredos, programar ensaios de restauração e
+configurar os alertas externos de acordo com a operação do cliente.

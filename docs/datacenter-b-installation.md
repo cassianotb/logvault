@@ -10,7 +10,7 @@ topologia de produção.
   `hot standby`.
 - ClickHouse: espelhamento assíncrono incremental A → B, com checkpoint
   persistente para `ingest_raw`, `cgnat_events` e `server_metrics`.
-- API, painel, coletor Cloud e backup: instalados no B, mas desligados até uma
+- API, painel, proxy HTTPS, coletor Cloud e backup: instalados no B, mas desligados até uma
   promoção explícita.
 - Coletores Edge: continuam usando o hostname estável de ingestão e retêm dados
   no spool durante a troca.
@@ -100,7 +100,7 @@ Execute o comando como root na VM B. O instalador:
 8. inicia o ClickHouse B e a carga incremental das três tabelas;
 9. cria as contas de monitoramento;
 10. aguarda PostgreSQL e ClickHouse alcançarem o A;
-11. mantém API, Web, coletor e backup desligados.
+11. mantém API, Web, proxy HTTPS, coletor e backup desligados.
 
 O pacote local confidencial fica em `/var/lib/argus-bootstrap` quando o script
 foi baixado isoladamente, ou em `artifacts/dc-b-installation` quando executado a
@@ -131,7 +131,7 @@ Antes do failover:
 - `SELECT pg_is_in_recovery()` no B retorna `true`;
 - `clickhouse-mirror` permanece ativo;
 - as três linhas de `argus.dr_mirror_state FINAL` ficam sem pendências;
-- `api-b`, `web-b`, `collector-b` e `backup-b` permanecem desligados;
+- `api-b`, `web-b`, `proxy-b`, `collector-b` e `backup-b` permanecem desligados;
 - o painel do A muda de **Em preparação** para **Protegido** somente depois que
   todos os probes estiverem saudáveis.
 
@@ -165,7 +165,8 @@ sudo ARGUS_DR_CONFIRM_PROMOTION='PROMOTE-DC-B:DESAFIO' \
 ```
 
 O comando repete o preflight, para o espelhamento, promove o PostgreSQL B,
-desativa o estado de continuidade antigo e inicia API, painel, coletor e backup.
+desativa o estado de continuidade antigo e inicia API, painel, proxy HTTPS,
+coletor e backup.
 Ele não altera DNS/NAT/VIP. Valide o painel e `/health/ready`; somente então vire
 o tráfego.
 

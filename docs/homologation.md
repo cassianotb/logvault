@@ -2,7 +2,7 @@
 
 ## 1. Preparação
 
-Requisitos do host: Docker Engine com Compose v2 e portas TCP 8080/8081 e UDP 2055/5140 disponíveis.
+Requisitos do host: Docker Engine com Compose v2, portas TCP 80/443 para o proxy integrado e UDP 2055/5140 disponíveis.
 
 ```bash
 cp .env.example .env
@@ -20,7 +20,7 @@ docker compose ps
 curl -fsS http://localhost:8080/health/ready
 ```
 
-A interface fica em `http://localhost:8081`. O primeiro usuário administrador é criado com `ARGUS_BOOTSTRAP_ADMIN_EMAIL` e `ARGUS_BOOTSTRAP_ADMIN_PASSWORD`. Alterar essas variáveis depois da criação não sobrescreve silenciosamente a senha já gravada.
+A interface fica na URL definida em `ARGUS_PUBLIC_URL`; 8081 permanece ligada somente ao loopback para diagnóstico. O primeiro usuário administrador é criado com `ARGUS_BOOTSTRAP_ADMIN_EMAIL` e `ARGUS_BOOTSTRAP_ADMIN_PASSWORD`. Alterar essas variáveis depois da criação não sobrescreve silenciosamente a senha já gravada.
 
 ## 3. Envio dos equipamentos
 

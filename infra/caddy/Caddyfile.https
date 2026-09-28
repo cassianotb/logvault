@@ -1,0 +1,12 @@
+{
+	email {$ARGUS_TLS_EMAIL}
+}
+
+{$ARGUS_TLS_DOMAIN} {
+	encode zstd gzip
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+	reverse_proxy {$ARGUS_PROXY_UPSTREAM:web:80}
+}

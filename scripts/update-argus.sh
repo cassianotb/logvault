@@ -135,6 +135,25 @@ if [[ "$role" == "dc-a" ]]; then
   ensure_env_key ARGUS_DR_POSTGRES_WAL_KEEP_SIZE 2GB
   ensure_env_key ARGUS_DR_REPOSITORY_URL https://github.com/cassianotb/logvault.git
   ensure_env_key ARGUS_DR_REPOSITORY_REF main
+  data_root="$(sed -n 's/^ARGUS_DATA_ROOT=//p' "$env_file" | tail -n1)"
+  if [[ -n "$data_root" && "$data_root" != "docker" ]]; then
+    ensure_env_key ARGUS_PROXY_DATA_PATH "${data_root%/}/proxy-data"
+    ensure_env_key ARGUS_PROXY_CONFIG_PATH "${data_root%/}/proxy-config"
+    install -d -m 0750 "${data_root%/}/proxy-data" "${data_root%/}/proxy-config"
+  else
+    ensure_env_key ARGUS_PROXY_DATA_PATH proxy-data
+    ensure_env_key ARGUS_PROXY_CONFIG_PATH proxy-config
+  fi
+  ensure_env_key ARGUS_HTTP_BIND 0.0.0.0
+  ensure_env_key ARGUS_HTTPS_BIND 0.0.0.0
+  public_url="$(sed -n 's/^ARGUS_PUBLIC_URL=//p' "$env_file" | tail -n1)"
+  tls_domain="$(sed -n 's/^ARGUS_TLS_DOMAIN=//p' "$env_file" | tail -n1)"
+  tls_email="$(sed -n 's/^ARGUS_TLS_EMAIL=//p' "$env_file" | tail -n1)"
+  if [[ "$public_url" == https://* && -n "$tls_domain" && -n "$tls_email" ]]; then
+    ensure_env_key ARGUS_PROXY_CONFIG Caddyfile.https
+  else
+    ensure_env_key ARGUS_PROXY_CONFIG Caddyfile.http
+  fi
   chmod 0600 "$env_file"
 fi
 if [[ "$skip_backup" != "true" && "$role" == "dc-a" ]]; then
@@ -163,7 +182,7 @@ else
   ARGUS_DR_ENV_FILE="$env_file" docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" config --quiet
   ARGUS_DR_ENV_FILE="$env_file" docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" up -d postgres-b clickhouse-b clickhouse-mirror standby-agent
   if [[ "$dc_b_was_active" == "true" ]]; then
-    ARGUS_DR_ENV_FILE="$env_file" docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" --profile failover up -d --build api-b web-b collector-b backup-b
+    ARGUS_DR_ENV_FILE="$env_file" docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" --profile failover up -d --build api-b web-b proxy-b collector-b backup-b
   fi
   ARGUS_DR_ENV_FILE="$env_file" docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" --profile failover ps
 fi

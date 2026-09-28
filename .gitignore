@@ -15,6 +15,7 @@ coverage/
 *.db
 *.dump
 *.backup
+!Dockerfile.backup
 *.sql.gz
 *.tar.gz
 *.log

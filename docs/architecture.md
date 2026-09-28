@@ -24,6 +24,8 @@
 ## Fluxo híbrido
 
 ```text
+usuário -> HTTPS 443 -> Caddy (TLS automático) -> Nginx Web -> API
+
 equipamento -> UDP -> coletor -> SQLite -> lote HTTPS -> API -> ClickHouse
                                  -> heartbeat -> API -> PostgreSQL (fila e saúde atual do servidor)
                                                   -> ClickHouse (histórico de recursos por 48 horas)

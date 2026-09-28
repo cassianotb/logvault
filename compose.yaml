@@ -124,6 +124,29 @@ services:
     restart: unless-stopped
     logging: *default-logging
 
+  proxy:
+    image: caddy:2.11.4-alpine
+    env_file: ${ARGUS_ENV_FILE:-.env}
+    environment:
+      ARGUS_PROXY_UPSTREAM: web:80
+    depends_on:
+      web:
+        condition: service_healthy
+    ports:
+      - "${ARGUS_HTTP_BIND:-0.0.0.0}:80:80"
+      - "${ARGUS_HTTPS_BIND:-0.0.0.0}:443:443"
+    volumes:
+      - ./infra/caddy/${ARGUS_PROXY_CONFIG:-Caddyfile.http}:/etc/caddy/Caddyfile:ro
+      - ${ARGUS_PROXY_DATA_PATH:-proxy-data}:/data
+      - ${ARGUS_PROXY_CONFIG_PATH:-proxy-config}:/config
+    healthcheck:
+      test: ["CMD", "caddy", "validate", "--config", "/etc/caddy/Caddyfile"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+    restart: unless-stopped
+    logging: *default-logging
+
   backup:
     build:
       context: .
@@ -159,3 +182,5 @@ volumes:
   clickhouse-data:
   collector-data:
   backup-data:
+  proxy-data:
+  proxy-config:

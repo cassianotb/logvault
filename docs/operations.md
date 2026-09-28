@@ -2,12 +2,12 @@
 
 ## Endereços locais
 
-- Interface na rede privada: `http://192.168.25.103:8081`
+- Interface publicada: URL configurada em `ARGUS_PUBLIC_URL`
 - API: `http://127.0.0.1:8080`
 - NetFlow v9: `192.168.25.103:2055/udp`
 - Syslog A10: `192.168.25.103:5140/udp`
 
-Somente a interface autenticada e os coletores estão publicados no IP privado da VM. A API direta permanece em loopback; a interface a acessa pelo proxy interno. Como ainda não há TLS, esse endereço não deve ser publicado na internet.
+Somente a interface autenticada está publicada pelo Caddy em 80/443. O proxy escuta em `0.0.0.0` e permite o acesso direto de qualquer IP de origem, sem túnel SSH. A API direta permanece em loopback; a interface a acessa pelo proxy interno. Com domínio público, o Caddy emite, valida e renova o certificado automaticamente.
 
 O administrador inicial é definido por `ARGUS_BOOTSTRAP_ADMIN_EMAIL` e `ARGUS_BOOTSTRAP_ADMIN_PASSWORD` no `.env`. O arquivo deve permanecer com permissão `600`. O sistema não registra a senha em texto aberto no PostgreSQL; somente o hash scrypt é armazenado.
 
@@ -45,14 +45,6 @@ Use TLS direto, normalmente na porta 465, quando o servidor exigir conexão segu
 ## Auditoria
 
 A tela **Auditoria** reúne autenticação, consultas CGNAT, exportações e alterações de usuários, equipamentos e coletores. Cada exportação mantém o formato, a consulta de origem e o SHA-256 do arquivo. O tenant é aplicado no servidor a partir da sessão.
-
-Como alternativa, para acessar por túnel:
-
-```bash
-ssh -L 8081:127.0.0.1:8081 usuario@servidor
-```
-
-Depois, abra `http://127.0.0.1:8081` no computador do usuário.
 
 ## Dashboard
 
