@@ -1,0 +1,116 @@
+services:
+  postgres-a:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: argus
+      POSTGRES_USER: argus
+      POSTGRES_PASSWORD: ${ARGUS_DR_POSTGRES_PASSWORD:?senha PostgreSQL de teste obrigatória}
+      ARGUS_DR_POSTGRES_REPLICATION_PASSWORD: ${ARGUS_DR_POSTGRES_REPLICATION_PASSWORD:?senha de replicação de teste obrigatória}
+    entrypoint: ["/usr/local/bin/dr-primary-entrypoint.sh"]
+    command: ["postgres", "-c", "listen_addresses=*", "-c", "hba_file=/etc/postgresql/two-node-pg_hba.conf", "-c", "wal_level=replica", "-c", "max_wal_senders=5", "-c", "max_replication_slots=5", "-c", "hot_standby=on"]
+    volumes:
+      - two-node-postgres-a:/var/lib/postgresql/data
+      - ./infra/postgres:/dr-app-init:ro
+      - ./infra/dr/postgres/050_replication_role.sh:/dr-replication-init/050_replication_role.sh:ro
+      - ./infra/dr/postgres/primary-entrypoint.sh:/usr/local/bin/dr-primary-entrypoint.sh:ro
+      - ./infra/dr/postgres/two-node-pg_hba.conf:/etc/postgresql/two-node-pg_hba.conf:ro
+    networks: [two-node]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argus -d argus && test \"$(psql -U argus -d argus -Atqc 'SELECT pg_is_in_recovery()')\" = f"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  postgres-b:
+    image: postgres:17-alpine
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_DB: argus
+      POSTGRES_USER: argus
+      POSTGRES_PASSWORD: ${ARGUS_DR_POSTGRES_PASSWORD:?senha PostgreSQL de teste obrigatória}
+      ARGUS_DR_POSTGRES_REPLICATION_PASSWORD: ${ARGUS_DR_POSTGRES_REPLICATION_PASSWORD:?senha de replicação de teste obrigatória}
+      ARGUS_DR_POSTGRES_PRIMARY_HOST: postgres-a
+      ARGUS_DR_POSTGRES_SLOT: argus_two_node_b
+    entrypoint: ["/usr/local/bin/dr-standby-entrypoint.sh"]
+    command: ["postgres", "-c", "listen_addresses=*", "-c", "hba_file=/etc/postgresql/two-node-pg_hba.conf", "-c", "hot_standby=on"]
+    volumes:
+      - two-node-postgres-b:/var/lib/postgresql/data
+      - ./infra/dr/postgres/standby-entrypoint.sh:/usr/local/bin/dr-standby-entrypoint.sh:ro
+      - ./infra/dr/postgres/two-node-pg_hba.conf:/etc/postgresql/two-node-pg_hba.conf:ro
+    networks: [two-node]
+    depends_on:
+      postgres-a:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argus -d argus"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+
+  clickhouse-a:
+    image: clickhouse/clickhouse-server:26.3
+    environment:
+      CLICKHOUSE_DB: argus
+      CLICKHOUSE_USER: argus
+      CLICKHOUSE_PASSWORD: ${ARGUS_DR_CLICKHOUSE_PASSWORD:?senha ClickHouse de teste obrigatória}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - two-node-clickhouse-a:/var/lib/clickhouse
+      - ./infra/clickhouse:/docker-entrypoint-initdb.d:ro
+    networks: [two-node]
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user argus --password \"$$CLICKHOUSE_PASSWORD\" --query 'SELECT 1'"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+
+  clickhouse-b:
+    image: clickhouse/clickhouse-server:26.3
+    environment:
+      CLICKHOUSE_DB: argus
+      CLICKHOUSE_USER: argus
+      CLICKHOUSE_PASSWORD: ${ARGUS_DR_CLICKHOUSE_PASSWORD:?senha ClickHouse de teste obrigatória}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - two-node-clickhouse-b:/var/lib/clickhouse
+      - ./infra/clickhouse:/docker-entrypoint-initdb.d:ro
+    networks: [two-node]
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user argus --password \"$$CLICKHOUSE_PASSWORD\" --query 'SELECT 1'"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+
+  clickhouse-mirror:
+    image: clickhouse/clickhouse-server:26.3
+    entrypoint: ["/bin/bash", "/usr/local/bin/clickhouse-async-mirror.sh"]
+    environment:
+      ARGUS_DR_SITE_A_HOST: clickhouse-a
+      ARGUS_DR_PRIMARY_CLICKHOUSE_NATIVE_PORT: 9000
+      ARGUS_DR_PRIMARY_CLICKHOUSE_USER: argus
+      ARGUS_DR_PRIMARY_CLICKHOUSE_PASSWORD: ${ARGUS_DR_CLICKHOUSE_PASSWORD:?senha ClickHouse de teste obrigatória}
+      ARGUS_DR_STANDBY_CLICKHOUSE_HOST: clickhouse-b
+      ARGUS_CLICKHOUSE_USER: argus
+      ARGUS_CLICKHOUSE_PASSWORD: ${ARGUS_DR_CLICKHOUSE_PASSWORD:?senha ClickHouse de teste obrigatória}
+      ARGUS_DR_MIRROR_INTERVAL_SECONDS: 1
+      ARGUS_DR_MIRROR_CHUNK_SECONDS: 3600
+    volumes:
+      - ./scripts/clickhouse-async-mirror.sh:/usr/local/bin/clickhouse-async-mirror.sh:ro
+    networks: [two-node]
+    depends_on:
+      clickhouse-a:
+        condition: service_healthy
+      clickhouse-b:
+        condition: service_healthy
+
+volumes:
+  two-node-postgres-a:
+  two-node-postgres-b:
+  two-node-clickhouse-a:
+  two-node-clickhouse-b:
+
+networks:
+  two-node:
+    ipam:
+      config:
+        - subnet: 172.33.0.0/24

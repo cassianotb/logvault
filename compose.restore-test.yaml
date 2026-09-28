@@ -1,0 +1,57 @@
+services:
+  restore-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: argus
+      POSTGRES_USER: argus
+      POSTGRES_PASSWORD: ${ARGUS_POSTGRES_PASSWORD:-argus}
+    volumes:
+      - restore-postgres-data:/var/lib/postgresql/data
+      - ${ARGUS_BACKUP_DATA_PATH:-backup-data}:/backups:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argus -d argus"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+
+  restore-clickhouse:
+    image: clickhouse/clickhouse-server:26.3
+    environment:
+      CLICKHOUSE_DB: argus
+      CLICKHOUSE_USER: argus
+      CLICKHOUSE_PASSWORD: ${ARGUS_CLICKHOUSE_PASSWORD:-change-me}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - restore-clickhouse-data:/var/lib/clickhouse
+      - ./infra/clickhouse/backup_disk.xml:/etc/clickhouse-server/config.d/backup_disk.xml:ro
+      - ${ARGUS_BACKUP_DATA_PATH:-backup-data}:/var/lib/clickhouse/backups:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user argus --password \"$$CLICKHOUSE_PASSWORD\" --query \"SELECT 1\""]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+
+  restore-toolbox:
+    image: argus-restore-toolbox
+    build:
+      context: .
+      dockerfile: Dockerfile.backup
+    entrypoint: ["/bin/sh"]
+    env_file: ${ARGUS_ENV_FILE:-.env}
+    volumes:
+      - ${ARGUS_BACKUP_DATA_PATH:-backup-data}:/backups:ro
+      - restore-spool-data:/restore
+    restart: "no"
+
+volumes:
+  restore-postgres-data:
+    name: argus-restore-test-postgres-data
+  restore-clickhouse-data:
+    name: argus-restore-test-clickhouse-data
+  restore-spool-data:
+    name: argus-restore-test-spool-data
+  backup-data:
+    external: true
+    name: argus_backup-data

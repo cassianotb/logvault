@@ -1,0 +1,188 @@
+services:
+  postgres-a:
+    command:
+      - postgres
+      - -c
+      - listen_addresses=*
+      - -c
+      - hba_file=/etc/postgresql/dr-pg_hba.conf
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=5
+      - -c
+      - max_replication_slots=5
+      - -c
+      - wal_keep_size=256MB
+      - -c
+      - hot_standby=on
+      - -c
+      - password_encryption=scram-sha-256
+    volumes:
+      - postgres-a-data:/var/lib/postgresql/data
+      - ./infra/dr/postgres/rehearsal-pg_hba.conf:/etc/postgresql/dr-pg_hba.conf:ro
+
+  postgres-b:
+    depends_on: !reset {}
+    command:
+      - postgres
+      - -c
+      - listen_addresses=*
+      - -c
+      - hba_file=/etc/postgresql/dr-pg_hba.conf
+      - -c
+      - wal_level=replica
+      - -c
+      - max_wal_senders=5
+      - -c
+      - max_replication_slots=5
+      - -c
+      - wal_keep_size=256MB
+      - -c
+      - hot_standby=on
+      - -c
+      - password_encryption=scram-sha-256
+    volumes:
+      - postgres-b-data:/var/lib/postgresql/data
+      - ./infra/dr/postgres/rehearsal-pg_hba.conf:/etc/postgresql/dr-pg_hba.conf:ro
+    networks:
+      dc-b:
+        aliases:
+          - postgres
+      replication: {}
+
+  postgres-a-rejoin:
+    image: postgres:17-alpine
+    profiles: ["replication"]
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_DB: argus
+      POSTGRES_USER: argus
+      POSTGRES_PASSWORD: ${ARGUS_DR_POSTGRES_PASSWORD:?defina ARGUS_DR_POSTGRES_PASSWORD}
+      ARGUS_DR_POSTGRES_REPLICATION_PASSWORD: ${ARGUS_DR_POSTGRES_REPLICATION_PASSWORD:?defina ARGUS_DR_POSTGRES_REPLICATION_PASSWORD}
+      ARGUS_DR_POSTGRES_PRIMARY_HOST: postgres-b
+      ARGUS_DR_POSTGRES_SLOT: argus_dca_rejoin
+    entrypoint: ["/usr/local/bin/dr-standby-entrypoint.sh"]
+    command:
+      - postgres
+      - -c
+      - listen_addresses=*
+      - -c
+      - hot_standby=on
+      - -c
+      - password_encryption=scram-sha-256
+    volumes:
+      - postgres-a-rejoin-data:/var/lib/postgresql/data
+      - ./infra/dr/postgres/standby-entrypoint.sh:/usr/local/bin/dr-standby-entrypoint.sh:ro
+    networks:
+      - dc-a
+      - replication
+    depends_on:
+      postgres-b:
+        condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argus -d argus && test \"$(psql -U argus -d argus -Atqc 'SELECT pg_is_in_recovery()')\" = t"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
+    restart: "no"
+    cpus: 0.50
+    mem_limit: 768m
+
+  clickhouse-a:
+    volumes:
+      - clickhouse-a-data:/var/lib/clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user argus --password \"$$CLICKHOUSE_PASSWORD\" --query \"SELECT 1\""]
+      interval: 4s
+      timeout: 4s
+      retries: 40
+      start_period: 10s
+
+  clickhouse-b:
+    networks:
+      dc-b:
+        aliases:
+          - clickhouse
+      replication: {}
+
+  api-b:
+    image: argus-api
+    hostname: dc-b-simulado
+    profiles: ["application"]
+    command: ["node", "dist/api/main.js"]
+    env_file: .env
+    environment:
+      ARGUS_CLICKHOUSE_URL: http://clickhouse:8123
+      ARGUS_CLICKHOUSE_USER: argus
+      ARGUS_CLICKHOUSE_PASSWORD: ${ARGUS_DR_CLICKHOUSE_PASSWORD:?defina ARGUS_DR_CLICKHOUSE_PASSWORD}
+      ARGUS_BACKUP_ROOT: /var/lib/argus/backups-unavailable-in-rehearsal
+      ARGUS_BACKUP_REMOTE_TARGET: ""
+      ARGUS_DR_LOCAL_SITE: b
+    networks:
+      dc-b:
+        aliases:
+          - api
+    depends_on:
+      postgres-b:
+        condition: service_started
+      clickhouse-b:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: "no"
+    cpus: 0.50
+    mem_limit: 512m
+
+  web-b:
+    image: nginx:1.28-alpine
+    profiles: ["application"]
+    depends_on: !reset {}
+    networks:
+      dc-b:
+        aliases:
+          - logvault.lab.test
+          - ingest.lab.test
+      replication: {}
+    ports:
+      - "127.0.0.1:${ARGUS_DR_WEB_B_PORT:-18081}:80"
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+      - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    restart: "no"
+    cpus: 0.25
+    mem_limit: 128m
+
+volumes:
+  postgres-a-data:
+    external: true
+    name: argus-restore-test-postgres-data
+  clickhouse-a-data:
+    external: true
+    name: argus-restore-test-clickhouse-data
+  postgres-a-rejoin-data:
+
+networks:
+  dc-a:
+    ipam:
+      config:
+        - subnet: 172.31.10.0/24
+  dc-b:
+    ipam:
+      config:
+        - subnet: 172.31.20.0/24
+  replication:
+    ipam:
+      config:
+        - subnet: 172.31.254.0/28

@@ -1,0 +1,36 @@
+x-logging: &edge-logging
+  driver: local
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  collector:
+    build: .
+    image: argus-edge-collector:${ARGUS_COLLECTOR_IMAGE_TAG:-local}
+    command: ["node", "dist/collector/main.js"]
+    env_file: ${ARGUS_EDGE_ENV_FILE:-.env.edge}
+    ports:
+      - "${ARGUS_EDGE_BIND:-0.0.0.0}:${ARGUS_NETFLOW_PORT:-2055}:${ARGUS_NETFLOW_PORT:-2055}/udp"
+      - "${ARGUS_EDGE_BIND:-0.0.0.0}:${ARGUS_SYSLOG_PORT:-5140}:${ARGUS_SYSLOG_PORT:-5140}/udp"
+    volumes:
+      - edge-data:/var/lib/argus
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /var/lib/argus/spool.sqlite && kill -0 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+    logging: *edge-logging
+
+volumes:
+  edge-data:
+    name: argus-edge-data

@@ -1,0 +1,88 @@
+x-benchmark-api-env: &benchmark-api-env
+  ARGUS_ENV: benchmark
+  ARGUS_API_HOST: 0.0.0.0
+  ARGUS_API_PORT: 8080
+  ARGUS_POSTGRES_URL: postgres://argus:benchmark-postgres@postgres:5432/argus
+  ARGUS_CLICKHOUSE_URL: http://clickhouse:8123
+  ARGUS_CLICKHOUSE_USER: argus
+  ARGUS_CLICKHOUSE_PASSWORD: benchmark-clickhouse
+  ARGUS_CLICKHOUSE_DATABASE: argus
+  ARGUS_SYNC_TOKEN: argus-benchmark-sync-token-32-bytes
+  ARGUS_TENANT_ID: 00000000-0000-0000-0000-000000000001
+  ARGUS_COLLECTOR_ID: 00000000-0000-0000-0000-000000000001
+  ARGUS_BACKUP_ROOT: /tmp/argus-benchmark-backups
+  ARGUS_BACKUP_INTERVAL_HOURS: 24
+  ARGUS_BACKUP_RETENTION_DAYS: 1
+  ARGUS_SESSION_TTL_HOURS: 1
+  ARGUS_COOKIE_SECURE: "false"
+  ARGUS_BOOTSTRAP_ADMIN_NAME: Benchmark
+  ARGUS_BOOTSTRAP_ADMIN_EMAIL: benchmark@argus.local
+  ARGUS_BOOTSTRAP_ADMIN_PASSWORD: argus-benchmark-admin-password
+  ARGUS_CAPACITY_OFFLINE_HOURS: 6
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: argus
+      POSTGRES_USER: argus
+      POSTGRES_PASSWORD: benchmark-postgres
+    volumes:
+      - benchmark-postgres:/var/lib/postgresql/data
+      - ./infra/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argus -d argus"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.3
+    environment:
+      CLICKHOUSE_DB: argus
+      CLICKHOUSE_USER: argus
+      CLICKHOUSE_PASSWORD: benchmark-clickhouse
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - benchmark-clickhouse:/var/lib/clickhouse
+      - ./infra/clickhouse:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user argus --password \"$$CLICKHOUSE_PASSWORD\" --query \"SELECT 1\""]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  api:
+    build: .
+    image: argus-benchmark-api
+    command: ["node", "dist/api/main.js"]
+    environment: *benchmark-api-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 3s
+
+  benchmark:
+    image: argus-benchmark-api
+    command: ["node", "scripts/benchmark-ingestion.mjs"]
+    environment:
+      <<: *benchmark-api-env
+      ARGUS_BENCHMARK_API_URL: http://api:8080
+      ARGUS_BENCHMARK_SCENARIOS: ${ARGUS_BENCHMARK_SCENARIOS:-20x250x2,30x500x4,50x1000x6}
+      ARGUS_BENCHMARK_QUERIES: ${ARGUS_BENCHMARK_QUERIES:-50}
+    volumes:
+      - ./scripts/benchmark-ingestion.mjs:/app/scripts/benchmark-ingestion.mjs:ro
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  benchmark-postgres:
+  benchmark-clickhouse:

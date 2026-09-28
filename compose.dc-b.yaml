@@ -1,0 +1,175 @@
+x-logging: &default-logging
+  driver: local
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  postgres-b:
+    image: postgres:17-alpine
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_DB: argus
+      POSTGRES_USER: argus
+      POSTGRES_PASSWORD: ${ARGUS_POSTGRES_PASSWORD:?senha PostgreSQL obrigatória}
+      ARGUS_DR_POSTGRES_REPLICATION_PASSWORD: ${ARGUS_DR_POSTGRES_REPLICATION_PASSWORD:?senha de replicação obrigatória}
+      ARGUS_DR_POSTGRES_PRIMARY_HOST: ${ARGUS_DR_SITE_A_HOST:?host do DC-A obrigatório}
+      ARGUS_DR_POSTGRES_SLOT: ${ARGUS_DR_POSTGRES_SLOT:-argus_dcb}
+    entrypoint: ["/usr/local/bin/dr-standby-entrypoint.sh"]
+    command: ["postgres", "-c", "listen_addresses=*", "-c", "hot_standby=on", "-c", "password_encryption=scram-sha-256"]
+    volumes:
+      - ${ARGUS_DR_POSTGRES_B_DATA_PATH:-postgres-b-data}:/var/lib/postgresql/data
+      - ./infra/dr/postgres/standby-entrypoint.sh:/usr/local/bin/dr-standby-entrypoint.sh:ro
+    ports:
+      - "${ARGUS_DR_SERVICE_BIND:-0.0.0.0}:${ARGUS_DR_POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argus -d argus"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 10s
+    restart: unless-stopped
+    logging: *default-logging
+
+  clickhouse-b:
+    image: clickhouse/clickhouse-server:26.3
+    environment:
+      CLICKHOUSE_DB: argus
+      CLICKHOUSE_USER: argus
+      CLICKHOUSE_PASSWORD: ${ARGUS_CLICKHOUSE_PASSWORD:?senha ClickHouse obrigatória}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - ${ARGUS_DR_CLICKHOUSE_B_DATA_PATH:-clickhouse-b-data}:/var/lib/clickhouse
+      - ./infra/clickhouse:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "${ARGUS_DR_SERVICE_BIND:-0.0.0.0}:${ARGUS_DR_CLICKHOUSE_HTTP_PORT:-8123}:8123"
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user argus --password \"$$CLICKHOUSE_PASSWORD\" --query 'SELECT 1'"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 10s
+    restart: unless-stopped
+    logging: *default-logging
+
+  clickhouse-mirror:
+    image: clickhouse/clickhouse-server:26.3
+    entrypoint: ["/bin/bash", "/usr/local/bin/clickhouse-async-mirror.sh"]
+    env_file: ${ARGUS_DR_ENV_FILE:-.env.dc-b}
+    volumes:
+      - ./scripts/clickhouse-async-mirror.sh:/usr/local/bin/clickhouse-async-mirror.sh:ro
+    depends_on:
+      clickhouse-b:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+
+  standby-agent:
+    image: node:22-alpine
+    command: ["node", "/opt/logvault/dr-standby-agent.mjs"]
+    environment:
+      ARGUS_DR_AGENT_PORT: ${ARGUS_DR_AGENT_PORT:-8082}
+    volumes:
+      - ./scripts/dr-standby-agent.mjs:/opt/logvault/dr-standby-agent.mjs:ro
+    ports:
+      - "${ARGUS_DR_SERVICE_BIND:-0.0.0.0}:${ARGUS_DR_AGENT_PORT:-8082}:${ARGUS_DR_AGENT_PORT:-8082}"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:$${ARGUS_DR_AGENT_PORT:-8082}/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+    logging: *default-logging
+
+  api-b:
+    profiles: ["failover"]
+    build: .
+    hostname: ${ARGUS_DR_LOCAL_HOSTNAME:-logvault-dc-b}
+    command: ["node", "dist/api/main.js"]
+    env_file: ${ARGUS_DR_ENV_FILE:-.env.dc-b}
+    environment:
+      ARGUS_POSTGRES_URL: postgres://argus:${ARGUS_POSTGRES_PASSWORD}@postgres-b:5432/argus
+      ARGUS_CLICKHOUSE_URL: http://clickhouse-b:8123
+      ARGUS_DR_LOCAL_SITE: b
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ${ARGUS_DR_BACKUP_B_DATA_PATH:-backup-b-data}:/var/lib/argus/backups:ro
+    depends_on:
+      postgres-b:
+        condition: service_healthy
+      clickhouse-b:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    restart: unless-stopped
+    logging: *default-logging
+
+  web-b:
+    profiles: ["failover"]
+    image: nginx:1.28-alpine
+    depends_on:
+      api-b:
+        condition: service_healthy
+    ports:
+      - "${ARGUS_WEB_BIND:-127.0.0.1}:8081:80"
+    volumes:
+      - ./web:/usr/share/nginx/html:ro
+      - ./infra/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    restart: unless-stopped
+    logging: *default-logging
+
+  collector-b:
+    profiles: ["failover"]
+    build: .
+    command: ["node", "dist/collector/main.js"]
+    env_file: ${ARGUS_DR_ENV_FILE:-.env.dc-b}
+    environment:
+      ARGUS_NETFLOW_HOST: ${ARGUS_COLLECTOR_BIND:-0.0.0.0}
+      ARGUS_SYSLOG_HOST: ${ARGUS_COLLECTOR_BIND:-0.0.0.0}
+      ARGUS_SYNC_URL: http://127.0.0.1:8080/v1/ingest/batches
+      ARGUS_HEARTBEAT_URL: http://127.0.0.1:8080/v1/ingest/heartbeat
+      ARGUS_MANAGED_CLOUD_REGISTRY_URL: http://127.0.0.1:8080/v1/ingest/managed-cloud/registry
+    network_mode: host
+    volumes:
+      - ${ARGUS_DR_COLLECTOR_B_DATA_PATH:-collector-b-data}:/var/lib/argus
+    depends_on:
+      api-b:
+        condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
+
+  backup-b:
+    profiles: ["failover"]
+    build:
+      context: .
+      dockerfile: Dockerfile.backup
+    env_file: ${ARGUS_DR_ENV_FILE:-.env.dc-b}
+    environment:
+      ARGUS_POSTGRES_URL: postgres://argus:${ARGUS_POSTGRES_PASSWORD}@postgres-b:5432/argus
+      ARGUS_CLICKHOUSE_URL: http://clickhouse-b:8123
+      ARGUS_BACKUP_ROOT: /backups
+      ARGUS_BACKUP_INTERVAL_HOURS: ${ARGUS_BACKUP_INTERVAL_HOURS:-24}
+      ARGUS_BACKUP_RETENTION_DAYS: ${ARGUS_BACKUP_RETENTION_DAYS:-15}
+      ARGUS_BACKUP_FULL_INTERVAL_DAYS: ${ARGUS_BACKUP_FULL_INTERVAL_DAYS:-7}
+      ARGUS_BACKUP_REMOTE_TARGET: ""
+    depends_on:
+      postgres-b:
+        condition: service_healthy
+      clickhouse-b:
+        condition: service_healthy
+    volumes:
+      - ${ARGUS_DR_BACKUP_B_DATA_PATH:-backup-b-data}:/backups
+      - ${ARGUS_DR_COLLECTOR_B_DATA_PATH:-collector-b-data}:/var/lib/argus
+    restart: unless-stopped
+    logging: *default-logging
+
+volumes:
+  postgres-b-data:
+  clickhouse-b-data:
+  collector-b-data:
+  backup-b-data:

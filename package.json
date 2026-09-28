@@ -1,0 +1,40 @@
+{
+  "name": "argus-cgnat",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev:api": "tsx watch src/api/main.ts",
+    "dev:collector": "tsx watch src/collector/main.ts",
+    "start:api": "node dist/api/main.js",
+    "start:collector": "node dist/collector/main.js",
+    "reprocess:a10": "node dist/collector/reprocess-a10.js",
+    "reprocess:a10-shared": "node dist/api/reprocess-a10-shared.js",
+    "reprocess:cisco": "node dist/collector/reprocess-cisco.js",
+    "replay:a10": "node scripts/replay-a10-sample.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@clickhouse/client": "^1.12.1",
+    "better-sqlite3": "^11.10.0",
+    "fastify": "^5.2.1",
+    "nodemailer": "^9.0.5",
+    "pdf-lib": "^1.17.1",
+    "pg": "^8.13.3",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.13.10",
+    "@types/nodemailer": "^7.0.12",
+    "@types/pg": "^8.11.11",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.2",
+    "vitest": "^3.0.8"
+  }
+}

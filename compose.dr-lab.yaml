@@ -1,0 +1,266 @@
+x-dr-logging: &dr-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-postgres-command: &postgres-command
+  - postgres
+  - -c
+  - listen_addresses=*
+  - -c
+  - wal_level=replica
+  - -c
+  - max_wal_senders=5
+  - -c
+  - max_replication_slots=5
+  - -c
+  - wal_keep_size=256MB
+  - -c
+  - hot_standby=on
+  - -c
+  - password_encryption=scram-sha-256
+
+x-keeper-common: &keeper-common
+  image: clickhouse/clickhouse-server:26.3
+  profiles: ["replication"]
+  networks:
+    - replication
+  restart: "no"
+  cpus: 0.20
+  mem_limit: 256m
+  logging: *dr-logging
+
+services:
+  postgres-a:
+    image: postgres:17-alpine
+    profiles: ["replication"]
+    environment:
+      POSTGRES_DB: argus
+      POSTGRES_USER: argus
+      POSTGRES_PASSWORD: ${ARGUS_DR_POSTGRES_PASSWORD:?defina ARGUS_DR_POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: --data-checksums --auth-host=scram-sha-256
+      ARGUS_DR_POSTGRES_REPLICATION_PASSWORD: ${ARGUS_DR_POSTGRES_REPLICATION_PASSWORD:?defina ARGUS_DR_POSTGRES_REPLICATION_PASSWORD}
+    entrypoint: ["/usr/local/bin/dr-primary-entrypoint.sh"]
+    command: *postgres-command
+    volumes:
+      - postgres-a-data:/var/lib/postgresql/data
+      - ./infra/postgres:/dr-app-init:ro
+      - ./infra/dr/postgres/050_replication_role.sh:/dr-replication-init/050_replication_role.sh:ro
+      - ./infra/dr/postgres/primary-entrypoint.sh:/usr/local/bin/dr-primary-entrypoint.sh:ro
+    networks:
+      dc-a: {}
+      replication:
+        aliases:
+          - logvault-a.lab.test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argus -d argus && test \"$(psql -U argus -d argus -Atqc 'SELECT pg_is_in_recovery()')\" = f"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: "no"
+    cpus: 0.50
+    mem_limit: 768m
+    logging: *dr-logging
+
+  postgres-b:
+    image: postgres:17-alpine
+    profiles: ["replication"]
+    environment:
+      PGDATA: /var/lib/postgresql/data
+      POSTGRES_DB: argus
+      POSTGRES_USER: argus
+      POSTGRES_PASSWORD: ${ARGUS_DR_POSTGRES_PASSWORD:?defina ARGUS_DR_POSTGRES_PASSWORD}
+      ARGUS_DR_POSTGRES_REPLICATION_PASSWORD: ${ARGUS_DR_POSTGRES_REPLICATION_PASSWORD:?defina ARGUS_DR_POSTGRES_REPLICATION_PASSWORD}
+      ARGUS_DR_POSTGRES_PRIMARY_HOST: postgres-a
+      ARGUS_DR_POSTGRES_SLOT: argus_dcb
+    entrypoint: ["/usr/local/bin/dr-standby-entrypoint.sh"]
+    command: *postgres-command
+    volumes:
+      - postgres-b-data:/var/lib/postgresql/data
+      - ./infra/dr/postgres/standby-entrypoint.sh:/usr/local/bin/dr-standby-entrypoint.sh:ro
+    networks:
+      - dc-b
+      - replication
+    depends_on:
+      postgres-a:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U argus -d argus && test \"$(psql -U argus -d argus -Atqc 'SELECT pg_is_in_recovery()')\" = t"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+      start_period: 5s
+    restart: "no"
+    cpus: 0.50
+    mem_limit: 768m
+    logging: *dr-logging
+
+  keeper-1:
+    <<: *keeper-common
+    command: ["clickhouse", "keeper", "--config-file=/etc/clickhouse-keeper/keeper.xml"]
+    volumes:
+      - keeper-1-data:/var/lib/clickhouse
+      - ./infra/dr/clickhouse/keeper-1.xml:/etc/clickhouse-keeper/keeper.xml:ro
+    networks:
+      replication:
+        aliases:
+          - keeper-a.lab.test
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse keeper-client -h 127.0.0.1 -p 9181 -q ruok | grep -q imok"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  keeper-2:
+    <<: *keeper-common
+    command: ["clickhouse", "keeper", "--config-file=/etc/clickhouse-keeper/keeper.xml"]
+    volumes:
+      - keeper-2-data:/var/lib/clickhouse
+      - ./infra/dr/clickhouse/keeper-2.xml:/etc/clickhouse-keeper/keeper.xml:ro
+    networks:
+      replication:
+        aliases:
+          - keeper-b.lab.test
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse keeper-client -h 127.0.0.1 -p 9181 -q ruok | grep -q imok"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  keeper-witness:
+    <<: *keeper-common
+    command: ["clickhouse", "keeper", "--config-file=/etc/clickhouse-keeper/keeper.xml"]
+    volumes:
+      - keeper-witness-data:/var/lib/clickhouse
+      - ./infra/dr/clickhouse/keeper-witness.xml:/etc/clickhouse-keeper/keeper.xml:ro
+    networks:
+      replication:
+        aliases:
+          - witness.lab.test
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse keeper-client -h 127.0.0.1 -p 9181 -q ruok | grep -q imok"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  clickhouse-a:
+    image: clickhouse/clickhouse-server:26.3
+    profiles: ["replication"]
+    environment:
+      CLICKHOUSE_DB: argus
+      CLICKHOUSE_USER: argus
+      CLICKHOUSE_PASSWORD: ${ARGUS_DR_CLICKHOUSE_PASSWORD:?defina ARGUS_DR_CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse-a-data:/var/lib/clickhouse
+      - ./infra/dr/clickhouse/common.xml:/etc/clickhouse-server/config.d/20-dr-common.xml:ro
+      - ./infra/dr/clickhouse/replica-a.xml:/etc/clickhouse-server/config.d/30-dr-replica.xml:ro
+      - ./infra/dr/clickhouse/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - dc-a
+      - replication
+    depends_on:
+      keeper-1:
+        condition: service_healthy
+      keeper-2:
+        condition: service_healthy
+      keeper-witness:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user argus --password \"$$CLICKHOUSE_PASSWORD\" --query \"SELECT throwIf(count() != 4) FROM system.replicas WHERE database = 'argus'\""]
+      interval: 4s
+      timeout: 4s
+      retries: 40
+      start_period: 10s
+    restart: "no"
+    cpus: 0.75
+    mem_limit: 1536m
+    logging: *dr-logging
+
+  clickhouse-b:
+    image: clickhouse/clickhouse-server:26.3
+    profiles: ["replication"]
+    environment:
+      CLICKHOUSE_DB: argus
+      CLICKHOUSE_USER: argus
+      CLICKHOUSE_PASSWORD: ${ARGUS_DR_CLICKHOUSE_PASSWORD:?defina ARGUS_DR_CLICKHOUSE_PASSWORD}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse-b-data:/var/lib/clickhouse
+      - ./infra/dr/clickhouse/common.xml:/etc/clickhouse-server/config.d/20-dr-common.xml:ro
+      - ./infra/dr/clickhouse/replica-b.xml:/etc/clickhouse-server/config.d/30-dr-replica.xml:ro
+      - ./infra/dr/clickhouse/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - dc-b
+      - replication
+    depends_on:
+      keeper-1:
+        condition: service_healthy
+      keeper-2:
+        condition: service_healthy
+      keeper-witness:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user argus --password \"$$CLICKHOUSE_PASSWORD\" --query \"SELECT throwIf(count() != 4) FROM system.replicas WHERE database = 'argus'\""]
+      interval: 4s
+      timeout: 4s
+      retries: 40
+      start_period: 10s
+    restart: "no"
+    cpus: 0.75
+    mem_limit: 1536m
+    logging: *dr-logging
+
+  dc-b-gateway:
+    image: argus-api
+    profiles: ["monitoring"]
+    command: ["node", "/opt/argus-dr/dr-gateway.mjs"]
+    volumes:
+      - ./scripts/dr-gateway.mjs:/opt/argus-dr/dr-gateway.mjs:ro
+    networks:
+      replication:
+        aliases:
+          - dc-b-gateway
+          - logvault-b.lab.test
+          - dr.lab.test
+    depends_on:
+      postgres-b:
+        condition: service_healthy
+      clickhouse-b:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 4s
+      timeout: 3s
+      retries: 20
+    restart: "no"
+    cpus: 0.10
+    mem_limit: 128m
+    logging: *dr-logging
+
+volumes:
+  postgres-a-data:
+  postgres-b-data:
+  clickhouse-a-data:
+  clickhouse-b-data:
+  keeper-1-data:
+  keeper-2-data:
+  keeper-witness-data:
+
+networks:
+  dc-a:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.10.0/24
+  dc-b:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.20.0/24
+  replication:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.254.0/28

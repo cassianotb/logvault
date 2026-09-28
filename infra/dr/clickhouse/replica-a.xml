@@ -1,0 +1,7 @@
+<clickhouse>
+    <macros>
+        <shard>01</shard>
+        <replica>dca</replica>
+    </macros>
+    <interserver_http_host>clickhouse-a</interserver_http_host>
+</clickhouse>

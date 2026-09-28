@@ -1,0 +1,11 @@
+*
+!package.json
+!package-lock.json
+!tsconfig.json
+!src/
+!src/**
+!Dockerfile.backup
+!scripts/
+!scripts/backup-once.sh
+!scripts/backup-loop.sh
+!scripts/backup-mirror.sh
