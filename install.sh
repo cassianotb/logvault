@@ -21,10 +21,10 @@ if [[ -z "$logvault_build" ]] && command -v git >/dev/null 2>&1 && git -C "$scri
   logvault_build="$(git -C "$script_dir" describe --tags --always --dirty 2>/dev/null || true)"
 fi
 
-version_label() {
-  printf 'Versão %s' "$logvault_version"
+print_version() {
+  printf '  %bVersão %s%b\n' "$muted" "$logvault_version" "$reset"
   if [[ -n "$logvault_build" && "$logvault_build" != "$logvault_version" && "$logvault_build" != "v$logvault_version" ]]; then
-    printf '  •  build %s' "$logvault_build"
+    printf '  %bbuild %s%b\n' "$muted" "$logvault_build" "$reset"
   fi
 }
 
@@ -123,37 +123,29 @@ terminal_columns() {
   printf '%s' "$columns"
 }
 
-print_centered() {
-  local style="$1" content="$2" columns padding=0
-  columns="$(terminal_columns)"
-  if (( columns > ${#content} )); then padding=$(( (columns - ${#content}) / 2 )); fi
-  printf '%*s%b%s%b\n' "$padding" '' "$style" "$content" "$reset"
-}
-
 print_large_logo() {
-  print_centered "$cyan$bold" ' _      ___   ____ __     ___   _   _ _   _____'
-  print_centered "$cyan$bold" '| |    / _ \ / ___|\ \   / / \ | | | | | |_   _|'
-  print_centered "$blue$bold" '| |   | | | | |  _  \ \ / / _ \| | | | |   | |'
-  print_centered "$blue$bold" '| |___| |_| | |_| |  \ V / ___ \ |_| | |___| |'
-  print_centered "$blue_soft$bold" '|_____|\___/ \____|   \_/_/   \_\___/|_____|_|'
+  printf '  %b%s%b\n' "$cyan$bold" '██╗      ██████╗  ██████╗ ██╗   ██╗ █████╗ ██╗   ██╗██╗  ████████╗' "$reset"
+  printf '  %b%s%b\n' "$cyan$bold" '██║     ██╔═══██╗██╔════╝ ██║   ██║██╔══██╗██║   ██║██║  ╚══██╔══╝' "$reset"
+  printf '  %b%s%b\n' "$blue$bold" '██║     ██║   ██║██║  ███╗██║   ██║███████║██║   ██║██║     ██║' "$reset"
+  printf '  %b%s%b\n' "$blue$bold" '███████╗╚██████╔╝╚██████╔╝╚██████╔╝██║  ██║╚██████╔╝███████╗██║' "$reset"
+  printf '  %b%s%b\n' "$blue_soft$bold" '╚══════╝ ╚═════╝  ╚═════╝  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚═╝' "$reset"
+  printf '  %b%s%b\n' "$blue_soft" '---------------- L O G   I N T E L L I G E N C E ----------------' "$reset"
 }
 
 print_compact_logo() {
-  local columns padding=0
-  columns="$(terminal_columns)"
-  if (( columns > 8 )); then padding=$(( (columns - 8) / 2 )); fi
-  printf '%*s%bLOG%b%bVAULT%b\n' "$padding" '' "$cyan$bold" "$reset" "$blue$bold" "$reset"
+  printf '  %bLOG%b%bVAULT%b\n' "$cyan$bold" "$reset" "$blue$bold" "$reset"
+  printf '  %b--- LOG INTELLIGENCE ---%b\n' "$blue_soft" "$reset"
 }
 
 render_header() {
   local columns
   columns="$(terminal_columns)"
-  if (( columns >= 66 )); then print_large_logo; else print_compact_logo; fi
-  print_centered "$muted" '----- L O G   I N T E L L I G E N C E -----'
-  print_centered "$muted" "$(version_label)"
-  print_centered "$blue_soft" '──────────────────────────────────────────────────────────────'
-  print_centered "$text$bold" 'Assistente de instalação'
+  if (( columns >= 70 )); then print_large_logo; else print_compact_logo; fi
   printf '\n'
+  print_version
+  printf '\n'
+  printf '  %b%s%b\n' "$blue_soft" '──────────────────────────────────────────────────────────────────' "$reset"
+  printf '  %bAssistente de instalação%b\n\n' "$text$bold" "$reset"
 }
 
 render_option() {

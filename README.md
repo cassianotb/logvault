@@ -252,7 +252,7 @@ virada de tráfego só deve ocorrer manualmente, depois de confirmar que o DC-A
 foi isolado. O procedimento completo está em
 [docs/datacenter-b-installation.md](docs/datacenter-b-installation.md).
 
-### 8. Atualizar o LogVault
+### 9. Atualizar o LogVault
 
 Na VM que contém o sistema, execute:
 
@@ -263,9 +263,10 @@ sudo ./install.sh
 
 Escolha **4 — Atualizar LogVault**. O atualizador verifica a branch instalada,
 cria um backup adicional no DC-A, preserva `.env`, dados e backups, aplica
-apenas atualizações fast-forward e recria os serviços.
+as migrações versionadas dos bancos, aceita apenas atualizações fast-forward e
+recria os serviços sem remover os volumes persistentes.
 
-### 9. Comandos úteis e solução de problemas
+### 10. Comandos úteis e solução de problemas
 
 ```bash
 # Estado dos containers

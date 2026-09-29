@@ -45,6 +45,44 @@ package_version_at() {
   printf '%s' "${contents:-desconhecida}"
 }
 
+changed_migrations() {
+  local pathspec="$1"
+  git -C "$repo_root" diff --name-only --diff-filter=AM \
+    "$current_commit" "$target_commit" -- "$pathspec" | LC_ALL=C sort
+}
+
+apply_postgres_migrations() {
+  local service="$1" migration
+  shift
+  local -a compose_command=("$@") migrations=()
+  mapfile -t migrations < <(changed_migrations 'infra/postgres/*.sql')
+  ((${#migrations[@]})) || return 0
+
+  "${compose_command[@]}" up -d --wait "$service"
+  for migration in "${migrations[@]}"; do
+    printf 'Aplicando migração PostgreSQL %s...\n' "${migration##*/}"
+    git -C "$repo_root" show "$target_commit:$migration" \
+      | "${compose_command[@]}" exec -T "$service" \
+          psql --username argus --dbname argus --set ON_ERROR_STOP=on
+  done
+}
+
+apply_clickhouse_migrations() {
+  local service="$1" migration
+  shift
+  local -a compose_command=("$@") migrations=()
+  mapfile -t migrations < <(changed_migrations 'infra/clickhouse/*.sql')
+  ((${#migrations[@]})) || return 0
+
+  "${compose_command[@]}" up -d --wait "$service"
+  for migration in "${migrations[@]}"; do
+    printf 'Aplicando migração ClickHouse %s...\n' "${migration##*/}"
+    git -C "$repo_root" show "$target_commit:$migration" \
+      | "${compose_command[@]}" exec -T "$service" sh -c \
+          'exec clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --multiquery'
+  done
+}
+
 while (($#)); do
   case "$1" in
     --check) check_only="true"; shift ;;
@@ -116,6 +154,8 @@ command -v docker >/dev/null 2>&1 || die "Docker não encontrado"
 docker compose version >/dev/null 2>&1 || die "Docker com o plugin Compose é obrigatório"
 
 cd "$repo_root"
+primary_compose=(docker compose --env-file "$env_file")
+standby_compose=(docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" --profile failover)
 dc_b_was_active="false"
 if [[ "$role" == "dc-b" ]] && ARGUS_DR_ENV_FILE="$env_file" docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" --profile failover ps --status running --services | grep -qx api-b; then
   dc_b_was_active="true"
@@ -170,6 +210,17 @@ fi
 timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
 cp -p "$env_file" "${env_file}.pre-update-$timestamp"
 chmod 0600 "${env_file}.pre-update-$timestamp"
+
+printf 'Validando migrações versionadas...\n'
+if [[ "$role" == "dc-a" ]]; then
+  apply_postgres_migrations postgres "${primary_compose[@]}"
+  apply_clickhouse_migrations clickhouse "${primary_compose[@]}"
+else
+  if [[ "$dc_b_was_active" == "true" ]]; then
+    apply_postgres_migrations postgres-b "${standby_compose[@]}"
+  fi
+  apply_clickhouse_migrations clickhouse-b "${standby_compose[@]}"
+fi
 
 printf 'Aplicando atualização...\n'
 git merge --ff-only "$target"

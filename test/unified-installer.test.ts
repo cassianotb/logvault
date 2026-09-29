@@ -28,10 +28,12 @@ describe('instalador unificado do LogVault', () => {
   });
 
   it('renderiza a prévia sem executar alterações', () => {
-    const result = run(['--preview'], { NO_COLOR: '1' });
+    const result = run(['--preview'], {
+      NO_COLOR: '1', LOGVAULT_VERSION: '2.4.1', LOGVAULT_BUILD: 'release-20401'
+    });
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('Assistente de instalação');
-    expect(result.stdout).toMatch(/Versão \d+\.\d+\.\d+/);
+    expect(result.stdout).toContain('---------------- L O G   I N T E L L I G E N C E ----------------\n\n  Versão 2.4.1\n  build release-20401');
     expect(result.stdout).toContain('Sistema LogVault');
     expect(result.stdout).toContain('proxy e HTTPS automático');
     expect(result.stdout).toContain('Coletor local');
@@ -45,6 +47,7 @@ describe('instalador unificado do LogVault', () => {
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('\u001b[38;2;54;215;255m');
     expect(result.stdout).toContain('\u001b[38;2;22;131;255m');
+    expect(result.stdout).toContain('\u001b[38;2;107;140;255m');
   });
 
   it('permite forçar a prévia colorida mesmo quando NO_COLOR está definido', () => {

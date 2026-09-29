@@ -8,6 +8,7 @@ const installer = resolve('scripts/install-argus.sh');
 const composeFile = resolve('compose.yaml');
 const caddyHttpsFile = resolve('infra/caddy/Caddyfile.https');
 const prepareDcAFile = resolve('scripts/prepare-dc-a.sh');
+const updaterFile = resolve('scripts/update-argus.sh');
 const strongPassword = 'SenhaForte-2026!';
 
 function valuesOf(contents: string): Map<string, string> {
@@ -92,6 +93,8 @@ describe('instalador do Sistema LogVault', () => {
     expect(env.get('ARGUS_DR_CONTROL_HOST')).toBe('logs.example.com');
     expect(env.get('ARGUS_DR_DNS_PROVIDER')).toBe('manual');
     expect(env.get('ARGUS_DR_DNS_TTL_SECONDS')).toBe('300');
+    expect(env.get('ARGUS_DR_REPOSITORY_URL')).toBe('https://github.com/cassianotb/logvault.git');
+    expect(env.get('ARGUS_DR_REPOSITORY_REF')).toBe('main');
     expect(env.get('ARGUS_DR_POSTGRES_REPLICATION_PASSWORD')).toMatch(/^[a-f0-9]{64}$/);
     expect(env.get('ARGUS_DR_REPLICATION_BIND')).toBe('10.20.0.10');
     expect(env.get('ARGUS_DR_REPLICATION_CIDR')).toBe('10.20.0.0/24');
@@ -191,5 +194,21 @@ describe('instalador do Sistema LogVault', () => {
       expect(reconfigured.get(key), key).toBe(original.get(key));
     }
     expect(await readFile(`${envFile}.bak`, 'utf8')).toContain('ARGUS_BOOTSTRAP_ADMIN_EMAIL=admin@example.com');
+  });
+
+  it('atualiza por fast-forward com backup, migrações e volumes preservados', async () => {
+    const updater = await readFile(updaterFile, 'utf8');
+    const migrations = updater.indexOf("printf 'Validando migrações versionadas");
+    const merge = updater.indexOf('git merge --ff-only');
+
+    expect(updater).toContain('backup-once.sh');
+    expect(updater).toContain('${env_file}.pre-update-$timestamp');
+    expect(updater).toContain("changed_migrations 'infra/postgres/*.sql'");
+    expect(updater).toContain("changed_migrations 'infra/clickhouse/*.sql'");
+    expect(updater).toContain('psql --username argus --dbname argus --set ON_ERROR_STOP=on');
+    expect(updater).toContain('clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --multiquery');
+    expect(migrations).toBeGreaterThan(-1);
+    expect(merge).toBeGreaterThan(migrations);
+    expect(updater).not.toContain('down --volumes');
   });
 });
