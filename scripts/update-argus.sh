@@ -108,7 +108,11 @@ if [[ -f "$repo_root/.env" ]]; then role="dc-a"; env_file="$repo_root/.env"
 elif [[ -f "$repo_root/.env.dc-b" ]]; then role="dc-b"; env_file="$repo_root/.env.dc-b"
 else die "ambiente do Sistema LogVault não encontrado (.env ou .env.dc-b)"
 fi
-[[ -z "$(git -C "$repo_root" status --porcelain --untracked-files=no)" ]] || die "existem alterações locais em arquivos versionados; revise-as antes de atualizar"
+local_changes="$(git -C "$repo_root" -c core.fileMode=false status --porcelain --untracked-files=no)"
+if [[ -n "$local_changes" ]]; then
+  printf 'Arquivos versionados alterados localmente:\n%s\n' "$local_changes" >&2
+  die "existem alterações locais de conteúdo; revise-as antes de atualizar"
+fi
 git -C "$repo_root" remote get-url "$remote" >/dev/null 2>&1 || die "remoto Git '$remote' não encontrado"
 
 if [[ -z "$branch" ]]; then
@@ -245,7 +249,7 @@ else
 fi
 
 printf 'Aplicando atualização...\n'
-git merge --ff-only "$target"
+git -c core.fileMode=false merge --ff-only "$target"
 if [[ "$role" == "dc-a" ]]; then
   install -d -o 1000 -g 1000 -m 0770 "$control_root"
   if [[ "$data_root" != "docker" ]]; then

@@ -18,7 +18,7 @@ read_package_version() {
 logvault_version="${LOGVAULT_VERSION:-$(read_package_version)}"
 logvault_build="${LOGVAULT_BUILD:-}"
 if [[ -z "$logvault_build" ]] && command -v git >/dev/null 2>&1 && git -C "$script_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-  logvault_build="$(git -C "$script_dir" describe --tags --always --dirty 2>/dev/null || true)"
+  logvault_build="$(git -C "$script_dir" -c core.fileMode=false describe --tags --always --dirty 2>/dev/null || true)"
 fi
 
 print_version() {

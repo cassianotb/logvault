@@ -218,9 +218,11 @@ describe('instalador do Sistema LogVault', () => {
   it('atualiza por fast-forward com backup, migrações e volumes preservados', async () => {
     const updater = await readFile(updaterFile, 'utf8');
     const migrations = updater.indexOf("printf 'Validando migrações versionadas");
-    const merge = updater.indexOf('git merge --ff-only');
+    const merge = updater.indexOf('git -c core.fileMode=false merge --ff-only');
 
     expect(updater).toContain('backup-once.sh');
+    expect(updater).toContain('-c core.fileMode=false status --porcelain');
+    expect(updater).toContain('git -c core.fileMode=false merge --ff-only');
     expect(updater).toContain('${env_file}.pre-update-$timestamp');
     expect(updater).toContain("changed_migrations 'infra/postgres/*.sql'");
     expect(updater).toContain("changed_migrations 'infra/clickhouse/*.sql'");
@@ -229,5 +231,8 @@ describe('instalador do Sistema LogVault', () => {
     expect(migrations).toBeGreaterThan(-1);
     expect(merge).toBeGreaterThan(migrations);
     expect(updater).not.toContain('down --volumes');
+    for (const script of ['backup-loop.sh', 'backup-mirror.sh', 'backup-once.sh', 'restore-backup.sh']) {
+      expect((await stat(resolve('scripts', script))).mode & 0o111, script).not.toBe(0);
+    }
   });
 });
