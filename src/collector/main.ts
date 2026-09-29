@@ -175,7 +175,9 @@ const managedCloud = config.ARGUS_MANAGED_CLOUD_ENABLED
       version: config.ARGUS_COLLECTOR_VERSION,
       host: config.ARGUS_NETFLOW_HOST,
       heartbeatIntervalMs: config.ARGUS_HEARTBEAT_INTERVAL_MS,
-      ignoredA10Protocols: config.ARGUS_A10_IGNORED_PROTOCOLS
+      ignoredA10Protocols: config.ARGUS_A10_IGNORED_PROTOCOLS,
+      baseTenantId: config.ARGUS_TENANT_ID,
+      baseCollectorId: config.ARGUS_COLLECTOR_ID
     }, () => hostMetrics.sample())
   : null;
 managedCloud?.start();

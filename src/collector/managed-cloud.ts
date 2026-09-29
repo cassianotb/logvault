@@ -28,6 +28,8 @@ export interface ManagedCloudOptions {
   host: string;
   heartbeatIntervalMs: number;
   ignoredA10Protocols: string[];
+  baseTenantId: string;
+  baseCollectorId: string;
 }
 
 type ManagedSourceType = 'netflow_v9' | 'syslog';
@@ -105,7 +107,7 @@ export class ManagedCloudCollectorManager {
       });
       if (!response.ok) throw new Error(`Registro Cloud recusado: HTTP ${response.status} ${await response.text()}`);
       const registry = managedCloudRegistryResponseSchema.parse(await response.json());
-      this.reconcile(registry.collectors);
+      await this.reconcile(registry.collectors);
     } catch (error) {
       this.mergeFirewallObservations(pendingFirewallObservations);
       console.warn(JSON.stringify({
@@ -119,25 +121,45 @@ export class ManagedCloudCollectorManager {
     }
   }
 
-  private reconcile(configurations: ManagedCloudCollectorConfiguration[]): void {
-    const desiredIds = new Set(configurations.map((configuration) => configuration.collectorId));
+  private async reconcile(configurations: ManagedCloudCollectorConfiguration[]): Promise<void> {
+    const desired = new Map(configurations.map((configuration) => [configuration.collectorId, configuration]));
+    const closing: Promise<void>[] = [];
     for (const [collectorId, listener] of this.listeners) {
-      if (desiredIds.has(collectorId)) continue;
-      this.close(listener);
+      const configuration = desired.get(collectorId);
+      if (configuration
+        && listener.configuration.netflowPort === configuration.netflowPort
+        && listener.configuration.syslogPort === configuration.syslogPort) continue;
       this.listeners.delete(collectorId);
+      closing.push(this.closeAndWait(listener));
     }
+    await Promise.all(closing);
+
+    const cleanup = this.spool.reconcileManagedCloudIdentities(
+      configurations.map((configuration) => ({
+        tenantId: configuration.tenantId,
+        collectorId: configuration.collectorId
+      })),
+      {
+        tenantId: this.options.baseTenantId,
+        collectorId: this.options.baseCollectorId
+      }
+    );
+    if (cleanup.identitiesRemoved > 0) {
+      console.info(JSON.stringify({
+        level: 'info',
+        component: 'managed-cloud-registry',
+        message: 'Filas locais de coletores Cloud removidos foram descartadas',
+        ...cleanup
+      }));
+    }
+
     for (const configuration of configurations) {
       const existing = this.listeners.get(configuration.collectorId);
       const devices = new Map(configuration.devices.map((device) => [device.exporterIp, device]));
-      if (existing?.configuration.netflowPort === configuration.netflowPort
-        && existing.configuration.syslogPort === configuration.syslogPort) {
+      if (existing) {
         existing.configuration = configuration;
         existing.devices = devices;
         continue;
-      }
-      if (existing) {
-        this.close(existing);
-        this.listeners.delete(configuration.collectorId);
       }
       const active: ActiveCollector = {
         netflowSocket: this.socketFactory('udp4'),
@@ -192,6 +214,24 @@ export class ManagedCloudCollectorManager {
   private close(active: ActiveCollector): void {
     this.safeClose(active.netflowSocket);
     this.safeClose(active.syslogSocket);
+  }
+
+  private async closeAndWait(active: ActiveCollector): Promise<void> {
+    await Promise.all([
+      this.closeSocketAndWait(active.netflowSocket),
+      this.closeSocketAndWait(active.syslogSocket)
+    ]);
+  }
+
+  private closeSocketAndWait(socket: dgram.Socket): Promise<void> {
+    return new Promise((resolve) => {
+      try {
+        socket.close(resolve);
+      } catch {
+        // O socket pode ainda não ter concluído o bind ou já ter sido encerrado pelo sistema.
+        resolve();
+      }
+    });
   }
 
   private safeClose(socket: dgram.Socket): void {

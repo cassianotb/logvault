@@ -25,6 +25,18 @@ interface BatchRow {
   created_at: string;
 }
 
+export interface SpoolIdentity {
+  tenantId: string;
+  collectorId: string;
+}
+
+export interface ManagedCloudReconciliation {
+  identitiesRemoved: number;
+  recordsRemoved: number;
+  batchesRemoved: number;
+  templatesRemoved: number;
+}
+
 export interface SpoolStatistics {
   pendingRecords: number;
   pendingEvents: number;
@@ -76,14 +88,14 @@ export class CollectorSpool implements NetflowTemplateStore {
   }
 
   nextBatch(limit: number): IngestBatch | undefined {
-    const existing = this.db.prepare(`
+    const fresh = this.db.prepare(`
       SELECT batch_id, checksum, created_at
       FROM sync_batches
-      WHERE status = 'pending'
+      WHERE status = 'pending' AND last_attempt_at IS NULL
       ORDER BY created_at
       LIMIT 1
     `).get() as BatchRow | undefined;
-    if (existing) return this.buildBatch(existing);
+    if (fresh) return this.buildBatch(fresh);
 
     const transaction = this.db.transaction(() => {
       const identity = this.db.prepare(`
@@ -92,38 +104,113 @@ export class CollectorSpool implements NetflowTemplateStore {
           COALESCE(collector_id, json_extract(raw_json, '$.collectorId')) AS collector_id
         FROM raw_spool
         WHERE state = 'pending'
+          AND NOT EXISTS (
+            SELECT 1
+            FROM sync_batches
+            WHERE sync_batches.status = 'pending'
+              AND sync_batches.tenant_id = COALESCE(raw_spool.tenant_id, json_extract(raw_spool.raw_json, '$.tenantId'))
+              AND sync_batches.collector_id = COALESCE(raw_spool.collector_id, json_extract(raw_spool.raw_json, '$.collectorId'))
+          )
         ORDER BY sequence
         LIMIT 1
       `).get() as { tenant_id: string; collector_id: string } | undefined;
-      if (!identity) return undefined;
-      const rows = this.db.prepare(`
-        SELECT sequence, raw_id, raw_json, events_json
-        FROM raw_spool
-        WHERE state = 'pending'
-          AND COALESCE(tenant_id, json_extract(raw_json, '$.tenantId')) = ?
-          AND COALESCE(collector_id, json_extract(raw_json, '$.collectorId')) = ?
-        ORDER BY sequence
-        LIMIT ?
-      `).all(identity.tenant_id, identity.collector_id, limit) as SpoolRow[];
-      if (!rows.length) return undefined;
+      if (identity) {
+        const rows = this.db.prepare(`
+          SELECT sequence, raw_id, raw_json, events_json
+          FROM raw_spool
+          WHERE state = 'pending'
+            AND COALESCE(tenant_id, json_extract(raw_json, '$.tenantId')) = ?
+            AND COALESCE(collector_id, json_extract(raw_json, '$.collectorId')) = ?
+          ORDER BY sequence
+          LIMIT ?
+        `).all(identity.tenant_id, identity.collector_id, limit) as SpoolRow[];
+        if (rows.length) {
+          const batchId = newId();
+          const rawRecords = rows.map((row) => JSON.parse(row.raw_json) as RawRecord);
+          const events = rows.flatMap((row) => JSON.parse(row.events_json) as CgnatEvent[]);
+          const checksum = batchChecksum(rawRecords, events);
+          const createdAt = new Date().toISOString();
+          this.db.prepare(`
+            INSERT INTO sync_batches
+              (batch_id, checksum, status, attempts, created_at, tenant_id, collector_id)
+            VALUES (?, ?, 'pending', 0, ?, ?, ?)
+          `).run(batchId, checksum, createdAt, identity.tenant_id, identity.collector_id);
+          const assign = this.db.prepare(`
+            UPDATE raw_spool SET state = 'batched', batch_id = ? WHERE sequence = ?
+          `);
+          for (const row of rows) assign.run(batchId, row.sequence);
+          return this.buildBatch({ batch_id: batchId, checksum, created_at: createdAt });
+        }
+      }
 
-      const batchId = newId();
-      const rawRecords = rows.map((row) => JSON.parse(row.raw_json) as RawRecord);
-      const events = rows.flatMap((row) => JSON.parse(row.events_json) as CgnatEvent[]);
-      const checksum = batchChecksum(rawRecords, events);
-      const createdAt = new Date().toISOString();
-      this.db.prepare(`
-        INSERT INTO sync_batches
-          (batch_id, checksum, status, attempts, created_at, tenant_id, collector_id)
-        VALUES (?, ?, 'pending', 0, ?, ?, ?)
-      `).run(batchId, checksum, createdAt, identity.tenant_id, identity.collector_id);
-      const assign = this.db.prepare(`
-        UPDATE raw_spool SET state = 'batched', batch_id = ? WHERE sequence = ?
-      `);
-      for (const row of rows) assign.run(batchId, row.sequence);
-      return this.buildBatch({ batch_id: batchId, checksum, created_at: createdAt });
+      const retry = this.db.prepare(`
+        SELECT batch_id, checksum, created_at
+        FROM sync_batches
+        WHERE status = 'pending'
+        ORDER BY last_attempt_at, created_at
+        LIMIT 1
+      `).get() as BatchRow | undefined;
+      return retry ? this.buildBatch(retry) : undefined;
     });
     return transaction();
+  }
+
+  reconcileManagedCloudIdentities(
+    activeIdentities: SpoolIdentity[],
+    protectedIdentity: SpoolIdentity
+  ): ManagedCloudReconciliation {
+    const active = new Set(activeIdentities.map((identity) => this.identityKey(identity)));
+    active.add(this.identityKey(protectedIdentity));
+    const stored = this.db.prepare(`
+      SELECT DISTINCT
+        COALESCE(tenant_id, json_extract(raw_json, '$.tenantId')) AS tenant_id,
+        COALESCE(collector_id, json_extract(raw_json, '$.collectorId')) AS collector_id
+      FROM raw_spool
+      WHERE COALESCE(tenant_id, json_extract(raw_json, '$.tenantId')) IS NOT NULL
+        AND COALESCE(collector_id, json_extract(raw_json, '$.collectorId')) IS NOT NULL
+      UNION
+      SELECT DISTINCT tenant_id, collector_id
+      FROM sync_batches
+      WHERE tenant_id IS NOT NULL AND collector_id IS NOT NULL
+    `).all() as Array<{ tenant_id: string; collector_id: string }>;
+    const obsolete = stored.filter((identity) => !active.has(this.identityKey({
+      tenantId: identity.tenant_id,
+      collectorId: identity.collector_id
+    })));
+
+    return this.db.transaction(() => {
+      let recordsRemoved = 0;
+      let batchesRemoved = 0;
+      let templatesRemoved = 0;
+      for (const identity of obsolete) {
+        const batchIds = this.db.prepare(`
+          SELECT DISTINCT batch_id
+          FROM raw_spool
+          WHERE batch_id IS NOT NULL
+            AND COALESCE(tenant_id, json_extract(raw_json, '$.tenantId')) = ?
+            AND COALESCE(collector_id, json_extract(raw_json, '$.collectorId')) = ?
+        `).all(identity.tenant_id, identity.collector_id) as Array<{ batch_id: string }>;
+        recordsRemoved += this.db.prepare(`
+          DELETE FROM raw_spool
+          WHERE COALESCE(tenant_id, json_extract(raw_json, '$.tenantId')) = ?
+            AND COALESCE(collector_id, json_extract(raw_json, '$.collectorId')) = ?
+        `).run(identity.tenant_id, identity.collector_id).changes;
+        batchesRemoved += this.db.prepare(`
+          DELETE FROM sync_batches WHERE tenant_id = ? AND collector_id = ?
+        `).run(identity.tenant_id, identity.collector_id).changes;
+        const deleteLegacyBatch = this.db.prepare('DELETE FROM sync_batches WHERE batch_id = ?');
+        for (const batch of batchIds) batchesRemoved += deleteLegacyBatch.run(batch.batch_id).changes;
+        templatesRemoved += this.db.prepare(`
+          DELETE FROM netflow_templates WHERE exporter_ip LIKE ?
+        `).run(`${identity.collector_id}:%`).changes;
+      }
+      return {
+        identitiesRemoved: obsolete.length,
+        recordsRemoved,
+        batchesRemoved,
+        templatesRemoved
+      };
+    })();
   }
 
   acknowledge(batchId: string, acknowledgedAt = new Date().toISOString()): void {
@@ -374,6 +461,10 @@ export class CollectorSpool implements NetflowTemplateStore {
       rawRecords,
       events
     });
+  }
+
+  private identityKey(identity: SpoolIdentity): string {
+    return `${identity.tenantId}\u0000${identity.collectorId}`;
   }
 
   private initialize(): void {

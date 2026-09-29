@@ -135,4 +135,101 @@ describe('CollectorSpool', () => {
     expect(second.collectorId).not.toBe(first.collectorId);
     spool.close();
   });
+
+  it('não deixa um coletor Cloud removido bloquear o lote do novo cliente', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'argus-cloud-replacement-'));
+    directories.push(directory);
+    const spool = new CollectorSpool(join(directory, 'spool.sqlite'));
+    const payload = Buffer.from('registro cloud substituído');
+    const oldRecord: RawRecord = {
+      rawId: '30000000-0000-4000-8000-000000000501', batchId: null,
+      tenantId: '30000000-0000-4000-8000-000000000601',
+      collectorId: '30000000-0000-4000-8000-000000000701',
+      deviceId: '30000000-0000-4000-8000-000000000801', vendor: 'a10', sourceType: 'syslog',
+      exporterIp: '10.0.0.1', exporterPort: 30001, localSequence: 0,
+      receivedAt: '2026-09-29T12:00:00.000Z', exporterTime: null,
+      observationDomainId: null, exportSequence: null, templateId: null,
+      payloadFormat: 'base64', rawPayload: payload.toString('base64'), rawSha256: sha256(payload),
+      decodedJson: '{}', parseStatus: 'unrecognized', parserVersion: 'test/1', parseError: ''
+    };
+    const newRecord: RawRecord = {
+      ...oldRecord,
+      rawId: '30000000-0000-4000-8000-000000000502',
+      tenantId: '30000000-0000-4000-8000-000000000602',
+      collectorId: '30000000-0000-4000-8000-000000000702',
+      receivedAt: '2026-09-29T12:01:00.000Z'
+    };
+
+    spool.append(oldRecord, []);
+    const rejected = spool.nextBatch(100)!;
+    spool.recordFailure(rejected.batchId, 'HTTP 403 collector_identity_mismatch');
+    spool.append(newRecord, []);
+
+    const next = spool.nextBatch(100)!;
+    expect(next.tenantId).toBe(newRecord.tenantId);
+    expect(next.collectorId).toBe(newRecord.collectorId);
+    expect(next.rawRecords).toHaveLength(1);
+    expect(spool.statistics(oldRecord.tenantId, oldRecord.collectorId).lastSyncError)
+      .toContain('collector_identity_mismatch');
+    spool.close();
+  });
+
+  it('remove somente filas Cloud ausentes do registro e preserva a identidade base', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'argus-cloud-reconcile-'));
+    directories.push(directory);
+    const spool = new CollectorSpool(join(directory, 'spool.sqlite'));
+    const payload = Buffer.from('registro para reconciliação');
+    const baseRecord: RawRecord = {
+      rawId: '30000000-0000-4000-8000-000000000901', batchId: null,
+      tenantId: '30000000-0000-4000-8000-000000000911',
+      collectorId: '30000000-0000-4000-8000-000000000921',
+      deviceId: '30000000-0000-4000-8000-000000000931', vendor: 'cisco', sourceType: 'netflow_v9',
+      exporterIp: '10.0.0.1', exporterPort: 30000, localSequence: 0,
+      receivedAt: '2026-09-29T12:00:00.000Z', exporterTime: null,
+      observationDomainId: 1, exportSequence: 1, templateId: 256,
+      payloadFormat: 'base64', rawPayload: payload.toString('base64'), rawSha256: sha256(payload),
+      decodedJson: '{}', parseStatus: 'parsed', parserVersion: 'test/1', parseError: ''
+    };
+    const removedRecord: RawRecord = {
+      ...baseRecord,
+      rawId: '30000000-0000-4000-8000-000000000902',
+      tenantId: '30000000-0000-4000-8000-000000000912',
+      collectorId: '30000000-0000-4000-8000-000000000922'
+    };
+    const activeRecord: RawRecord = {
+      ...baseRecord,
+      rawId: '30000000-0000-4000-8000-000000000903',
+      tenantId: '30000000-0000-4000-8000-000000000913',
+      collectorId: '30000000-0000-4000-8000-000000000923'
+    };
+    spool.append(removedRecord, []);
+    const obsoleteBatch = spool.nextBatch(100)!;
+    spool.recordFailure(obsoleteBatch.batchId, 'HTTP 403 collector_identity_mismatch');
+    spool.append(baseRecord, []);
+    spool.append(activeRecord, []);
+    spool.put({
+      exporterIp: `${removedRecord.collectorId}:${removedRecord.exporterIp}`,
+      observationDomainId: 1,
+      templateId: 256,
+      fields: [{ type: 8, length: 4 }],
+      updatedAt: '2026-09-29T12:00:00.000Z'
+    });
+
+    const result = spool.reconcileManagedCloudIdentities(
+      [{ tenantId: activeRecord.tenantId, collectorId: activeRecord.collectorId }],
+      { tenantId: baseRecord.tenantId, collectorId: baseRecord.collectorId }
+    );
+
+    expect(result).toEqual({
+      identitiesRemoved: 1,
+      recordsRemoved: 1,
+      batchesRemoved: 1,
+      templatesRemoved: 1
+    });
+    expect(spool.statistics(removedRecord.tenantId, removedRecord.collectorId).pendingRecords).toBe(0);
+    expect(spool.statistics(activeRecord.tenantId, activeRecord.collectorId).pendingRecords).toBe(1);
+    expect(spool.statistics(baseRecord.tenantId, baseRecord.collectorId).pendingRecords).toBe(1);
+    expect(spool.get(`${removedRecord.collectorId}:${removedRecord.exporterIp}`, 1, 256)).toBeUndefined();
+    spool.close();
+  });
 });
