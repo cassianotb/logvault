@@ -242,7 +242,8 @@ export type PlatformAuditAction =
   | 'access_profile_created' | 'access_profile_updated' | 'access_profile_deleted'
   | 'integration_provider_enabled' | 'integration_provider_disabled'
   | 'continuity_settings_updated' | 'continuity_tested'
-  | 'continuity_enrollment_created' | 'continuity_enrolled' | 'continuity_enrollment_revoked';
+  | 'continuity_enrollment_created' | 'continuity_enrolled' | 'continuity_enrollment_revoked'
+  | 'backup_destination_updated' | 'backup_destination_tested';
 
 export interface PlatformIntegrationProvider {
   provider: string;
@@ -282,6 +283,58 @@ export interface PlatformContinuitySettings {
   lastTestStatus: 'success' | 'failed' | null;
   lastTestError: string;
   updatedAt: string | null;
+}
+
+export interface PlatformBackupDestination {
+  enabled: boolean;
+  provider: 'google_drive';
+  folderId: string;
+  serviceAccountSecret: string;
+  encryptionPassphraseSecret: string;
+  retentionDays: number;
+  lastTestAt: string | null;
+  lastTestStatus: 'success' | 'failed' | null;
+  lastTestError: string;
+  updatedAt: string | null;
+}
+
+export interface TenantBackupJob {
+  id: string;
+  tenantId: string;
+  tenantName: string;
+  requestedByUserId: string;
+  status: 'pending' | 'processing' | 'ready' | 'failed';
+  sendToGoogleDrive: boolean;
+  archiveName: string | null;
+  byteCount: number;
+  sha256: string | null;
+  googleDriveFileId: string | null;
+  errorMessage: string;
+  requestedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  expiresAt: string | null;
+}
+
+interface TenantBackupJobRow {
+  id: string; tenant_id: string; tenant_name: string; requested_by_user_id: string;
+  status: TenantBackupJob['status']; send_to_google_drive: boolean; archive_name: string | null;
+  byte_count: string | number; sha256: string | null; google_drive_file_id: string | null;
+  error_message: string; requested_at: string; started_at: string | null;
+  completed_at: string | null; expires_at: string | null;
+}
+
+function mapTenantBackupJob(row: TenantBackupJobRow): TenantBackupJob {
+  return {
+    id: row.id, tenantId: row.tenant_id, tenantName: row.tenant_name,
+    requestedByUserId: row.requested_by_user_id, status: row.status,
+    sendToGoogleDrive: row.send_to_google_drive, archiveName: row.archive_name,
+    byteCount: Number(row.byte_count), sha256: row.sha256, googleDriveFileId: row.google_drive_file_id,
+    errorMessage: row.error_message, requestedAt: new Date(row.requested_at).toISOString(),
+    startedAt: row.started_at ? new Date(row.started_at).toISOString() : null,
+    completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null,
+    expiresAt: row.expires_at ? new Date(row.expires_at).toISOString() : null
+  };
 }
 
 export interface ContinuityRoutingSettings {
@@ -5085,6 +5138,261 @@ export class PostgresRepository {
     `, [tenantId, settingId, alertId, resolvedAt, notifiedAt]);
   }
 
+  async getPlatformBackupDestination(): Promise<PlatformBackupDestination | null> {
+    const result = await this.pool.query<{
+      enabled: boolean; provider: 'google_drive'; folder_id: string; service_account_secret: string;
+      encryption_passphrase_secret: string; retention_days: number; last_test_at: string | null;
+      last_test_status: 'success' | 'failed' | null; last_test_error: string; updated_at: string;
+    }>(`
+      SELECT enabled, provider, folder_id, service_account_secret, encryption_passphrase_secret,
+        retention_days, last_test_at, last_test_status, last_test_error, updated_at
+      FROM platform_backup_destinations WHERE singleton = true
+    `);
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      enabled: row.enabled, provider: row.provider, folderId: row.folder_id,
+      serviceAccountSecret: row.service_account_secret,
+      encryptionPassphraseSecret: row.encryption_passphrase_secret,
+      retentionDays: row.retention_days,
+      lastTestAt: row.last_test_at ? new Date(row.last_test_at).toISOString() : null,
+      lastTestStatus: row.last_test_status, lastTestError: row.last_test_error,
+      updatedAt: new Date(row.updated_at).toISOString()
+    };
+  }
+
+  async savePlatformBackupDestination(input: {
+    actorUserId: string; enabled: boolean; folderId: string; serviceAccountSecret: string;
+    encryptionPassphraseSecret: string; retentionDays: number; credentialsChanged: boolean; passphraseChanged: boolean;
+  }): Promise<PlatformBackupDestination> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`
+        INSERT INTO platform_backup_destinations
+          (singleton, enabled, provider, folder_id, service_account_secret, encryption_passphrase_secret,
+           retention_days, updated_by_user_id)
+        VALUES (true, $1, 'google_drive', $2, $3, $4, $5, $6)
+        ON CONFLICT (singleton) DO UPDATE SET
+          enabled = EXCLUDED.enabled, folder_id = EXCLUDED.folder_id,
+          service_account_secret = EXCLUDED.service_account_secret,
+          encryption_passphrase_secret = EXCLUDED.encryption_passphrase_secret,
+          retention_days = EXCLUDED.retention_days, updated_by_user_id = EXCLUDED.updated_by_user_id,
+          last_test_at = NULL, last_test_status = NULL, last_test_error = '', updated_at = now()
+      `, [input.enabled, input.folderId, input.serviceAccountSecret, input.encryptionPassphraseSecret,
+        input.retentionDays, input.actorUserId]);
+      await client.query(`
+        INSERT INTO platform_management_audit (actor_user_id, target_tenant_id, action, details)
+        VALUES ($1, NULL, 'backup_destination_updated', jsonb_build_object(
+          'enabled', $2::boolean, 'provider', 'google_drive', 'retentionDays', $3::integer,
+          'credentialsChanged', $4::boolean, 'passphraseChanged', $5::boolean
+        ))
+      `, [input.actorUserId, input.enabled, input.retentionDays, input.credentialsChanged, input.passphraseChanged]);
+      await client.query('COMMIT');
+      const saved = await this.getPlatformBackupDestination();
+      if (!saved) throw new Error('Destino de backup não foi salvo');
+      return saved;
+    } catch (error) {
+      await this.safeRollback(client);
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async recordPlatformBackupDestinationTest(input: {
+    actorUserId: string; status: 'success' | 'failed'; error: string;
+  }): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(`
+        UPDATE platform_backup_destinations
+        SET last_test_at = now(), last_test_status = $1, last_test_error = $2
+        WHERE singleton = true
+      `, [input.status, input.error.slice(0, 2000)]);
+      await client.query(`
+        INSERT INTO platform_management_audit (actor_user_id, target_tenant_id, action, details)
+        VALUES ($1, NULL, 'backup_destination_tested', jsonb_build_object('provider', 'google_drive', 'status', $2::text))
+      `, [input.actorUserId, input.status]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await this.safeRollback(client);
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async createTenantBackupJob(input: { tenantId: string; actorUserId: string; sendToGoogleDrive: boolean }): Promise<TenantBackupJob | 'active_exists'> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const result = await client.query<TenantBackupJobRow>(`
+        WITH inserted AS (
+          INSERT INTO tenant_backup_jobs (tenant_id, requested_by_user_id, send_to_google_drive)
+          VALUES ($1, $2, $3)
+          RETURNING *
+        )
+        SELECT inserted.*, tenants.name AS tenant_name FROM inserted JOIN tenants ON tenants.id = inserted.tenant_id
+      `, [input.tenantId, input.actorUserId, input.sendToGoogleDrive]);
+      const row = result.rows[0];
+      if (!row) throw new Error('Backup do cliente não foi criado');
+      await client.query(`
+        INSERT INTO system_backup_audit (tenant_id, actor_user_id, backup_id, action, total_bytes, user_agent)
+        VALUES ($1, $2, $3, 'tenant_backup_requested', 0, '')
+      `, [input.tenantId, input.actorUserId, row.id]);
+      await client.query('COMMIT');
+      return mapTenantBackupJob(row);
+    } catch (error) {
+      await this.safeRollback(client);
+      if (typeof error === 'object' && error !== null && 'code' in error && String((error as { code: unknown }).code) === '23505') return 'active_exists';
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async listTenantBackupJobs(tenantId: string, limit = 20): Promise<TenantBackupJob[]> {
+    const result = await this.pool.query<TenantBackupJobRow>(`
+      SELECT jobs.*, tenants.name AS tenant_name
+      FROM tenant_backup_jobs jobs JOIN tenants ON tenants.id = jobs.tenant_id
+      WHERE jobs.tenant_id = $1 ORDER BY jobs.requested_at DESC LIMIT $2
+    `, [tenantId, limit]);
+    return result.rows.map(mapTenantBackupJob);
+  }
+
+  async getTenantBackupJob(tenantId: string, jobId: string): Promise<TenantBackupJob | null> {
+    const result = await this.pool.query<TenantBackupJobRow>(`
+      SELECT jobs.*, tenants.name AS tenant_name
+      FROM tenant_backup_jobs jobs JOIN tenants ON tenants.id = jobs.tenant_id
+      WHERE jobs.tenant_id = $1 AND jobs.id = $2
+    `, [tenantId, jobId]);
+    return result.rows[0] ? mapTenantBackupJob(result.rows[0]) : null;
+  }
+
+  async claimNextTenantBackup(): Promise<TenantBackupJob | null> {
+    const result = await this.pool.query<TenantBackupJobRow>(`
+      WITH candidate AS (
+        SELECT id FROM tenant_backup_jobs WHERE status = 'pending' ORDER BY requested_at FOR UPDATE SKIP LOCKED LIMIT 1
+      ), updated AS (
+        UPDATE tenant_backup_jobs jobs SET status = 'processing', started_at = now(), error_message = ''
+        FROM candidate WHERE jobs.id = candidate.id RETURNING jobs.*
+      )
+      SELECT updated.*, tenants.name AS tenant_name FROM updated JOIN tenants ON tenants.id = updated.tenant_id
+    `);
+    return result.rows[0] ? mapTenantBackupJob(result.rows[0]) : null;
+  }
+
+  async completeTenantBackup(input: {
+    jobId: string; archiveName: string; byteCount: number; sha256: string; googleDriveFileId: string | null;
+  }): Promise<void> {
+    await this.pool.query(`
+      UPDATE tenant_backup_jobs SET status = 'ready', archive_name = $2, byte_count = $3, sha256 = $4,
+        google_drive_file_id = $5, completed_at = now(), expires_at = now() + interval '7 days'
+      WHERE id = $1 AND status = 'processing'
+    `, [input.jobId, input.archiveName, input.byteCount, input.sha256, input.googleDriveFileId]);
+  }
+
+  async failTenantBackup(jobId: string, error: string): Promise<void> {
+    await this.pool.query(`
+      UPDATE tenant_backup_jobs SET status = 'failed', error_message = $2, completed_at = now()
+      WHERE id = $1 AND status IN ('pending', 'processing')
+    `, [jobId, error.slice(0, 2000)]);
+  }
+
+  async recoverInterruptedTenantBackups(): Promise<void> {
+    await this.pool.query(`
+      UPDATE tenant_backup_jobs SET status = 'pending', started_at = NULL,
+        error_message = 'Processamento retomado após reinício'
+      WHERE status = 'processing'
+    `);
+  }
+
+  async getExternalBackupUpload(scope: 'platform' | 'tenant', sourceBackupId: string): Promise<{
+    status: 'uploading' | 'success' | 'failed'; remoteFileId: string | null; errorMessage: string;
+  } | null> {
+    const result = await this.pool.query<{
+      status: 'uploading' | 'success' | 'failed'; remote_file_id: string | null; error_message: string;
+    }>(`
+      SELECT status, remote_file_id, error_message FROM external_backup_uploads
+      WHERE scope = $1 AND source_backup_id = $2 AND provider = 'google_drive'
+    `, [scope, sourceBackupId]);
+    const row = result.rows[0];
+    return row ? { status: row.status, remoteFileId: row.remote_file_id, errorMessage: row.error_message } : null;
+  }
+
+  async getLatestExternalBackupUpload(scope: 'platform' | 'tenant', tenantId: string | null = null): Promise<{
+    sourceBackupId: string; status: 'uploading' | 'success' | 'failed'; remoteFileId: string | null;
+    errorMessage: string; startedAt: string; completedAt: string | null;
+  } | null> {
+    const result = await this.pool.query<{
+      source_backup_id: string; status: 'uploading' | 'success' | 'failed'; remote_file_id: string | null;
+      error_message: string; started_at: string; completed_at: string | null;
+    }>(`
+      SELECT source_backup_id, status, remote_file_id, error_message, started_at, completed_at
+      FROM external_backup_uploads
+      WHERE scope = $1 AND ($2::uuid IS NULL OR tenant_id = $2)
+      ORDER BY started_at DESC LIMIT 1
+    `, [scope, tenantId]);
+    const row = result.rows[0];
+    return row ? {
+      sourceBackupId: row.source_backup_id, status: row.status, remoteFileId: row.remote_file_id,
+      errorMessage: row.error_message, startedAt: new Date(row.started_at).toISOString(),
+      completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : null
+    } : null;
+  }
+
+  async beginExternalBackupUpload(input: { scope: 'platform' | 'tenant'; sourceBackupId: string; tenantId: string | null }): Promise<void> {
+    await this.pool.query(`
+      INSERT INTO external_backup_uploads (scope, source_backup_id, tenant_id, provider, status)
+      VALUES ($1, $2, $3, 'google_drive', 'uploading')
+      ON CONFLICT (scope, source_backup_id, provider) DO UPDATE SET
+        status = 'uploading', error_message = '', started_at = now(), completed_at = NULL
+    `, [input.scope, input.sourceBackupId, input.tenantId]);
+  }
+
+  async completeExternalBackupUpload(input: {
+    scope: 'platform' | 'tenant'; sourceBackupId: string; byteCount: number; sha256: string; remoteFileId: string;
+  }): Promise<void> {
+    await this.pool.query(`
+      UPDATE external_backup_uploads SET status = 'success', byte_count = $3, sha256 = $4,
+        remote_file_id = $5, completed_at = now(), error_message = ''
+      WHERE scope = $1 AND source_backup_id = $2 AND provider = 'google_drive'
+    `, [input.scope, input.sourceBackupId, input.byteCount, input.sha256, input.remoteFileId]);
+  }
+
+  async failExternalBackupUpload(scope: 'platform' | 'tenant', sourceBackupId: string, error: string): Promise<void> {
+    await this.pool.query(`
+      UPDATE external_backup_uploads SET status = 'failed', error_message = $3, completed_at = now()
+      WHERE scope = $1 AND source_backup_id = $2 AND provider = 'google_drive'
+    `, [scope, sourceBackupId, error.slice(0, 2000)]);
+  }
+
+  async exportTenantSnapshot(tenantId: string): Promise<Record<string, unknown>> {
+    const tenant = await this.pool.query<{ data: Record<string, unknown> }>(
+      `SELECT to_jsonb(tenants) AS data FROM tenants WHERE id = $1`, [tenantId]
+    );
+    if (!tenant.rows[0]) throw new Error('Cliente não encontrado');
+    const tables = [
+      'users', 'collectors', 'devices', 'erp_integrations', 'sync_batches', 'query_audit', 'export_audit',
+      'auth_audit', 'collector_telemetry', 'user_management_audit', 'device_management_audit',
+      'collector_management_audit', 'system_backup_audit', 'tenant_plan_assignments', 'device_discovery_sessions',
+      'alert_notification_settings', 'alert_delivery_state', 'tenant_company_profiles', 'official_report_jobs',
+      'official_report_deletion_audit', 'collector_firewall_policies', 'collector_firewall_authorizations',
+      'collector_firewall_observations', 'collector_firewall_audit'
+    ] as const;
+    const snapshot: Record<string, unknown> = { tenant: tenant.rows[0].data };
+    const sensitiveKey = /(password|secret|token|api_key_hash|pdf_data|logo_data)/i;
+    const sanitize = (value: unknown): unknown => {
+      if (Array.isArray(value)) return value.map(sanitize);
+      if (!value || typeof value !== 'object') return value;
+      return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => !sensitiveKey.test(key)).map(([key, nested]) => [key, sanitize(nested)]));
+    };
+    for (const table of tables) {
+      const rows = await this.pool.query<{ data: Record<string, unknown> }>(
+        `SELECT to_jsonb(source) AS data FROM ${table} source WHERE tenant_id = $1`, [tenantId]
+      );
+      snapshot[table] = rows.rows.map((row) => sanitize(row.data));
+    }
+    return sanitize(snapshot) as Record<string, unknown>;
+  }
+
   async auditBackupDownload(input: {
     tenantId: string;
     actorUserId: string;
@@ -5092,13 +5400,15 @@ export class PostgresRepository {
     totalBytes: number;
     ipAddress: string | null;
     userAgent: string;
+    action?: 'download_started' | 'tenant_backup_downloaded';
   }): Promise<string> {
     const result = await this.pool.query<{ id: string }>(`
       INSERT INTO system_backup_audit
         (tenant_id, actor_user_id, backup_id, action, total_bytes, ip_address, user_agent)
-      VALUES ($1, $2, $3, 'download_started', $4, $5, $6)
+      VALUES ($1, $2, $3, $7, $4, $5, $6)
       RETURNING id
-    `, [input.tenantId, input.actorUserId, input.backupId, input.totalBytes, input.ipAddress, input.userAgent]);
+    `, [input.tenantId, input.actorUserId, input.backupId, input.totalBytes, input.ipAddress, input.userAgent,
+      input.action ?? 'download_started']);
     const id = result.rows[0]?.id;
     if (!id) throw new Error('Auditoria do download de backup não foi criada');
     return id;

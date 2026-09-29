@@ -193,14 +193,16 @@ Desativar bloqueia a ingestão daquele coletor sem apagar seu cadastro, telemetr
 
 ## Dados persistentes
 
-Em uma instalação nova, o assistente sugere um diretório único no host e cria quatro subdiretórios:
+Em uma instalação nova, o assistente sugere um diretório único no host e cria os diretórios persistentes necessários:
 
 - `/var/lib/logvault/postgres`: configuração e auditoria.
 - `/var/lib/logvault/clickhouse`: registros brutos e eventos CGNAT.
 - `/var/lib/logvault/collector`: spool local e templates NetFlow.
 - `/var/lib/logvault/backups`: pontos de restauração locais.
+- `/var/lib/logvault/tenant-backups`: pacotes lógicos solicitados pelos clientes.
+- `/var/lib/logvault/backup-staging`: área temporária privada para criptografia e envio externo.
 
-Ao selecionar `docker` no instalador, os equivalentes são os volumes nomeados `argus_postgres-data`, `argus_clickhouse-data`, `argus_collector-data` e `argus_backup-data`. Os caminhos efetivos ficam registrados em `ARGUS_*_DATA_PATH` no `.env`; não os altere com a stack em execução.
+Ao selecionar `docker` no instalador, os equivalentes são volumes nomeados, incluindo `argus_postgres-data`, `argus_clickhouse-data`, `argus_collector-data`, `argus_backup-data`, `argus_tenant-backup-data` e `argus_backup-staging-data`. Os caminhos efetivos ficam registrados em `ARGUS_*_DATA_PATH` no `.env`; não os altere com a stack em execução.
 
 Os logs stdout dos containers usam rotação local de 20 MB, com até cinco arquivos por serviço.
 
@@ -240,7 +242,7 @@ No Discord, informe a URL criada nas integrações do canal. No Telegram, crie o
 
 O botão **Enviar teste** usa a configuração já salva. Respostas fora de `2xx`, redirecionamentos e tempos acima de 10 segundos são considerados falha. Alertas ativos são deduplicados no PostgreSQL e só reaparecem depois do intervalo escolhido; falhas de entrega são tentadas novamente na avaliação seguinte. URLs e tokens são cifrados no PostgreSQL, mas ficam visíveis para administradores autenticados na tela de configuração. Defina `ARGUS_ALERT_ENCRYPTION_KEY` com pelo menos 32 caracteres; quando ausente, instalações existentes usam temporariamente `ARGUS_SYNC_TOKEN` para compatibilidade.
 
-Administradores também podem baixar, na mesma tela, um pacote `.tar.gz` restaurável. O pacote é compactado e transmitido diretamente do backup concluído, sem manter outra cópia permanente na VM, e contém `checksums.sha256` para validar todos os arquivos. Ao baixar um ponto incremental, o pacote inclui automaticamente tanto a base completa quanto o incremental:
+Administradores da plataforma também podem baixar, na mesma tela, um pacote `.tar.gz` restaurável. O pacote é compactado e transmitido diretamente do backup concluído, sem manter outra cópia permanente na VM, e contém `checksums.sha256` para validar todos os arquivos. Ao baixar um ponto incremental, o pacote inclui automaticamente tanto a base completa quanto o incremental:
 
 ```bash
 tar -xzf logvault-backup-20260807T180000Z.tar.gz
@@ -250,7 +252,28 @@ sha256sum -c checksums.sha256
 
 O início de cada download é registrado na trilha de auditoria com usuário, backup, volume e IP de origem. O arquivo reúne tudo o que é necessário para restaurar o ponto escolhido e deve ser armazenado como dado sensível.
 
+No contexto de um cliente, a mesma tela não expõe o backup global. Um administrador do tenant pode solicitar um pacote lógico que contém somente seus cadastros, auditorias e registros no PostgreSQL e ClickHouse. Hashes de senha e chaves de coletores, sessões, tokens, segredos de integração e payloads binários de relatórios/logotipos são excluídos. O `.tar.gz` local fica disponível por sete dias e inclui manifesto e hashes SHA-256; esse pacote serve para portabilidade e recuperação controlada de um tenant, não substitui o ponto completo usado pelo procedimento automático de restauração da plataforma.
+
 Os backups locais protegem contra corrupção e erros operacionais, mas continuam na mesma VM. Para tolerar perda completa do host, replique o caminho definido em `ARGUS_BACKUP_DATA_PATH` para outro servidor ou storage. Isso pode ser feito sem serviço pago, por exemplo com cópia periódica via SSH/rsync para outro equipamento do cliente.
+
+### Cópia criptografada no Google Drive
+
+Na plataforma, abra **Sistema → Google Drive**. Informe uma pasta pertencente a um **Drive compartilhado do Google Workspace**, o JSON de uma conta de serviço com acesso de colaborador e uma frase de recuperação com pelo menos 20 caracteres. Contas de serviço não possuem cota própria no “Meu Drive”, por isso uma pasta pessoal compartilhada não é aceita. O teste cria e remove um arquivo de prova antes de liberar o destino.
+
+O JSON e a frase ficam cifrados no PostgreSQL. Guarde uma cópia da frase fora da VM e do próprio Drive: ela não volta a ser exibida e, sem ela, os arquivos externos não podem ser recuperados. Depois de salvar, execute **Testar conexão** e habilite o envio. O processador envia automaticamente o ponto completo mais recente — incluindo a base exigida por um incremental — usando upload retomável, e exclui do Drive somente arquivos LogVault mais antigos que a retenção configurada. Uma falha externa não remove nem invalida o backup local.
+
+O administrador de um cliente pode marcar **Enviar também ao Google Drive da plataforma** ao criar seu pacote. O backend fixa o tenant pela sessão, sem aceitar um identificador de cliente enviado pelo navegador. Usuários operadores e auditores podem consultar o estado, mas não gerar nem baixar o arquivo.
+
+Todo arquivo enviado termina em `.lvault` e usa AES-256-GCM com chave derivada por scrypt. Para recuperar um arquivo, crie um arquivo privado contendo somente a frase, com permissão `0600`, e execute no checkout da mesma versão ou de uma posterior:
+
+```bash
+node scripts/decrypt-backup.mjs \
+  logvault-platform-20260929T120000Z.tar.gz.lvault \
+  logvault-platform-20260929T120000Z.tar.gz \
+  /root/logvault-backup.pass
+```
+
+Se a frase estiver errada ou o arquivo tiver sido alterado, a autenticação falha e a saída parcial é removida. Depois de descriptografar um backup da plataforma, extraia o pacote em uma área privada, confira os checksums internos e siga o procedimento de restauração abaixo.
 
 ### Segunda cópia via SSH/rsync
 

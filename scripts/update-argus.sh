@@ -167,7 +167,7 @@ if [[ "$role" == "dc-b" ]] && ARGUS_DR_ENV_FILE="$env_file" docker compose --pro
 fi
 ensure_env_key() {
   local key="$1" value="$2"
-  grep -q "^${key}=" .env || printf '%s=%s\n' "$key" "$value" >>.env
+  grep -q "^${key}=" "$env_file" || printf '%s=%s\n' "$key" "$value" >>"$env_file"
 }
 if [[ "$role" == "dc-a" ]]; then
   existing_replication_bind="$(sed -n 's/^ARGUS_DR_REPLICATION_BIND=//p' "$env_file" | tail -n1)"
@@ -196,6 +196,13 @@ if [[ "$role" == "dc-a" ]]; then
   fi
   control_root=/var/lib/logvault/control
   ensure_env_key ARGUS_CONTINUITY_CONTROL_PATH "$control_root"
+  if [[ "$data_root" == "docker" ]]; then
+    ensure_env_key ARGUS_TENANT_BACKUP_DATA_PATH tenant-backup-data
+    ensure_env_key ARGUS_BACKUP_STAGING_DATA_PATH backup-staging-data
+  else
+    ensure_env_key ARGUS_TENANT_BACKUP_DATA_PATH /var/lib/logvault/tenant-backups
+    ensure_env_key ARGUS_BACKUP_STAGING_DATA_PATH /var/lib/logvault/backup-staging
+  fi
   ensure_env_key ARGUS_HTTP_BIND 0.0.0.0
   ensure_env_key ARGUS_HTTPS_BIND 0.0.0.0
   public_url="$(sed -n 's/^ARGUS_PUBLIC_URL=//p' "$env_file" | tail -n1)"
@@ -206,8 +213,11 @@ if [[ "$role" == "dc-a" ]]; then
   else
     ensure_env_key ARGUS_PROXY_CONFIG Caddyfile.http
   fi
-  chmod 0600 "$env_file"
+else
+  ensure_env_key ARGUS_DR_TENANT_BACKUP_B_DATA_PATH /var/lib/logvault/tenant-backups
+  ensure_env_key ARGUS_DR_BACKUP_STAGING_B_DATA_PATH /var/lib/logvault/backup-staging
 fi
+chmod 0600 "$env_file"
 if [[ "$skip_backup" != "true" && "$role" == "dc-a" ]]; then
   docker compose --env-file "$env_file" ps --status running --services | grep -qx backup || die "serviço de backup não está em execução; corrija-o ou use --skip-backup conscientemente"
   printf 'Criando ponto de restauração antes da atualização...\n'
@@ -238,6 +248,9 @@ printf 'Aplicando atualização...\n'
 git merge --ff-only "$target"
 if [[ "$role" == "dc-a" ]]; then
   install -d -o 1000 -g 1000 -m 0770 "$control_root"
+  if [[ "$data_root" != "docker" ]]; then
+    install -d -o 1000 -g 1000 -m 0750 /var/lib/logvault/tenant-backups /var/lib/logvault/backup-staging
+  fi
   "$repo_root/scripts/install-continuity-agent.sh" "$repo_root" "$env_file" "$control_root"
   docker compose --env-file "$env_file" config --quiet
   docker compose --env-file "$env_file" up -d --build
@@ -246,6 +259,7 @@ if [[ "$role" == "dc-a" ]]; then
   fi
   docker compose --env-file "$env_file" ps
 else
+  install -d -m 0750 /var/lib/logvault/tenant-backups /var/lib/logvault/backup-staging
   ARGUS_DR_ENV_FILE="$env_file" docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" config --quiet
   ARGUS_DR_ENV_FILE="$env_file" docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" up -d postgres-b clickhouse-b clickhouse-mirror standby-agent
   if [[ "$dc_b_was_active" == "true" ]]; then

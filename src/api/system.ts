@@ -364,7 +364,6 @@ export function registerSystemRoutes(
     backupRoot: string;
     backupExpectedHours: number;
     backupRetentionDays: number;
-    backupDownloadTenantId: string;
     backupRemoteEnabled: boolean;
     cloudMetricsProvider?: () => HostMetrics;
     continuityProvider?: () => Promise<ContinuitySnapshot>;
@@ -418,6 +417,7 @@ export function registerSystemRoutes(
           tenants: tenants.length
         },
         backup: {
+          scope: 'platform',
           status: backupStatus.status,
           expectedEveryHours: dependencies.backupExpectedHours,
           retentionDays: dependencies.backupRetentionDays,
@@ -430,46 +430,14 @@ export function registerSystemRoutes(
         alerts
       });
     }
-    const [collectors, devices, activityRows, backupState] = await Promise.all([
+    const [collectors, devices, activityRows, tenantBackups] = await Promise.all([
       dependencies.postgres.listCollectors(session.tenantId),
       dependencies.postgres.listDevices(session.tenantId),
       dependencies.clickhouse.getDeviceActivity(session.tenantId),
-      listBackups(dependencies.backupRoot)
+      dependencies.postgres.listTenantBackupJobs(session.tenantId, 10)
     ]);
     const alerts: OperationalAlert[] = [];
-    const latestBackup = backupState.backups[0] ?? null;
-    const remoteState = await remoteBackupState(dependencies.backupRoot, dependencies.backupRemoteEnabled, latestBackup?.id ?? null);
-    const { status: backupStatus, ageHours: backupAgeHours } = backupOperationalStatus(
-      latestBackup?.createdAt ?? null,
-      backupState.lastFailureAt,
-      dependencies.backupExpectedHours,
-      nowMs
-    );
-
-    if (backupStatus !== 'ok') {
-      const critical = ['failed', 'overdue', 'never'].includes(backupStatus);
-      alerts.push({
-        id: `backup:${backupStatus}`,
-        severity: critical ? 'critical' : 'warning',
-        source: 'backup',
-        title: backupStatus === 'never' ? 'Nenhum backup concluído' : 'Backup fora da janela esperada',
-        detail: backupStatus === 'failed'
-          ? `A última tentativa falhou em ${backupState.lastFailureAt}.`
-          : backupAgeHours === null ? 'A rotina ainda não produziu um backup completo.' : `Último backup há ${backupAgeHours.toFixed(1)} hora(s).`
-      });
-    }
-
-    if (remoteState.enabled && remoteState.status !== 'ok') {
-      alerts.push({
-        id: `backup:remote:${remoteState.status}`,
-        severity: remoteState.status === 'failed' ? 'critical' : 'warning',
-        source: 'backup',
-        title: remoteState.status === 'failed' ? 'Cópia externa falhou' : 'Cópia externa pendente',
-        detail: remoteState.status === 'failed'
-          ? `A última tentativa falhou em ${remoteState.failedAt}.`
-          : remoteState.status === 'never' ? 'Nenhum backup foi copiado para o destino externo.' : `Última cópia externa: ${remoteState.lastBackupId}.`
-      });
-    }
+    const latestTenantBackup = tenantBackups.find((backup) => backup.status === 'ready') ?? null;
 
     for (const collector of collectors) {
       if (collector.configuredStatus === 'disabled') continue;
@@ -528,14 +496,15 @@ export function registerSystemRoutes(
         devices: devices.length
       },
       backup: {
-        status: backupStatus,
-        expectedEveryHours: dependencies.backupExpectedHours,
-        retentionDays: dependencies.backupRetentionDays,
-        latest: latestBackup,
-        lastFailureAt: backupState.lastFailureAt,
-        recent: backupState.backups.slice(0, 10),
-        downloadAllowed: session.role === 'admin' && session.tenantId === dependencies.backupDownloadTenantId,
-        remote: remoteState
+        scope: 'tenant', status: latestTenantBackup ? 'ok' : 'never', expectedEveryHours: null,
+        retentionDays: 7, latest: latestTenantBackup ? {
+          id: latestTenantBackup.id, createdAt: latestTenantBackup.completedAt,
+          postgresBytes: latestTenantBackup.byteCount, clickhouseBytes: 0,
+          collectorBytes: 0, collectorIncluded: false
+        } : null,
+        lastFailureAt: tenantBackups.find((backup) => backup.status === 'failed')?.completedAt ?? null,
+        recent: [], downloadAllowed: false,
+        remote: { enabled: false, status: 'disabled', lastBackupId: null, copiedAt: null, failedAt: null }
       },
       alerts
     });
@@ -602,8 +571,7 @@ export function registerSystemRoutes(
     const session = await authenticateRequest(request, reply, dependencies.postgres, { allowPlatformContext: true });
     if (!session) return;
     const platformAllowed = session.context === 'platform' && hasPlatformAccess(session, 'system', 'manage');
-    const tenantAllowed = session.role === 'admin' && session.tenantId === dependencies.backupDownloadTenantId;
-    if (!platformAllowed && !tenantAllowed) {
+    if (!platformAllowed) {
       return reply.code(403).send({ error: 'backup_download_access_required' });
     }
     const backupId = request.params.backupId;

@@ -270,6 +270,25 @@ const backupRemote = document.querySelector('#backup-remote');
 const backupTableWrap = document.querySelector('#backup-table-wrap');
 const backupBody = document.querySelector('#backup-body');
 const backupEmpty = document.querySelector('#backup-empty');
+const platformBackupDestinationPanel = document.querySelector('#platform-backup-destination');
+const platformBackupDestinationForm = document.querySelector('#platform-backup-destination-form');
+const platformBackupDestinationStatus = document.querySelector('#platform-backup-destination-status');
+const platformBackupDestinationFeedback = document.querySelector('#platform-backup-destination-feedback');
+const backupDriveFolderId = document.querySelector('#backup-drive-folder-id');
+const backupDriveRetention = document.querySelector('#backup-drive-retention');
+const backupDriveCredentials = document.querySelector('#backup-drive-credentials');
+const backupDrivePassphrase = document.querySelector('#backup-drive-passphrase');
+const backupDriveEnabled = document.querySelector('#backup-drive-enabled');
+const testPlatformBackupDestinationButton = document.querySelector('#test-platform-backup-destination');
+const savePlatformBackupDestinationButton = document.querySelector('#save-platform-backup-destination');
+const tenantBackupPanel = document.querySelector('#tenant-backup-panel');
+const createTenantBackupButton = document.querySelector('#create-tenant-backup');
+const tenantBackupGoogleDrive = document.querySelector('#tenant-backup-google-drive');
+const tenantBackupGoogleDriveDetail = document.querySelector('#tenant-backup-google-drive-detail');
+const tenantBackupFeedback = document.querySelector('#tenant-backup-feedback');
+const tenantBackupTableWrap = document.querySelector('#tenant-backup-table-wrap');
+const tenantBackupBody = document.querySelector('#tenant-backup-body');
+const tenantBackupEmpty = document.querySelector('#tenant-backup-empty');
 const refreshServersButton = document.querySelector('#refresh-servers');
 const serverTotal = document.querySelector('#server-total');
 const serverHealthy = document.querySelector('#server-healthy');
@@ -777,6 +796,7 @@ let currentContinuityRouting = null;
 let currentContinuityDefaults = null;
 let latestContinuitySnapshot = null;
 let continuityEnrollmentPollTimer = null;
+let tenantBackupPollTimer = null;
 let capacityLoaded = false;
 let usersLoaded = false;
 let auditLoaded = false;
@@ -3657,6 +3677,144 @@ function renderBackups(backups, downloadAllowed) {
   }
 }
 
+const tenantBackupStatusLabels = {
+  pending: 'Na fila', processing: 'Gerando pacote', ready: 'Pronto', failed: 'Falhou'
+};
+
+function renderTenantBackups(backups) {
+  tenantBackupBody.replaceChildren();
+  for (const backup of backups) {
+    const expired = backup.status === 'ready' && backup.expiresAt && Date.parse(backup.expiresAt) <= Date.now();
+    const actionCell = document.createElement('td');
+    actionCell.dataset.label = 'Ação';
+    if (backup.status === 'ready' && !expired) {
+      const link = document.createElement('a');
+      link.className = 'table-action backup-download';
+      link.href = `${API_BASE}/v1/backups/${encodeURIComponent(backup.id)}/download`;
+      link.textContent = 'Baixar .tar.gz';
+      actionCell.append(link);
+    } else actionCell.textContent = expired ? 'Download expirado'
+      : backup.status === 'failed' ? backup.errorMessage || 'Falha no processamento' : 'Aguarde';
+    const external = backup.sendToGoogleDrive
+      ? backup.googleDriveFileId ? 'Google Drive concluído' : backup.status === 'failed' ? 'Falhou' : 'Pendente'
+      : 'Não solicitado';
+    const row = document.createElement('tr');
+    row.append(
+      td(formatDeviceMoment(backup.requestedAt), 'Solicitado em'),
+      td(expired ? 'Expirado' : tenantBackupStatusLabels[backup.status] || backup.status, 'Estado'),
+      td(backup.byteCount ? formatBytes(backup.byteCount) : '—', 'Tamanho'),
+      td(external, 'Cópia externa'),
+      actionCell
+    );
+    tenantBackupBody.append(row);
+  }
+  tenantBackupEmpty.hidden = backups.length !== 0;
+  tenantBackupTableWrap.hidden = backups.length === 0;
+}
+
+async function loadTenantBackups({ poll = true } = {}) {
+  if (tenantBackupPollTimer) window.clearTimeout(tenantBackupPollTimer);
+  tenantBackupPollTimer = null;
+  try {
+    const response = await authenticatedFetch(`${API_BASE}/v1/backups`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error('Não foi possível consultar os backups do cliente.');
+    renderTenantBackups(payload.backups || []);
+    tenantBackupGoogleDrive.disabled = !payload.googleDriveAvailable;
+    if (!payload.googleDriveAvailable) tenantBackupGoogleDrive.checked = false;
+    tenantBackupGoogleDriveDetail.textContent = payload.googleDriveAvailable
+      ? 'Destino externo validado pela plataforma.' : 'O administrador da plataforma ainda não habilitou este destino.';
+    const active = (payload.backups || []).some((backup) => ['pending', 'processing'].includes(backup.status));
+    if (poll && active && !systemView.hidden) tenantBackupPollTimer = window.setTimeout(() => void loadTenantBackups(), 3000);
+  } catch (error) {
+    setFormFeedback(tenantBackupFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
+  }
+}
+
+async function loadPlatformBackupDestination() {
+  try {
+    const response = await authenticatedFetch(`${API_BASE}/v1/platform/backup-destination`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error('Não foi possível consultar o destino externo.');
+    const destination = payload.destination;
+    backupDriveEnabled.checked = Boolean(destination.enabled);
+    backupDriveFolderId.value = destination.folderId || '';
+    backupDriveRetention.value = String(destination.retentionDays || 30);
+    backupDriveCredentials.value = '';
+    backupDrivePassphrase.value = '';
+    backupDriveCredentials.placeholder = destination.credentialsConfigured
+      ? 'Credencial protegida; cole um JSON somente para substituí-la' : 'Cole o JSON da conta de serviço';
+    backupDrivePassphrase.placeholder = destination.encryptionConfigured
+      ? 'Frase protegida; preencha somente para substituí-la' : 'Mínimo de 20 caracteres; guarde fora do servidor';
+    platformBackupDestinationStatus.textContent = destination.lastTestStatus === 'success'
+      ? payload.latestUpload?.status === 'success'
+        ? `Última cópia concluída em ${formatDeviceMoment(payload.latestUpload.completedAt)}`
+        : payload.latestUpload?.status === 'failed'
+          ? 'Conexão validada · último envio falhou'
+          : payload.latestUpload?.status === 'uploading'
+            ? 'Conexão validada · envio em andamento'
+            : `Conexão validada em ${formatDeviceMoment(destination.lastTestAt)}`
+      : destination.lastTestStatus === 'failed' ? 'Último teste falhou' : destination.enabled ? 'Teste pendente' : 'Desativado';
+  } catch (error) {
+    setFormFeedback(platformBackupDestinationFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
+  }
+}
+
+platformBackupDestinationForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  setFormFeedback(platformBackupDestinationFeedback, '');
+  setButtonLoading(savePlatformBackupDestinationButton, true);
+  try {
+    const response = await authenticatedFetch(`${API_BASE}/v1/platform/backup-destination`, {
+      method: 'PUT', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: backupDriveEnabled.checked, folderId: backupDriveFolderId.value.trim(),
+        serviceAccountJson: backupDriveCredentials.value.trim(), encryptionPassphrase: backupDrivePassphrase.value,
+        retentionDays: Number(backupDriveRetention.value) })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error === 'backup_passphrase_too_short'
+      ? 'A frase de recuperação deve ter pelo menos 20 caracteres.' : 'Não foi possível salvar o destino externo.');
+    setFormFeedback(platformBackupDestinationFeedback, 'Destino salvo. Execute o teste antes do primeiro envio.');
+    await loadPlatformBackupDestination();
+  } catch (error) {
+    setFormFeedback(platformBackupDestinationFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
+  } finally { setButtonLoading(savePlatformBackupDestinationButton, false); }
+});
+
+testPlatformBackupDestinationButton.addEventListener('click', async () => {
+  testPlatformBackupDestinationButton.disabled = true;
+  setFormFeedback(platformBackupDestinationFeedback, 'Testando autenticação e permissão de escrita…');
+  try {
+    const response = await authenticatedFetch(`${API_BASE}/v1/platform/backup-destination/test`, { method: 'POST', headers: { Accept: 'application/json' } });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.message || 'Não foi possível acessar a pasta informada.');
+    setFormFeedback(platformBackupDestinationFeedback, `Conexão validada com a pasta “${payload.folder.name}”.`);
+    await loadPlatformBackupDestination();
+  } catch (error) {
+    setFormFeedback(platformBackupDestinationFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
+  } finally { testPlatformBackupDestinationButton.disabled = false; }
+});
+
+createTenantBackupButton.addEventListener('click', async () => {
+  createTenantBackupButton.disabled = true;
+  setFormFeedback(tenantBackupFeedback, 'Solicitando snapshot do cliente…');
+  try {
+    const response = await authenticatedFetch(`${API_BASE}/v1/backups`, {
+      method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sendToGoogleDrive: tenantBackupGoogleDrive.checked })
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error === 'tenant_backup_already_running'
+      ? 'Já existe um backup deste cliente em processamento.'
+      : payload.error === 'google_drive_not_available' ? 'O Google Drive da plataforma não está disponível.'
+        : 'Não foi possível iniciar o backup.');
+    setFormFeedback(tenantBackupFeedback, 'Backup colocado na fila. A tela será atualizada automaticamente.');
+    await loadTenantBackups();
+  } catch (error) {
+    setFormFeedback(tenantBackupFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
+  } finally { createTenantBackupButton.disabled = false; }
+});
+
 function createAlertChannelDrafts() {
   return {
     generic: { credential: '', telegramChatId: '' },
@@ -4069,6 +4227,20 @@ alertSettingsList.addEventListener('click', (event) => {
 });
 
 async function loadSystem() {
+  if (tenantBackupPollTimer) window.clearTimeout(tenantBackupPollTimer);
+  tenantBackupPollTimer = null;
+  const platformContext = isPlatformContext();
+  platformBackupDestinationPanel.hidden = !platformContext;
+  tenantBackupPanel.hidden = platformContext;
+  if (platformContext) {
+    const canManageBackups = hasPlatformPermission('system', 'manage');
+    [...platformBackupDestinationForm.elements].forEach((element) => { element.disabled = !canManageBackups; });
+    testPlatformBackupDestinationButton.disabled = !canManageBackups;
+    savePlatformBackupDestinationButton.disabled = !canManageBackups;
+  } else {
+    createTenantBackupButton.hidden = currentUser?.role !== 'admin';
+    tenantBackupGoogleDrive.closest('label').hidden = currentUser?.role !== 'admin';
+  }
   systemLoading.hidden = false;
   systemError.hidden = true;
   systemServiceList.hidden = true;
@@ -4088,18 +4260,24 @@ async function loadSystem() {
       systemLastBackup.textContent = 'Pendente';
       systemBackupDetail.textContent = 'nenhuma execução concluída';
     }
-    backupPolicy.textContent = `A cada ${payload.backup.expectedEveryHours}h · retenção ${payload.backup.retentionDays} dias`;
-    backupRemote.textContent = !payload.backup.remote.enabled
-      ? 'Cópia externa não configurada'
-      : payload.backup.remote.status === 'ok'
-        ? `Cópia externa atualizada · ${payload.backup.remote.lastBackupId}`
-        : payload.backup.remote.status === 'failed' ? 'Falha na cópia externa' : 'Cópia externa pendente';
+    backupPolicy.textContent = payload.backup.scope === 'tenant'
+      ? 'Snapshot lógico sob demanda · download disponível por 7 dias'
+      : `A cada ${payload.backup.expectedEveryHours}h · retenção ${payload.backup.retentionDays} dias`;
+    backupRemote.textContent = payload.backup.scope === 'tenant'
+      ? 'Somente dados deste cliente; segredos e credenciais são excluídos'
+      : !payload.backup.remote.enabled
+        ? 'Cópia externa não configurada'
+        : payload.backup.remote.status === 'ok'
+          ? `Cópia externa atualizada · ${payload.backup.remote.lastBackupId}`
+          : payload.backup.remote.status === 'failed' ? 'Falha na cópia externa' : 'Cópia externa pendente';
     renderBackups(payload.backup.recent, payload.backup.downloadAllowed);
     backupEmpty.hidden = payload.backup.recent.length !== 0;
     backupTableWrap.hidden = payload.backup.recent.length === 0;
     systemLoaded = true;
     systemLoading.hidden = true;
     systemServiceList.hidden = false;
+    if (platformContext) await loadPlatformBackupDestination();
+    else await loadTenantBackups();
   } catch (error) {
     systemLoading.hidden = true;
     if (!appShell.hidden) {

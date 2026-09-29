@@ -73,6 +73,8 @@ export const apiConfigSchema = z.object({
   ARGUS_TENANT_ID: z.string().uuid(),
   ARGUS_COLLECTOR_ID: z.string().uuid(),
   ARGUS_BACKUP_ROOT: z.string().min(1).default('/var/lib/argus/backups'),
+  ARGUS_TENANT_BACKUP_ROOT: z.string().min(1).default('/var/lib/argus/tenant-backups'),
+  ARGUS_BACKUP_STAGING_ROOT: z.string().min(1).default('/var/lib/argus/backup-staging'),
   ARGUS_BACKUP_INTERVAL_HOURS: z.coerce.number().int().min(1).max(168).default(24),
   ARGUS_BACKUP_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(15),
   ARGUS_CONTINUITY_CONTROL_PATH: z.string().min(1).default('/var/lib/argus/control'),

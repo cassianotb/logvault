@@ -580,6 +580,8 @@ PY
   set_env_file "$env_file" ARGUS_DR_CLICKHOUSE_B_DATA_PATH "${clickhouse_path%/}"
   set_env_file "$env_file" ARGUS_DR_COLLECTOR_B_DATA_PATH /var/lib/logvault/collector
   set_env_file "$env_file" ARGUS_DR_BACKUP_B_DATA_PATH /var/lib/logvault/backups
+  set_env_file "$env_file" ARGUS_DR_TENANT_BACKUP_B_DATA_PATH /var/lib/logvault/tenant-backups
+  set_env_file "$env_file" ARGUS_DR_BACKUP_STAGING_B_DATA_PATH /var/lib/logvault/backup-staging
   set_env_file "$env_file" ARGUS_DR_PROXY_B_DATA_PATH /var/lib/logvault/proxy-data
   set_env_file "$env_file" ARGUS_DR_PROXY_B_CONFIG_PATH /var/lib/logvault/proxy-config
   set_env_file "$env_file" ARGUS_HTTP_BIND 0.0.0.0
@@ -612,7 +614,7 @@ provision_dc_b() {
   ensure_provisioning_tools
   ensure_repository "$response_file"
   env_file="$(write_standby_environment "$response_file")"
-  install -d -m 0700 "${postgres_path%/}/data" "${clickhouse_path%/}" /var/lib/logvault/collector /var/lib/logvault/backups /var/lib/logvault/proxy-data /var/lib/logvault/proxy-config
+  install -d -m 0700 "${postgres_path%/}/data" "${clickhouse_path%/}" /var/lib/logvault/collector /var/lib/logvault/backups /var/lib/logvault/tenant-backups /var/lib/logvault/backup-staging /var/lib/logvault/proxy-data /var/lib/logvault/proxy-config
   cd "$repo_root"
   local -a compose=(docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file")
   ARGUS_DR_ENV_FILE="$env_file" "${compose[@]}" config --quiet

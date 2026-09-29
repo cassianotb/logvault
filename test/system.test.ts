@@ -46,6 +46,33 @@ describe('identificador de backup', () => {
   });
 });
 
+describe('download do backup completo', () => {
+  it('não expõe o pacote global a um administrador de cliente', async () => {
+    const tenantSession = {
+      sessionId: '10000000-0000-4000-8000-000000000050',
+      id: '10000000-0000-4000-8000-000000000051',
+      tenantId: '20000000-0000-4000-8000-000000000052', tenantName: 'Cliente',
+      tenantTimezone: 'America/Sao_Paulo', homeTenantId: '20000000-0000-4000-8000-000000000052',
+      homeTenantName: 'Cliente', homeTenantTimezone: 'America/Sao_Paulo',
+      name: 'Administrador', email: 'admin@cliente.example', role: 'admin',
+      platformAdmin: false, context: 'tenant', expiresAt: '2026-12-01T00:00:00.000Z'
+    } satisfies AuthSession;
+    const app = Fastify();
+    registerSystemRoutes(app, {
+      postgres: { findActiveSession: async () => tenantSession } as unknown as PostgresRepository,
+      clickhouse: {} as ClickHouseRepository,
+      backupRoot: '/tmp/logvault-global-backups-not-exposed', backupExpectedHours: 24,
+      backupRetentionDays: 15, backupRemoteEnabled: false
+    });
+    const response = await app.inject({
+      method: 'GET', url: '/v1/system/backups/20260929T120000Z/download',
+      headers: { cookie: `argus_session=${'x'.repeat(32)}` }
+    });
+    expect(response.statusCode).toBe(403);
+    await app.close();
+  });
+});
+
 describe('alerta da fila local do coletor', () => {
   const now = Date.parse('2026-08-11T14:00:00.000Z');
   const collector = {

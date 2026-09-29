@@ -641,6 +641,32 @@
             </div>
             <div class="state compact-state" id="backup-empty"><div class="state-icon" aria-hidden="true">◇</div><strong>Nenhum backup concluído</strong><p>A primeira execução ocorre ao iniciar a rotina de backup.</p></div>
           </section>
+
+          <section class="devices-panel backup-panel" id="platform-backup-destination" hidden>
+            <div class="devices-panel-head"><div><p class="eyebrow">Cópia externa criptografada</p><h2>Google Drive</h2></div><small id="platform-backup-destination-status">Não configurado</small></div>
+            <form id="platform-backup-destination-form" class="platform-settings-form">
+              <div class="continuity-wizard-grid">
+                <label class="field"><span>ID da pasta em um Drive compartilhado</span><input id="backup-drive-folder-id" maxlength="200" autocomplete="off" placeholder="Ex.: 1AbC...xyz"><small>Use uma pasta de um Shared Drive do Google Workspace e adicione a conta de serviço como colaboradora.</small></label>
+                <label class="field"><span>Retenção externa em dias</span><input id="backup-drive-retention" type="number" min="1" max="3650" value="30"></label>
+                <label class="field"><span>JSON da conta de serviço</span><textarea id="backup-drive-credentials" rows="5" maxlength="32000" autocomplete="off" placeholder="Cole apenas ao configurar ou trocar a credencial"></textarea></label>
+                <label class="field"><span>Frase de recuperação</span><input id="backup-drive-passphrase" type="password" minlength="20" maxlength="256" autocomplete="new-password" placeholder="Mínimo de 20 caracteres; guarde fora do servidor"><small>Usada para criptografar os arquivos antes do upload. Sem ela, uma restauração externa não será possível.</small></label>
+              </div>
+              <label class="integration-enable"><input id="backup-drive-enabled" type="checkbox"><span><strong>Enviar backups completos automaticamente</strong><small>A conta de serviço deve poder adicionar arquivos na pasta informada.</small></span></label>
+              <p class="form-feedback" id="platform-backup-destination-feedback" hidden></p>
+              <div class="device-page-actions"><button class="secondary-button" id="test-platform-backup-destination" type="button">Testar conexão</button><button class="primary-button" id="save-platform-backup-destination" type="submit"><span class="button-label">Salvar destino</span><span class="spinner" aria-hidden="true"></span></button></div>
+            </form>
+          </section>
+
+          <section class="devices-panel backup-panel" id="tenant-backup-panel" hidden>
+            <div class="devices-panel-head"><div><p class="eyebrow">Dados da organização</p><h2>Backups do cliente</h2></div><button class="primary-button" id="create-tenant-backup" type="button">Criar backup</button></div>
+            <p class="continuity-site-names-help">O pacote contém somente dados deste cliente. Senhas, sessões, tokens e segredos de integrações são excluídos.</p>
+            <label class="integration-enable"><input id="tenant-backup-google-drive" type="checkbox"><span><strong>Enviar também ao Google Drive da plataforma</strong><small id="tenant-backup-google-drive-detail">Verificando disponibilidade</small></span></label>
+            <p class="form-feedback" id="tenant-backup-feedback" hidden></p>
+            <div class="table-wrap" id="tenant-backup-table-wrap" hidden>
+              <table class="audit-table"><thead><tr><th>Solicitado em</th><th>Estado</th><th>Tamanho</th><th>Cópia externa</th><th>Ação</th></tr></thead><tbody id="tenant-backup-body"></tbody></table>
+            </div>
+            <div class="state compact-state" id="tenant-backup-empty"><div class="state-icon" aria-hidden="true">◇</div><strong>Nenhum backup do cliente</strong><p>Crie um snapshot lógico para download ou cópia externa.</p></div>
+          </section>
         </section>
 
         <section class="content" id="alerts-view" hidden>

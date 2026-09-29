@@ -429,6 +429,15 @@ set_env ARGUS_CLICKHOUSE_DATA_PATH "$clickhouse_data_path"
 set_env ARGUS_COLLECTOR_DATA_PATH "$collector_data_path"
 set_env ARGUS_BACKUP_DATA_PATH "$backup_data_path"
 if [[ "$data_root" == "docker" ]]; then
+  tenant_backup_data_path="tenant-backup-data"
+  backup_staging_data_path="backup-staging-data"
+else
+  tenant_backup_data_path="/var/lib/logvault/tenant-backups"
+  backup_staging_data_path="/var/lib/logvault/backup-staging"
+fi
+set_env ARGUS_TENANT_BACKUP_DATA_PATH "$tenant_backup_data_path"
+set_env ARGUS_BACKUP_STAGING_DATA_PATH "$backup_staging_data_path"
+if [[ "$data_root" == "docker" ]]; then
   proxy_data_path="proxy-data"
   proxy_config_path="proxy-config"
 else
@@ -520,6 +529,9 @@ if [[ "$data_root" != "docker" ]]; then
   if [[ $(id -u) -eq 0 ]]; then chown 1000:1000 "$collector_data_path"; fi
 fi
 install -d -o 1000 -g 1000 -m 0770 "$control_root"
+if [[ "$data_root" != "docker" ]]; then
+  install -d -o 1000 -g 1000 -m 0750 "$tenant_backup_data_path" "$backup_staging_data_path"
+fi
 "$repo_root/scripts/install-continuity-agent.sh" "$repo_root" "$env_file" "$control_root"
 
 (

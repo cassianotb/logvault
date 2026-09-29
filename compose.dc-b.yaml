@@ -81,6 +81,16 @@ services:
     restart: unless-stopped
     logging: *default-logging
 
+  backup-permissions-b:
+    profiles: ["failover"]
+    image: alpine:3.22
+    command: ["sh", "-c", "chown -R 1000:1000 /tenant-backups /backup-staging && chmod 0750 /tenant-backups /backup-staging"]
+    volumes:
+      - ${ARGUS_DR_TENANT_BACKUP_B_DATA_PATH:-tenant-backup-b-data}:/tenant-backups
+      - ${ARGUS_DR_BACKUP_STAGING_B_DATA_PATH:-backup-staging-b-data}:/backup-staging
+    restart: "no"
+    logging: *default-logging
+
   api-b:
     profiles: ["failover"]
     build: .
@@ -91,15 +101,21 @@ services:
       ARGUS_POSTGRES_URL: postgres://argus:${ARGUS_POSTGRES_PASSWORD}@postgres-b:5432/argus
       ARGUS_CLICKHOUSE_URL: http://clickhouse-b:8123
       ARGUS_DR_LOCAL_SITE: b
+      ARGUS_TENANT_BACKUP_ROOT: /var/lib/argus/tenant-backups
+      ARGUS_BACKUP_STAGING_ROOT: /var/lib/argus/backup-staging
     ports:
       - "127.0.0.1:8080:8080"
     volumes:
       - ${ARGUS_DR_BACKUP_B_DATA_PATH:-backup-b-data}:/var/lib/argus/backups:ro
+      - ${ARGUS_DR_TENANT_BACKUP_B_DATA_PATH:-tenant-backup-b-data}:/var/lib/argus/tenant-backups
+      - ${ARGUS_DR_BACKUP_STAGING_B_DATA_PATH:-backup-staging-b-data}:/var/lib/argus/backup-staging
     depends_on:
       postgres-b:
         condition: service_healthy
       clickhouse-b:
         condition: service_healthy
+      backup-permissions-b:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
@@ -199,3 +215,5 @@ volumes:
   backup-b-data:
   proxy-b-data:
   proxy-b-config:
+  tenant-backup-b-data:
+  backup-staging-b-data:

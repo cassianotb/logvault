@@ -307,7 +307,7 @@ salva a configuração anterior em `.env.bak`.
 - `web`: autentica o usuário, exibe indicadores CGNAT, gerencia contas, exibe auditoria, monitora equipamentos/coletores, consulta por IP público, data/hora, porta opcional e protocolo; exporta CSV/PDF e gera relatórios para ofício.
 - `ClickHouse`: mensagens/pacotes originais e eventos normalizados, com retenção automática de 13 meses.
 - `PostgreSQL`: tenants, usuários, equipamentos, coletores, integrações ERP e auditoria.
-- `backup`: gera pontos diários consistentes de PostgreSQL, ClickHouse e spool SQLite, com backup completo semanal e incremental diário, download auditado e réplica SSH/rsync opcional.
+- `backup`: gera pontos diários consistentes de PostgreSQL, ClickHouse e spool SQLite, com backup completo semanal e incremental diário, download auditado, réplica SSH/rsync opcional e cópia criptografada para Google Shared Drive.
 - `proxy`: publica o painel e a API com Caddy, HTTPS automático e renovação do certificado.
 
 O cadastro de assinantes não é copiado. A integração sob demanda com o ERP está prevista, mas ainda não está ativa nesta etapa; consultas e relatórios informam isso explicitamente e não tentam identificar o assinante por inferência.
@@ -402,7 +402,7 @@ Administradores podem criar, editar, ativar, desativar e excluir logicamente usu
 
 Os componentes escolhidos para este MVP não exigem a contratação de licença de banco de dados. Continuam existindo os custos normais da infraestrutura onde ele será executado, armazenamento, backup e tráfego.
 
-A tela **Sistema** mostra serviços, backups locais e estado da cópia externa. Em **Alertas**, administradores acompanham ocorrências e podem manter simultaneamente destinos Webhook, Discord e Telegram, cada um com ativação, teste, severidade, categorias, repetição e recuperação independentes.
+A tela **Sistema** separa a proteção por contexto. A plataforma acompanha e baixa o backup completo, configura uma cópia criptografada para Google Shared Drive e sua retenção; o administrador de cada cliente gera somente um pacote lógico do próprio tenant, com opção de envio ao mesmo destino externo. Senhas, sessões, tokens, chaves e segredos não entram no pacote do cliente. Em **Alertas**, administradores acompanham ocorrências e podem manter simultaneamente destinos Webhook, Discord e Telegram, cada um com ativação, teste, severidade, categorias, repetição e recuperação independentes.
 
 A tela **Capacidade** mede taxas, picos, armazenamento, spool para seis horas offline e latência das consultas. As projeções usam a maior carga entre 5 minutos, 1 hora e 24 horas, com margem técnica explícita para orientar o dimensionamento e os futuros planos. Quando a coleta para, as janelas permanecem ancoradas no último recebimento; ao voltar, o cálculo acompanha automaticamente os novos dados.
 

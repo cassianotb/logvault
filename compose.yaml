@@ -64,6 +64,15 @@ services:
     restart: unless-stopped
     logging: *default-logging
 
+  backup-permissions:
+    image: alpine:3.22
+    command: ["sh", "-c", "chown -R 1000:1000 /tenant-backups /backup-staging && chmod 0750 /tenant-backups /backup-staging"]
+    volumes:
+      - ${ARGUS_TENANT_BACKUP_DATA_PATH:-tenant-backup-data}:/tenant-backups
+      - ${ARGUS_BACKUP_STAGING_DATA_PATH:-backup-staging-data}:/backup-staging
+    restart: "no"
+    logging: *default-logging
+
   api:
     build: .
     hostname: ${ARGUS_DR_LOCAL_HOSTNAME:-argus-dc-a}
@@ -71,16 +80,22 @@ services:
     env_file: ${ARGUS_ENV_FILE:-.env}
     environment:
       ARGUS_CONTINUITY_CONTROL_PATH: /var/lib/argus/control
+      ARGUS_TENANT_BACKUP_ROOT: /var/lib/argus/tenant-backups
+      ARGUS_BACKUP_STAGING_ROOT: /var/lib/argus/backup-staging
     depends_on:
       postgres:
         condition: service_healthy
       clickhouse:
         condition: service_healthy
+      backup-permissions:
+        condition: service_completed_successfully
     ports:
       - "${ARGUS_API_BIND:-127.0.0.1}:8080:8080"
     volumes:
       - ${ARGUS_BACKUP_DATA_PATH:-backup-data}:/var/lib/argus/backups:ro
       - ${ARGUS_CONTINUITY_CONTROL_PATH:-/var/lib/logvault/control}:/var/lib/argus/control
+      - ${ARGUS_TENANT_BACKUP_DATA_PATH:-tenant-backup-data}:/var/lib/argus/tenant-backups
+      - ${ARGUS_BACKUP_STAGING_DATA_PATH:-backup-staging-data}:/var/lib/argus/backup-staging
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/health/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 10s
@@ -185,5 +200,7 @@ volumes:
   clickhouse-data:
   collector-data:
   backup-data:
+  tenant-backup-data:
+  backup-staging-data:
   proxy-data:
   proxy-config:

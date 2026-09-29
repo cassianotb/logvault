@@ -261,6 +261,22 @@ export class ClickHouseRepository {
     if (!response.success) throw response.error;
   }
 
+  async *exportTenantTable(
+    table: 'ingest_raw' | 'cgnat_events' | 'server_metrics',
+    tenantId: string
+  ): AsyncGenerator<string> {
+    const allowed = new Set(['ingest_raw', 'cgnat_events', 'server_metrics']);
+    if (!allowed.has(table)) throw new Error('Tabela de exportação inválida');
+    const result = await this.client.query({
+      query: `SELECT * FROM ${table} WHERE tenant_id = {tenantId:UUID}`,
+      query_params: { tenantId },
+      format: 'JSONEachRow'
+    });
+    for await (const rows of result.stream()) {
+      for (const row of rows) yield `${row.text}\n`;
+    }
+  }
+
   async getReplicationHealth(): Promise<{
     replicatedTables: number; readonlyTables: number; queueSize: number;
     absoluteDelaySeconds: number; activeReplicas: number | null; totalReplicas: number | null;

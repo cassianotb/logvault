@@ -29,6 +29,7 @@ import { ContinuityMonitor, registerContinuityRoutes, startContinuityActivationP
 import { hostname } from 'node:os';
 import { readFileSync } from 'node:fs';
 import { preparePrimaryContinuity } from '../core/continuity-host-control.js';
+import { registerBackupRoutes, startBackupProcessor } from './backups.js';
 
 const config = loadApiConfig();
 const applicationVersion = (() => {
@@ -300,10 +301,20 @@ registerSystemRoutes(app, {
   backupRoot: config.ARGUS_BACKUP_ROOT,
   backupExpectedHours: config.ARGUS_BACKUP_INTERVAL_HOURS,
   backupRetentionDays: config.ARGUS_BACKUP_RETENTION_DAYS,
-  backupDownloadTenantId: config.ARGUS_TENANT_ID,
   backupRemoteEnabled: config.ARGUS_BACKUP_REMOTE_TARGET.length > 0,
   cloudMetricsProvider: () => latestCloudMetrics,
   continuityProvider: () => continuityMonitor.snapshot()
+});
+const triggerBackup = await startBackupProcessor(app, {
+  postgres, clickhouse, backupRoot: config.ARGUS_BACKUP_ROOT,
+  tenantBackupRoot: config.ARGUS_TENANT_BACKUP_ROOT,
+  stagingRoot: config.ARGUS_BACKUP_STAGING_ROOT,
+  encryptionKey: alertEncryptionKey
+});
+registerBackupRoutes(app, {
+  postgres, encryptionKey: alertEncryptionKey,
+  tenantBackupRoot: config.ARGUS_TENANT_BACKUP_ROOT,
+  trigger: triggerBackup
 });
 registerAlertRoutes(app, { postgres, encryptionKey: alertEncryptionKey });
 registerCapacityRoutes(app, {
