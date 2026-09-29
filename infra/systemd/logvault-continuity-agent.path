@@ -1,0 +1,9 @@
+[Unit]
+Description=Observa solicitações de preparação da continuidade do LogVault
+
+[Path]
+PathExists=@CONTROL_ROOT@/request.env
+Unit=logvault-continuity-agent.service
+
+[Install]
+WantedBy=multi-user.target

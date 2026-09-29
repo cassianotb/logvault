@@ -146,6 +146,7 @@ describe('continuidade entre datacenters', () => {
     let tokenHash = '';
     let consumed = false;
     const applied: unknown[] = [];
+    const preparations: unknown[] = [];
     const postgres = {
       findActiveSession: async () => session,
       createContinuityEnrollment: async (input: { tokenHash: string; expiresAt: string }) => {
@@ -166,6 +167,10 @@ describe('continuidade entre datacenters', () => {
         warningSeconds: 10, criticalSeconds: 60 },
       testConfiguration: async () => monitor().snapshot(),
       applyConfiguration: async (settings) => { applied.push(settings); },
+      preparePrimary: async (input) => {
+        preparations.push(input);
+        return { bind: '10.20.0.10', cidr: '10.30.0.20/32' };
+      },
       enrollmentPublicUrl: 'https://logvault.example.com',
       enrollmentTopology: {
         siteAHost: 'logvault-dca.example.com', panelHost: 'logvault.example.com', ingestHost: 'ingest.example.com',
@@ -181,6 +186,8 @@ describe('continuidade entre datacenters', () => {
         siteAHost: 'logvault-dca.example.com', siteBHost: 'logvault-dcb.example.com' } });
     expect(created.statusCode).toBe(201);
     const issued = created.json();
+    expect(preparations).toEqual([{ siteAHost: 'logvault-dca.example.com', siteBHost: 'logvault-dcb.example.com' }]);
+    expect(issued.preparation).toEqual({ bind: '10.20.0.10', cidr: '10.30.0.20/32' });
     expect(issued.token).toMatch(/^[A-Za-z0-9_-]{40,128}$/);
     expect(tokenHash).not.toBe(issued.token);
     expect(issued.command).toContain('install-dc-b.sh install --yes');
@@ -217,6 +224,30 @@ describe('continuidade entre datacenters', () => {
     const reused = await app.inject({ method: 'POST', url: '/v1/continuity/enroll',
       headers: { authorization: `Bearer ${issued.token}`, 'content-type': 'application/json' }, payload });
     expect(reused.statusCode).toBe(401);
+    await app.close();
+  });
+
+  it('não emite token quando o agente do DC-A não consegue preparar a rede', async () => {
+    let created = false;
+    const postgres = {
+      findActiveSession: async () => session,
+      createContinuityEnrollment: async () => { created = true; throw new Error('não deveria criar'); }
+    } as unknown as PostgresRepository;
+    const app = Fastify();
+    registerContinuityRoutes(app, {
+      postgres, monitor: monitor(), encryptionKey: 'continuity-enrollment-encryption-key',
+      fallbackSettings: { enabled: false, siteAName: 'A', siteBName: 'B', postgresStandbyUrl: '',
+        clickhouseStandbyUrl: '', clickhouseStandbyUser: '', clickhouseStandbyPassword: '', standbyApiUrl: '',
+        warningSeconds: 10, criticalSeconds: 60 },
+      testConfiguration: async () => monitor().snapshot(), applyConfiguration: async () => undefined,
+      enrollmentPublicUrl: 'https://logvault.example.com',
+      preparePrimary: async () => { throw new Error('o DNS do DC-A não pertence a esta VM'); }
+    });
+    const response = await app.inject({ method: 'POST', url: '/v1/continuity/enrollments', headers: { cookie },
+      payload: { siteAName: 'DC-A', siteBName: 'DC-B', siteAHost: 'dc-a.internal', siteBHost: 'dc-b.internal' } });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ error: 'dc_a_preparation_failed', message: 'o DNS do DC-A não pertence a esta VM' });
+    expect(created).toBe(false);
     await app.close();
   });
 });

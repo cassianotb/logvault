@@ -5008,13 +5008,15 @@ continuitySettingsForm.addEventListener('submit', async (event) => {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error === 'public_url_not_configured'
       ? 'A URL pública do LogVault precisa estar definida pelo administrador da instalação.'
-      : 'Não foi possível gerar o comando de instalação.');
+      : payload.error === 'dc_a_preparation_failed'
+        ? `Não foi possível preparar o DC-A: ${payload.message || 'verifique os DNS e o agente local.'}`
+        : 'Não foi possível gerar o comando de instalação.');
     currentContinuityEnrollment = payload.enrollment;
     continuityCommand.value = payload.command;
     continuityEnrollmentCommand.hidden = false;
     revokeContinuityEnrollmentButton.hidden = false;
     continuityWizardTestState.className = 'continuity-test-state healthy';
-    continuityWizardTestCopy.textContent = `Token gerado. Execute o comando até ${formatDeviceMoment(payload.enrollment.expiresAt)}.`;
+    continuityWizardTestCopy.textContent = `DC-A preparado (${payload.preparation?.bind || 'interface validada'}; acesso do DC-B ${payload.preparation?.cidr || 'restrito'}). Execute o comando até ${formatDeviceMoment(payload.enrollment.expiresAt)}.`;
     saveContinuitySettingsButton.querySelector('.button-label').textContent = 'Gerar novo comando';
     renderContinuityEnrollment(payload.enrollment);
     continuityEnrollmentLoaded = true;

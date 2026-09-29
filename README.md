@@ -157,23 +157,22 @@ Use as setas e `Enter`, ou pressione o número da opção.
 Escolha **1 — Sistema LogVault**. Tenha estas respostas preparadas:
 
 - nome e e-mail do administrador inicial;
-- uma senha com 12 a 256 caracteres, contendo maiúscula, minúscula, número e
-  um dos símbolos aceitos pelo assistente;
-- diretório dos dados — para uma instalação nova, mantenha
-  `/var/lib/logvault`;
+- uma frase-senha com 15 a 256 caracteres;
 - retenção dos backups locais — o padrão é 15 dias;
 - fuso horário dos equipamentos — normalmente `America/Sao_Paulo`;
 - nome descritivo do servidor;
 - URL pública do painel, por exemplo `https://logs.seuprovedor.com.br`;
-- e-mail usado pelo emissor do certificado HTTPS;
-- IP da interface privada/VPN usada para replicação e o CIDR autorizado entre
-  os datacenters.
+- e-mail usado pelo emissor do certificado HTTPS.
+
+O armazenamento é configurado automaticamente em `/var/lib/logvault`. A
+continuidade permanece desativada e as portas dos bancos ficam vinculadas ao
+`127.0.0.1`; nenhum dado do DC-B é solicitado nesta primeira instalação.
 
 Antes de confirmar uma URL HTTPS, faça o registro DNS apontar para a VM e
 confirme que 80/TCP e 443/TCP chegam até ela. Revise o resumo e confirme. O
 assistente cria o `.env`, gera os segredos internos, configura o firewall
 local quando UFW ou firewalld estiver ativo, sobe o proxy Caddy, emite o
-certificado, valida a URL, constrói os containers e prepara o DC-A. O
+certificado, valida a URL e constrói os containers. O
 arquivo `.env` é confidencial: não envie por mensagem, não copie para o GitHub
 e não altere suas permissões.
 
@@ -232,6 +231,12 @@ No painel do DC-A, abra **Administração da plataforma → Continuidade →
 Adicionar DC-B**, informe os FQDNs e gere o comando temporário. Execute esse
 comando como `root` na VM B. O token expira em 30 minutos e só pode ser usado
 uma vez.
+
+Ao gerar o comando, o agente local do DC-A resolve os dois FQDNs, confirma que
+o endereço do A pertence à própria VM, vincula os bancos à interface correta e
+autoriza somente o IPv4 do B (`/32`). Se UFW ou firewalld estiver ativo, as
+portas de replicação também são liberadas somente para esse endereço. A API
+não recebe acesso ao socket do Docker.
 
 O instalador do B detecta sistema, CPU, RAM, discos, interfaces e IPs; instala
 dependências ausentes; clona este repositório; recebe as credenciais sem
@@ -326,10 +331,10 @@ O menu de instalação usa a identidade Azul elétrico do LogVault, aceita setas
 Enter e atalhos numéricos. Em terminais sem cores ou com `NO_COLOR` definido,
 a interface permanece funcional em modo monocromático.
 
-Na instalação do sistema, o assistente solicita a conta administrativa inicial, senha, local dos dados, retenção dos backups, fuso horário e publicação do painel. Os segredos de PostgreSQL, ClickHouse, ingestão e alertas, além dos identificadores internos, são gerados automaticamente e nunca são exibidos. O `.env` completo é salvo com permissão `0600` e uma reconfiguração preserva credenciais válidas, mantendo também uma cópia `.env.bak`.
+Na instalação do sistema, o assistente solicita a conta administrativa inicial, senha, retenção dos backups, fuso horário e publicação do painel. O armazenamento novo usa automaticamente `/var/lib/logvault`; `--data-root` continua disponível para automações avançadas. Os segredos de PostgreSQL, ClickHouse, ingestão e alertas, além dos identificadores internos, são gerados automaticamente e nunca são exibidos. O `.env` completo é salvo com permissão `0600` e uma reconfiguração preserva credenciais válidas, mantendo também uma cópia `.env.bak`.
 
 Para os dados persistentes, o padrão de uma instalação nova é
-`/var/lib/logvault`; também é possível escolher `docker` para manter volumes
+`/var/lib/logvault`; em automações, `--data-root docker` permite usar volumes
 nomeados. O SSH normalmente utiliza `22/TCP`; o proxy Caddy integrado publica
 80/443 e mantém o certificado. Somente o DNS e, quando houver NAT, o
 encaminhamento dessas portas pertencem à infraestrutura externa.

@@ -840,14 +840,14 @@
             <form class="alert-wizard-form" id="continuity-settings-form">
               <div class="alert-wizard-head"><div><p class="eyebrow">Cadastro seguro</p><h2>Adicionar Data Center B</h2></div><button type="button" id="close-continuity-settings" aria-label="Fechar">×</button></div>
               <div class="alert-wizard-body">
-                <div class="alert-wizard-step-head"><span>COMANDO ÚNICO</span><h3>Execute na VM standby</h3><p>Informe os DNS estáveis dos dois sites. Eles podem resolver para rede privada, VPN, VIP ou endereço público protegido; o LogVault validará resolução, inventário, roteamento e endpoints.</p></div>
+                <div class="alert-wizard-step-head"><span>ATIVAÇÃO ASSISTIDA</span><h3>Prepare o DC-A e cadastre a VM standby</h3><p>Informe os DNS estáveis dos dois sites. Ao gerar o comando, o LogVault prepara automaticamente a interface local e libera a replicação somente para o IPv4 do DC-B. Depois, execute o comando gerado na VM standby.</p></div>
                 <div class="continuity-wizard-grid continuity-site-names">
                   <label class="field"><span>Nome do site principal</span><input id="continuity-site-a-input" name="siteAName" maxlength="100" required placeholder="Ex.: Matriz São Paulo"></label>
                   <label class="field"><span>Nome do site standby</span><input id="continuity-site-b-input" name="siteBName" maxlength="100" required placeholder="Ex.: DR Curitiba"></label>
                   <label class="field"><span>DNS/FQDN do DC-A</span><input id="continuity-site-a-host" name="siteAHost" maxlength="255" required placeholder="Ex.: logvault-dca.exemplo.com"></label>
                   <label class="field"><span>DNS/FQDN do DC-B</span><input id="continuity-site-b-host" name="siteBHost" maxlength="255" required placeholder="Ex.: logvault-dcb.exemplo.com"></label>
                 </div>
-                <p class="continuity-site-names-help">Os nomes identificam os sites no mapa. Os DNS são os endpoints estáveis; IP, interface, gateway e discos da VM serão detectados apenas para inventário.</p>
+                <p class="continuity-site-names-help">Os dois DNS precisam resolver antes desta etapa, e o DNS do DC-A deve apontar para um IPv4 desta VM. A rede autorizada será limitada automaticamente ao DC-B (/32).</p>
                 <div class="continuity-prerequisites"><strong>Pré-requisitos mínimos</strong><p>8 vCPU · 16 GiB de RAM · 50 GiB para o sistema · 50 GiB para PostgreSQL · 100 GiB para ClickHouse · Docker, Compose e NTP.</p></div>
                 <div class="continuity-enrollment-command" id="continuity-enrollment-command" hidden>
                   <label for="continuity-command">Comando válido por 30 minutos e para um único uso</label>

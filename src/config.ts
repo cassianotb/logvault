@@ -75,6 +75,7 @@ export const apiConfigSchema = z.object({
   ARGUS_BACKUP_ROOT: z.string().min(1).default('/var/lib/argus/backups'),
   ARGUS_BACKUP_INTERVAL_HOURS: z.coerce.number().int().min(1).max(168).default(24),
   ARGUS_BACKUP_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(15),
+  ARGUS_CONTINUITY_CONTROL_PATH: z.string().min(1).default('/var/lib/argus/control'),
   ARGUS_BACKUP_REMOTE_TARGET: z.string().default(''),
   ARGUS_CAPACITY_OFFLINE_HOURS: z.coerce.number().int().min(1).max(168).default(6),
   ARGUS_DR_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
@@ -114,7 +115,8 @@ export const apiConfigSchema = z.object({
   ARGUS_MANAGED_CLOUD_PORT_END: z.coerce.number().int().min(1025).max(65535).default(31999),
   ARGUS_BOOTSTRAP_ADMIN_NAME: z.string().min(1).default('Administrador'),
   ARGUS_BOOTSTRAP_ADMIN_EMAIL: z.string().email(),
-  ARGUS_BOOTSTRAP_ADMIN_PASSWORD: z.string().min(12).max(1024)
+  // Instalações novas exigem 15; o piso de 12 preserva upgrades criados pela política anterior.
+  ARGUS_BOOTSTRAP_ADMIN_PASSWORD: z.string().min(12).max(256)
 }).refine((config) => config.ARGUS_MANAGED_CLOUD_PORT_END >= config.ARGUS_MANAGED_CLOUD_PORT_START + 1, {
   message: 'O intervalo Cloud deve conter ao menos um par de portas',
   path: ['ARGUS_MANAGED_CLOUD_PORT_END']

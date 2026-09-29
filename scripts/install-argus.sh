@@ -44,8 +44,8 @@ as credenciais internas, a conta administrativa e a estrutura de dados.
   --acme-email EMAIL            contato usado na conta ACME/Let's Encrypt
   --tls-challenge MÉTODO        automatic, http-01 ou disabled
   --server-name NOME            identificação exibida no firewall
-  --replication-bind IP         IP local da interface segura entre os DCs
-  --replication-cidr CIDR       rede autorizada a abrir streaming (padrão: 10.0.0.0/8)
+  --replication-bind IP         avançado: IP local de replicação (padrão: 127.0.0.1)
+  --replication-cidr CIDR       avançado: rede autorizada (padrão: 127.0.0.1/32)
   --env-file ARQUIVO            arquivo de configuração (padrão: .env)
   --yes                         confirma o resumo sem nova pergunta
   --no-apply                    grava e valida, mas não inicia os containers
@@ -53,7 +53,8 @@ as credenciais internas, a conta administrativa e a estrutura de dados.
 
 O instalador sobe o proxy Caddy, publica 80/443, emite e renova o certificado
 automaticamente. Antes de executar, faça o DNS apontar para a VM e encaminhe
-80/TCP e 443/TCP até ela. Os bancos e a API não são expostos diretamente.
+80/TCP e 443/TCP até ela. Os bancos e a API não são expostos diretamente. A
+continuidade é preparada posteriormente em Plataforma → Continuidade.
 EOF
 }
 
@@ -79,13 +80,12 @@ is_ipv4() {
 }
 
 valid_password() {
-  local value="$1"
-  [[ ${#value} -ge 12 && ${#value} -le 256 ]] || return 1
-  [[ "$value" =~ [A-Z] && "$value" =~ [a-z] && "$value" =~ [0-9] ]] || return 1
-  [[ "$value" =~ [@%+=:,._~!\-] ]] || return 1
-  [[ "$value" =~ ^[A-Za-z0-9@%+=:,._~!\-]+$ ]] || return 1
+  local value="$1" safe_pattern='^[-A-Za-z0-9@%+=:,._~!/ ]+$'
+  [[ ${#value} -ge 15 && ${#value} -le 256 ]] || return 1
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || return 1
+  [[ "$value" =~ $safe_pattern ]] || return 1
   case "$value" in
-    change-me|argus|troque-*|*senha-forte*) return 1 ;;
+    change-me|argus|logvault|password|senha|troque-*|*senha-forte*) return 1 ;;
   esac
 }
 
@@ -154,18 +154,18 @@ ask() {
 
 ask_password() {
   local first="" second=""
+  printf 'Use uma frase-senha com 15 a 256 caracteres. Espaços e símbolos seguros são aceitos.\n' >&2
   while true; do
     read -r -s -p 'Senha inicial do administrador: ' first
-    printf '\n'
+    printf '\n' >&2
     read -r -s -p 'Confirme a senha: ' second
-    printf '\n'
+    printf '\n' >&2
     if [[ "$first" != "$second" ]]; then
       printf 'As senhas não coincidem. Tente novamente.\n' >&2
       continue
     fi
     if ! valid_password "$first"; then
-      printf 'Use 12 a 256 caracteres, com maiúscula, minúscula, número e símbolo.\n' >&2
-      printf 'Símbolos aceitos: @ %% + = : , . _ ~ ! -\n' >&2
+      printf 'Senha não aceita: use 15 a 256 caracteres, sem aspas, # ou barra invertida, e evite senhas comuns.\n' >&2
       continue
     fi
     printf '%s' "$first"
@@ -229,9 +229,8 @@ acme_email="${acme_email:-$existing_acme_email}"
 tls_challenge="${tls_challenge:-${existing_tls_challenge:-disabled}}"
 public_url="${public_url:-$existing_public_url}"
 if [[ "$public_url" =~ ^http://([^/:]+):8081/?$ ]]; then public_url="http://${BASH_REMATCH[1]}"; fi
-replication_bind="${replication_bind:-${existing_replication_bind:-$(detect_primary_ipv4)}}"
-replication_bind="${replication_bind:-127.0.0.1}"
-replication_cidr="${replication_cidr:-${existing_replication_cidr:-10.0.0.0/8}}"
+replication_bind="${replication_bind:-${existing_replication_bind:-127.0.0.1}}"
+replication_cidr="${replication_cidr:-${existing_replication_cidr:-127.0.0.1/32}}"
 
 if [[ "$interactive" == "true" ]]; then
   printf '\nConfiguração do Sistema LogVault\n'
@@ -254,8 +253,6 @@ else
 fi
 
 if [[ "$interactive" == "true" ]]; then
-  if [[ -z "$data_root" ]]; then data_root="/var/lib/logvault"; fi
-  data_root="$(ask 'Armazenamento persistente (diretório absoluto ou docker)' "$data_root")"
   backup_retention_days="$(ask 'Retenção dos backups locais em dias' "$backup_retention_days")"
   timezone="$(ask 'Fuso horário dos equipamentos' "$timezone")"
   server_name="$(ask 'Nome deste servidor' "$server_name")"
@@ -264,14 +261,17 @@ if [[ "$interactive" == "true" ]]; then
     else detected_public_ip="$(detect_primary_ipv4)"; public_url="http://${detected_public_ip:-127.0.0.1}"; fi
   fi
   public_url="$(ask 'URL pública do painel' "$public_url")"
+  public_url="${public_url%/}"
+  if [[ "$public_url" != *://* ]]; then
+    if is_ipv4 "$public_url" || [[ "$public_url" == "localhost" ]]; then public_url="http://$public_url"
+    else public_url="https://$public_url"; fi
+  fi
   if [[ "$public_url" == https://* ]]; then
     tls_challenge="http-01"
     acme_email="$(ask 'E-mail para emissão e renovação do certificado' "$acme_email")"
   else
     tls_challenge="disabled"
   fi
-  replication_bind="$(ask 'IP local da interface segura de replicação' "$replication_bind")"
-  replication_cidr="$(ask 'Rede CIDR autorizada entre os datacenters' "$replication_cidr")"
 fi
 
 if [[ -z "$data_root" ]]; then
@@ -281,7 +281,7 @@ fi
 [[ -n "$admin_name" && ${#admin_name} -le 120 ]] || die "nome do administrador inválido"
 [[ "$admin_name" != *"#"* && "$admin_name" != *"="* && "$admin_name" != *$'\n'* && "$admin_name" != *$'\r'* ]] || die "nome do administrador contém caracteres inválidos"
 valid_email "$admin_email" || die "e-mail do administrador inválido"
-valid_password "$admin_password" || die "senha inicial fraca ou contém caracteres não aceitos"
+valid_password "$admin_password" || die "senha inicial fraca ou inválida; use 15 a 256 caracteres, sem aspas, # ou barra invertida"
 [[ "$backup_retention_days" =~ ^[0-9]+$ ]] || die "retenção deve ser um número de dias"
 (( backup_retention_days >= 1 && backup_retention_days <= 3650 )) || die "retenção deve ficar entre 1 e 3650 dias"
 valid_timezone "$timezone" || die "fuso horário inválido"
@@ -316,6 +316,10 @@ if [[ -z "$public_url" ]]; then
   fi
 fi
 public_url="${public_url%/}"
+if [[ -n "$public_url" && "$public_url" != *://* ]]; then
+  if is_ipv4 "$public_url" || [[ "$public_url" == "localhost" ]]; then public_url="http://$public_url"
+  else public_url="https://$public_url"; fi
+fi
 if [[ "$public_url" =~ ^https://([A-Za-z0-9][A-Za-z0-9.-]*[A-Za-z0-9])$ ]]; then
   public_host="${BASH_REMATCH[1],,}"
   domain="$public_host"
@@ -384,7 +388,7 @@ fi
 printf '  Serviços internos: painel 127.0.0.1:8081 · API 127.0.0.1:8080\n'
 printf '  Acesso direto: qualquer IP de origem em 80/TCP e 443/TCP\n'
 printf '  Credenciais internas: geração automática protegida\n\n'
-printf '  Replicação DR: interface %s · rede autorizada %s\n\n' "$replication_bind" "$replication_cidr"
+printf '  Continuidade: desativada; o DC-B será cadastrado posteriormente pelo painel\n\n'
 
 if [[ "$interactive" == "true" && "$assume_yes" != "true" ]]; then
   answer=""
@@ -462,6 +466,7 @@ set_env ARGUS_PUBLIC_URL "$public_url"
 set_env ARGUS_COOKIE_SECURE "$cookie_secure"
 set_env ARGUS_DR_LOCAL_SITE a
 set_env ARGUS_DR_LOCAL_HOSTNAME logvault-dc-a
+set_env ARGUS_DR_PREPARED false
 set_env ARGUS_DR_REPLICATION_BIND "$replication_bind"
 set_env ARGUS_DR_REPLICATION_CIDR "$replication_cidr"
 set_env ARGUS_DR_POSTGRES_REPLICATION_PASSWORD "$replication_password"
@@ -474,6 +479,8 @@ set_env ARGUS_DR_INGEST_HOST "$dr_ingest_host"
 set_env ARGUS_DR_CONTROL_HOST "$dr_control_host"
 set_env ARGUS_DR_DNS_PROVIDER manual
 set_env ARGUS_DR_DNS_TTL_SECONDS 300
+control_root="/var/lib/logvault/control"
+set_env ARGUS_CONTINUITY_CONTROL_PATH "$control_root"
 
 printf 'Configuração completa gravada em %s (permissão 0600).\n' "$env_file"
 
@@ -484,6 +491,7 @@ fi
 
 command -v docker >/dev/null 2>&1 || die "Docker não encontrado; use --no-apply para apenas gravar"
 docker compose version >/dev/null 2>&1 || die "Docker com o plugin Compose é obrigatório"
+[[ $(id -u) -eq 0 ]] || die "a instalação completa deve ser executada com sudo"
 
 if ! command -v curl >/dev/null 2>&1; then
   if [[ $(id -u) -eq 0 ]] && command -v apt-get >/dev/null 2>&1; then
@@ -511,12 +519,13 @@ if [[ "$data_root" != "docker" ]]; then
   install -d -m 0750 "$postgres_data_path" "$clickhouse_data_path" "$collector_data_path" "$backup_data_path" "$proxy_data_path" "$proxy_config_path"
   if [[ $(id -u) -eq 0 ]]; then chown 1000:1000 "$collector_data_path"; fi
 fi
+install -d -o 1000 -g 1000 -m 0770 "$control_root"
+"$repo_root/scripts/install-continuity-agent.sh" "$repo_root" "$env_file" "$control_root"
 
 (
   cd "$repo_root"
   ARGUS_ENV_FILE="$env_file" docker compose --env-file "$env_file" config --quiet
   ARGUS_ENV_FILE="$env_file" docker compose --env-file "$env_file" up -d --build
-  ARGUS_ENV_FILE="$env_file" "$repo_root/scripts/prepare-dc-a.sh"
   ARGUS_ENV_FILE="$env_file" docker compose --env-file "$env_file" ps
 )
 

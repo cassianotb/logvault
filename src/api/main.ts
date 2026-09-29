@@ -28,6 +28,7 @@ import { createSubscriberResolver } from './subscribers.js';
 import { ContinuityMonitor, registerContinuityRoutes, startContinuityActivationProcessor, type ContinuityConnectionSettings, type ContinuityMonitorOptions } from './continuity.js';
 import { hostname } from 'node:os';
 import { readFileSync } from 'node:fs';
+import { preparePrimaryContinuity } from '../core/continuity-host-control.js';
 
 const config = loadApiConfig();
 const applicationVersion = (() => {
@@ -325,6 +326,11 @@ registerContinuityRoutes(app, {
   fallbackSettings: fallbackContinuitySettings,
   testConfiguration: testContinuityConfiguration,
   applyConfiguration: applyContinuityConfiguration,
+  preparePrimary: async ({ siteAHost, siteBHost }) => preparePrimaryContinuity({
+    controlDirectory: config.ARGUS_CONTINUITY_CONTROL_PATH,
+    siteAHost,
+    siteBHost
+  }),
   enrollmentPublicUrl: config.ARGUS_PUBLIC_URL,
   enrollmentTopology: {
     siteAHost: config.ARGUS_DR_SITE_A_HOST || config.ARGUS_DR_SITE_A_PRIVATE_HOST,

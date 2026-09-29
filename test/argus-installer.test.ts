@@ -28,9 +28,26 @@ async function passwordFile(root: string, password = strongPassword): Promise<st
 }
 
 describe('instalador do Sistema LogVault', () => {
+  it('aceita a senha digitada no terminal e mantém armazenamento e DR seguros por padrão', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'argus-installer-interactive-'));
+    const envFile = join(root, '.env');
+    const command = `bash ${installer} configure --env-file ${envFile} --no-apply --yes`;
+    const input = `\nadmin@example.com\n${strongPassword}\n${strongPassword}\n\n\n\n127.0.0.1\n`;
+    const result = spawnSync('script', ['-qfec', command, '/dev/null'], { input, encoding: 'utf8' });
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    const env = valuesOf(await readFile(envFile, 'utf8'));
+    expect(env.get('ARGUS_BOOTSTRAP_ADMIN_PASSWORD')).toBe(strongPassword);
+    expect(env.get('ARGUS_DATA_ROOT')).toBe('/var/lib/logvault');
+    expect(env.get('ARGUS_DR_REPLICATION_BIND')).toBe('127.0.0.1');
+    expect(env.get('ARGUS_DR_REPLICATION_CIDR')).toBe('127.0.0.1/32');
+    expect(env.get('ARGUS_DR_PREPARED')).toBe('false');
+    expect(result.stdout).not.toContain('Armazenamento persistente');
+    expect(result.stdout).not.toContain('interface segura de replicação');
+  });
+
   it('inclui proxy reverso com HTTPS e renovação automática no pacote', async () => {
-    const [compose, caddy, prepareDcA] = await Promise.all([
-      readFile(composeFile, 'utf8'), readFile(caddyHttpsFile, 'utf8'), readFile(prepareDcAFile, 'utf8')
+    const [compose, caddy, prepareDcA, installerContents] = await Promise.all([
+      readFile(composeFile, 'utf8'), readFile(caddyHttpsFile, 'utf8'), readFile(prepareDcAFile, 'utf8'), readFile(installer, 'utf8')
     ]);
     expect(compose).toContain('image: caddy:2.11.4-alpine');
     expect(compose).toContain('${ARGUS_HTTP_BIND:-0.0.0.0}:80:80');
@@ -40,6 +57,8 @@ describe('instalador do Sistema LogVault', () => {
     expect(caddy).toContain('reverse_proxy {$ARGUS_PROXY_UPSTREAM:web:80}');
     expect(prepareDcA).toContain('psql --username argus --dbname argus');
     expect(prepareDcA).not.toContain('psql --dbname argus');
+    expect(prepareDcA).toContain('install-continuity-agent.sh');
+    expect(installerContents).not.toContain('"$repo_root/scripts/prepare-dc-a.sh"');
   });
 
   it('gera um .env completo sem revelar credenciais na saída', async () => {

@@ -191,6 +191,7 @@ export function registerContinuityRoutes(app: FastifyInstance, dependencies: {
   fallbackSettings?: ContinuityConnectionSettings;
   testConfiguration?: (settings: ContinuityConnectionSettings) => Promise<ContinuitySnapshot>;
   applyConfiguration?: (settings: ContinuityConnectionSettings) => Promise<void>;
+  preparePrimary?: (input: { siteAHost: string; siteBHost: string }) => Promise<{ bind: string; cidr: string }>;
   enrollmentPublicUrl?: string;
   enrollmentTopology?: {
     siteAHost?: string; panelHost?: string; ingestHost?: string; drControlHost?: string;
@@ -356,6 +357,17 @@ export function registerContinuityRoutes(app: FastifyInstance, dependencies: {
     const publicUrl = new URL(enrollmentPublicUrl);
     if (!['http:', 'https:'].includes(publicUrl.protocol)) return reply.code(409).send({ error: 'invalid_public_url_protocol' });
     const enrollmentTopology = dependencies.enrollmentTopology ?? {};
+    let preparation: { bind: string; cidr: string } | null = null;
+    if (dependencies.preparePrimary) {
+      try {
+        preparation = await dependencies.preparePrimary({ siteAHost: names.data.siteAHost, siteBHost: names.data.siteBHost });
+      } catch (error) {
+        return reply.code(409).send({
+          error: 'dc_a_preparation_failed',
+          message: error instanceof Error ? error.message : 'não foi possível preparar o DC-A'
+        });
+      }
+    }
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + 30 * 60_000).toISOString();
     const enrollment = await dependencies.postgres.createContinuityEnrollment({
@@ -372,7 +384,7 @@ export function registerContinuityRoutes(app: FastifyInstance, dependencies: {
     const dnsProvider = topology.dnsProvider || 'manual';
     const dnsTtlSeconds = topology.dnsTtlSeconds ?? 300;
     const command = `curl -fsSLo /tmp/install-dc-b.sh ${shellQuote(installerUrl)} && chmod 700 /tmp/install-dc-b.sh && sudo ARGUS_DC_B_ENROLLMENT_TOKEN=${shellQuote(token)} /tmp/install-dc-b.sh install --yes --argus-url ${shellQuote(enrollmentPublicUrl)} --site-a-name ${shellQuote(names.data.siteAName)} --site-b-name ${shellQuote(names.data.siteBName)} --site-a-host ${shellQuote(siteAHost)} --site-b-host ${shellQuote(siteBHost)} --panel-host ${shellQuote(panelHost)} --ingest-host ${shellQuote(ingestHost)} --dr-control-host ${shellQuote(drControlHost)} --dns-provider ${shellQuote(dnsProvider)} --dns-ttl ${dnsTtlSeconds}${allowHttp}`;
-    return reply.code(201).send({ enrollment, token, command });
+    return reply.code(201).send({ enrollment, token, command, preparation });
   });
 
   app.delete('/v1/continuity/enrollments/:enrollmentId', async (request, reply) => {

@@ -35,8 +35,8 @@ internet aberta, mesmo quando os FQDNs públicos forem usados como endpoints.
 | DC-A | DC-B | TCP 8123 | monitoramento do ClickHouse B |
 | DC-A | DC-B | TCP 8082 | agente de prontidão do standby |
 
-Restrinja essas portas aos endereços da VPN/rede entre os datacenters. O
-instalador do A solicita o IP local de bind e o CIDR autorizado pelo PostgreSQL.
+Restrinja essas portas aos endereços da VPN/rede entre os datacenters. Na
+instalação inicial do A, os bancos permanecem vinculados ao `127.0.0.1`.
 
 ## Instalação do DC-A
 
@@ -46,24 +46,22 @@ Execute o assistente unificado e escolha **Sistema LogVault**:
 sudo ./install.sh
 ```
 
-Além dos dados normais do sistema, informe:
-
-- IP local da interface segura de replicação;
-- CIDR da rede entre os datacenters.
-
-O instalador:
+O instalador inicial:
 
 1. gera uma senha exclusiva de replicação;
-2. ativa WAL, slots, `hot_standby` e SCRAM;
-3. cria ou atualiza `argus_replica`;
-4. inclui a regra de replicação no `pg_hba.conf` e recarrega o PostgreSQL;
-5. publica PostgreSQL e ClickHouse apenas no IP escolhido;
-6. preserva os segredos no `.env` com modo `0600`.
+2. mantém PostgreSQL e ClickHouse acessíveis somente localmente;
+3. instala um agente `systemd` com operação restrita para a ativação posterior;
+4. preserva os segredos no `.env` com modo `0600`.
+
+Em **Continuidade → Adicionar DC-B**, informe os nomes e FQDNs dos dois sites.
+Ao gerar o comando, o agente resolve ambos os endereços, verifica se o IPv4 do
+DC-A pertence à VM, publica os bancos somente nessa interface, cria ou atualiza
+`argus_replica`, limita o `pg_hba.conf` ao IPv4 do B (`/32`) e ajusta UFW ou
+firewalld quando ativo. Só depois o painel entrega o token de uso único.
 
 Uma atualização de instalação antiga acrescenta automaticamente as variáveis
-necessárias antes de recriar os serviços. Revise
-`ARGUS_DR_REPLICATION_BIND` e `ARGUS_DR_REPLICATION_CIDR` depois da primeira
-atualização caso a VM possua mais de uma interface.
+necessárias e instala o agente local antes de recriar os serviços. Instalações
+que já possuíam continuidade continuam preservando a interface e o CIDR atuais.
 
 ## Requisitos do DC-B
 
@@ -84,8 +82,9 @@ prevalece sobre esses mínimos.
 ## Instalação automática do DC-B
 
 No painel do A, acesse **Administração da plataforma → Continuidade → Adicionar
-DC-B**. Informe nomes e FQDNs e copie o comando temporário. O token expira em 30
-minutos e aceita um único uso.
+DC-B**. Informe nomes e FQDNs resolvíveis dos dois sites. O FQDN do A deve
+apontar para um IPv4 local desta VM. Copie o comando temporário; o token expira
+em 30 minutos e aceita um único uso.
 
 Execute o comando como root na VM B. O instalador:
 

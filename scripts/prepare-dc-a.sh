@@ -7,6 +7,18 @@ env_file="${ARGUS_ENV_FILE:-$repo_root/.env}"
 
 die() { printf 'ERRO: %s\n' "$*" >&2; exit 2; }
 read_env() { sed -n "s/^${1}=//p" "$env_file" | tail -n 1; }
+set_env() {
+  local key="$1" value="$2" temporary
+  temporary="$(mktemp "${env_file}.XXXXXX")"
+  awk -v key="$key" -v value="$value" '
+    BEGIN { found = 0 }
+    $0 ~ "^" key "=" { if (!found) print key "=" value; found = 1; next }
+    { print }
+    END { if (!found) print key "=" value }
+  ' "$env_file" >"$temporary"
+  chmod 0600 "$temporary"
+  mv "$temporary" "$env_file"
+}
 
 [[ -r "$env_file" ]] || die "ambiente não encontrado: $env_file"
 command -v docker >/dev/null 2>&1 || die "Docker não encontrado"
@@ -42,3 +54,14 @@ psql --username argus --dbname argus --set ON_ERROR_STOP=1 --command 'SELECT pg_
 SH
 
 printf 'DC-A preparado: WAL ativo, usuário exclusivo e regra limitada a %s.\n' "$replication_cidr"
+
+# Também migra instalações atualizadas pela versão anterior do atualizador,
+# que chama este script depois de obter os arquivos novos via fast-forward.
+set_env ARGUS_DR_PREPARED true
+if [[ "${ARGUS_SKIP_CONTINUITY_AGENT_INSTALL:-false}" != "true" ]]; then
+  [[ $(id -u) -eq 0 ]] || die "execute com sudo para instalar o agente local de continuidade"
+  control_root=/var/lib/logvault/control
+  install -d -o 1000 -g 1000 -m 0770 "$control_root"
+  set_env ARGUS_CONTINUITY_CONTROL_PATH "$control_root"
+  "$repo_root/scripts/install-continuity-agent.sh" "$repo_root" "$env_file" "$control_root"
+fi

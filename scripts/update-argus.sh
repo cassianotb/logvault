@@ -134,24 +134,29 @@ printf '  Origem: %s/%s\n\n' "$remote" "$branch"
 printf '  Papel detectado: %s\n\n' "$role"
 
 if [[ "$current_commit" == "$target_commit" ]]; then
-  printf 'O Sistema LogVault já está atualizado.\n'
-  exit 0
-fi
-git -C "$repo_root" merge-base --is-ancestor "$current_commit" "$target_commit" || die "o histórico remoto divergiu; atualização automática cancelada"
-if [[ "$check_only" == "true" ]]; then
-  printf 'Existe uma atualização disponível. Nenhuma alteração foi aplicada.\n'
-  exit 0
+  if [[ "$check_only" == "true" ]]; then
+    printf 'O Sistema LogVault já está atualizado.\n'
+    exit 0
+  fi
+  printf 'O código já está atualizado; a configuração local e os serviços serão reconciliados.\n'
+else
+  git -C "$repo_root" merge-base --is-ancestor "$current_commit" "$target_commit" || die "o histórico remoto divergiu; atualização automática cancelada"
+  if [[ "$check_only" == "true" ]]; then
+    printf 'Existe uma atualização disponível. Nenhuma alteração foi aplicada.\n'
+    exit 0
+  fi
 fi
 
 if [[ "$assume_yes" != "true" ]]; then
   [[ -t 0 ]] || die "execução não interativa exige --yes"
   answer=""
-  read -r -p 'Criar backup e aplicar esta atualização? [S/n]: ' answer
+  read -r -p 'Criar backup e aplicar/reconciliar esta versão? [S/n]: ' answer
   case "$answer" in n|N|nao|não|NAO|NÃO) printf 'Atualização cancelada.\n'; exit 0 ;; esac
 fi
 
 command -v docker >/dev/null 2>&1 || die "Docker não encontrado"
 docker compose version >/dev/null 2>&1 || die "Docker com o plugin Compose é obrigatório"
+if [[ "$role" == "dc-a" && $(id -u) -ne 0 ]]; then die "a atualização do DC-A deve ser executada com sudo"; fi
 
 cd "$repo_root"
 primary_compose=(docker compose --env-file "$env_file")
@@ -165,9 +170,14 @@ ensure_env_key() {
   grep -q "^${key}=" .env || printf '%s=%s\n' "$key" "$value" >>.env
 }
 if [[ "$role" == "dc-a" ]]; then
-  primary_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk 'NR==1 { for (i=1;i<=NF;i++) if ($i=="src") { print $(i+1); exit } }' || true)"
-  ensure_env_key ARGUS_DR_REPLICATION_BIND "${primary_ip:-127.0.0.1}"
-  ensure_env_key ARGUS_DR_REPLICATION_CIDR 10.0.0.0/8
+  existing_replication_bind="$(sed -n 's/^ARGUS_DR_REPLICATION_BIND=//p' "$env_file" | tail -n1)"
+  if [[ -n "$existing_replication_bind" && "$existing_replication_bind" != "127.0.0.1" ]]; then
+    ensure_env_key ARGUS_DR_PREPARED true
+  else
+    ensure_env_key ARGUS_DR_PREPARED false
+  fi
+  ensure_env_key ARGUS_DR_REPLICATION_BIND 127.0.0.1
+  ensure_env_key ARGUS_DR_REPLICATION_CIDR 127.0.0.1/32
   if ! grep -q '^ARGUS_DR_POSTGRES_REPLICATION_PASSWORD=' "$env_file"; then
     command -v openssl >/dev/null 2>&1 || die "OpenSSL é necessário para gerar a credencial de replicação"
     ensure_env_key ARGUS_DR_POSTGRES_REPLICATION_PASSWORD "$(openssl rand -hex 32)"
@@ -184,6 +194,8 @@ if [[ "$role" == "dc-a" ]]; then
     ensure_env_key ARGUS_PROXY_DATA_PATH proxy-data
     ensure_env_key ARGUS_PROXY_CONFIG_PATH proxy-config
   fi
+  control_root=/var/lib/logvault/control
+  ensure_env_key ARGUS_CONTINUITY_CONTROL_PATH "$control_root"
   ensure_env_key ARGUS_HTTP_BIND 0.0.0.0
   ensure_env_key ARGUS_HTTPS_BIND 0.0.0.0
   public_url="$(sed -n 's/^ARGUS_PUBLIC_URL=//p' "$env_file" | tail -n1)"
@@ -225,9 +237,13 @@ fi
 printf 'Aplicando atualização...\n'
 git merge --ff-only "$target"
 if [[ "$role" == "dc-a" ]]; then
+  install -d -o 1000 -g 1000 -m 0770 "$control_root"
+  "$repo_root/scripts/install-continuity-agent.sh" "$repo_root" "$env_file" "$control_root"
   docker compose --env-file "$env_file" config --quiet
   docker compose --env-file "$env_file" up -d --build
-  ARGUS_ENV_FILE="$env_file" "$repo_root/scripts/prepare-dc-a.sh"
+  if [[ "$(sed -n 's/^ARGUS_DR_PREPARED=//p' "$env_file" | tail -n1)" == "true" ]]; then
+    ARGUS_ENV_FILE="$env_file" ARGUS_SKIP_CONTINUITY_AGENT_INSTALL=true "$repo_root/scripts/prepare-dc-a.sh"
+  fi
   docker compose --env-file "$env_file" ps
 else
   ARGUS_DR_ENV_FILE="$env_file" docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" config --quiet
@@ -238,5 +254,9 @@ else
   ARGUS_DR_ENV_FILE="$env_file" docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" --profile failover ps
 fi
 
-printf '\nLogVault atualizado de %s para %s.\n' "$current_version" "$target_version"
+if [[ "$current_commit" == "$target_commit" ]]; then
+  printf '\nLogVault %s reconciliado com sucesso.\n' "$target_version"
+else
+  printf '\nLogVault atualizado de %s para %s.\n' "$current_version" "$target_version"
+fi
 printf 'Configuração preservada em %s; cópia de segurança: %s.pre-update-%s\n' "$env_file" "$env_file" "$timestamp"

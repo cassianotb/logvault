@@ -1,0 +1,12 @@
+[Unit]
+Description=Prepara o DC-A para continuidade do LogVault
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/logvault/continuity-agent.conf
+ExecStart=/usr/local/libexec/logvault-continuity-agent
+Nice=10
+NoNewPrivileges=true
+PrivateTmp=true
