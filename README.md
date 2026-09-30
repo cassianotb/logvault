@@ -73,7 +73,7 @@ Você precisará de:
 - DNS apontando para a VM caso o painel seja publicado por domínio;
 - portas TCP 80 e 443 encaminhadas até a VM para emissão e renovação do
   certificado HTTPS;
-- uma rede privada, VPN ou túnel entre DC-A e DC-B caso use continuidade;
+- conectividade HTTPS entre as duas VMs quando usar redundância;
 - para coletores **Cloud**, a faixa UDP configurada para Cloud — por padrão
   `30000–31999` — encaminhada à VM principal e restrita às origens autorizadas.
 
@@ -139,15 +139,17 @@ Ainda em `/opt/logvault`, execute:
 sudo ./install.sh
 ```
 
-O menu mostra a versão instalada e oferece quatro ações:
+O menu mostra a versão instalada e oferece cinco ações:
 
 1. **Sistema LogVault** — instala painel, API, PostgreSQL, ClickHouse, serviço
    de coleta Cloud gerenciado e backups na VM principal (DC-A).
 2. **Coletor local** — instala somente o coletor em um servidor próximo aos
    equipamentos.
-3. **Datacenter B** — prepara a segunda VM como standby e inicia a replicação
-   do DC-A para o DC-B.
-4. **Atualizar LogVault** — busca a versão mais recente, preserva configuração
+3. **Servidor redundante** — instala uma segunda plataforma completa, com
+   ingestão ativa e administração inicialmente somente leitura.
+4. **Continuidade antiga (legada)** — preserva temporariamente o instalador da
+   replicação direta para migração controlada.
+5. **Atualizar LogVault** — busca a versão mais recente, preserva configuração
    e dados e recria os serviços necessários.
 
 Use as setas e `Enter`, ou pressione o número da opção.
@@ -221,41 +223,34 @@ por padrão `30000–31999/UDP` — apenas das redes ou IPs de origem dos
 equipamentos quando essa restrição for conhecida. A própria aplicação também
 observa e permite controlar as origens pela tela **Firewall**.
 
-### 8. Instalar o Datacenter B
+### 8. Instalar o servidor redundante
 
-Instale e valide o DC-A antes do B. Os dois sites devem ter FQDNs estáveis e
-conectividade segura. Nunca exponha as portas de banco de dados à internet
-aberta.
+Instale e valide primeiro o ambiente principal. No painel da plataforma, abra
+**Redundância**, ative a VM como principal e gere um código de pareamento. Na
+segunda VM, clone o mesmo repositório e execute o comando gerado. O código
+expira em 30 minutos e pode ser consumido uma única vez.
 
-No painel do DC-A, abra **Administração da plataforma → Continuidade →
-Adicionar DC-B**, informe os FQDNs e gere o comando temporário. Execute esse
-comando como `root` na VM B. O token expira em 30 minutos e só pode ser usado
-uma vez.
+A segunda VM executa seu próprio painel, API, PostgreSQL, ClickHouse, coletor
+Cloud e backup. Ela recebe eventos e atende consultas normalmente, mas as
+alterações administrativas ficam bloqueadas até uma promoção manual. As
+configurações de clientes, coletores, equipamentos e firewall são copiadas da
+autoridade principal por HTTPS; logs não atravessam entre bancos.
 
-Ao gerar o comando, o agente local do DC-A resolve os dois FQDNs, confirma que
-o endereço do A pertence à própria VM, vincula os bancos à interface correta e
-autoriza somente o IPv4 do B (`/32`). Se UFW ou firewalld estiver ativo, as
-portas de replicação também são liberadas somente para esse endereço. A API
-não recebe acesso ao socket do Docker.
+- Coletor local: o mesmo lote é enviado às duas APIs, com confirmação e fila
+  separadas por destino.
+- Coletor Cloud: o equipamento precisa aceitar múltiplos destinos e envia
+  NetFlow/Syslog diretamente aos dois IPs, usando o mesmo par de portas.
+- Equipamentos que aceitam somente um destino não fazem parte desta topologia.
+- Falha de uma VM não interrompe a entrega à outra, e redundância não substitui
+  os backups independentes.
 
-O instalador do B detecta sistema, CPU, RAM, discos, interfaces e IPs; instala
-dependências ausentes; clona este repositório; recebe as credenciais sem
-exibi-las; faz a carga inicial do PostgreSQL; e inicia o espelhamento
-assíncrono do ClickHouse. Painel, API, proxy HTTPS, coletor e backup do B permanecem
-desligados até uma promoção explícita.
+A promoção exige isolamento confirmado do principal antigo. Nunca mantenha
+duas autoridades administrativas ao mesmo tempo. Consulte o procedimento e o
+checklist em [docs/redundancy.md](docs/redundancy.md).
 
-Verifique o standby na VM B:
-
-```bash
-cd /opt/logvault
-sudo scripts/dr-standby.sh status
-sudo scripts/dr-standby.sh preflight
-```
-
-A instalação e a promoção dos serviços **não alteram DNS, NAT ou VIP**. A
-virada de tráfego só deve ocorrer manualmente, depois de confirmar que o DC-A
-foi isolado. O procedimento completo está em
-[docs/datacenter-b-installation.md](docs/datacenter-b-installation.md).
+A replicação direta antiga continua acessível como **legada**. A tela exige as
+etapas `Preparada → Migrada → Validada`; sua remoção somente é liberada após
+um secundário saudável e a validação completa.
 
 ### 9. Atualizar o LogVault
 
@@ -266,7 +261,7 @@ cd /opt/logvault
 sudo ./install.sh
 ```
 
-Escolha **4 — Atualizar LogVault**. O atualizador verifica a branch instalada,
+Escolha **5 — Atualizar LogVault**. O atualizador verifica a branch instalada,
 cria um backup adicional no DC-A, preserva `.env`, dados e backups, aplica
 as migrações versionadas dos bancos, aceita apenas atualizações fast-forward e
 recria os serviços sem remover os volumes persistentes.
@@ -344,6 +339,7 @@ Em automações, selecione o perfil sem abrir o menu e acrescente as opções do
 ```bash
 sudo ./install.sh system --admin-email admin@example.com --admin-password-file /root/logvault-admin.pass --data-root /var/lib/logvault --public-url https://logs.example.com --acme-email infra@example.com --tls-challenge automatic
 sudo ./install.sh collector --config-file /caminho/seguro/collector.env
+sudo ./install.sh secondary --primary-url https://logs-principal.example.com --enrollment-token TOKEN_DE_USO_UNICO
 sudo ./install.sh dc-b --argus-url https://logs.example.com --enrollment-token-file /root/logvault-dcb.token --site-a-host logvault-dca.example.com --site-b-host logvault-dcb.example.com --panel-host logs.example.com --ingest-host ingest.example.com --dr-control-host dr.example.com --yes
 ```
 
@@ -351,9 +347,10 @@ Proteja o arquivo usado em `--admin-password-file` com permissão `0600` e remov
 
 No modo interativo do coletor, a configuração gerada no painel pode ser colada diretamente no instalador; o token não é exibido e o `.env.edge` é criado com permissão `0600` após a validação.
 
-No modo DC-B, o token é digitado de forma oculta ou lido de um arquivo privado. O instalador detecta hostname, IP de saída, interface, gateway, CPU, memória, Docker, NTP e os filesystems; instala dependências ausentes, clona a versão indicada pelo DC-A, executa a carga inicial PostgreSQL, inicia o espelhamento assíncrono do ClickHouse e aguarda o sincronismo. API, painel, proxy HTTPS, coletor e backup permanecem desligados. A instalação não promove o standby nem transfere tráfego.
-
-A continuidade de produção usa somente duas VMs: streaming PostgreSQL A → B e espelhamento ClickHouse A → B com checkpoint e lag mensurável. Não há Keeper nem witness. A promoção exige confirmação explícita de fencing e, mesmo concluída, deixa a troca de DNS/NAT para o operador. Consulte [docs/datacenter-b-installation.md](docs/datacenter-b-installation.md).
+O modo `dc-b` anterior permanece disponível apenas para instalações em
+migração. Novas implantações devem usar `secondary`. O mecanismo legado não
+é removido automaticamente e seu runbook histórico continua em
+[docs/datacenter-b-installation.md](docs/datacenter-b-installation.md).
 
 Use `./install.sh --help` para consultar os modos disponíveis. Os scripts específicos continuam disponíveis para compatibilidade com automações existentes.
 

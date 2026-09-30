@@ -92,6 +92,26 @@ validate_edge_config() {
   grep -Eq '^ARGUS_SYNC_URL=https?://[^[:space:]]+$' "$edge_validate_file" || die "ARGUS_SYNC_URL inválida"
   grep -Eq '^ARGUS_HEARTBEAT_URL=https?://[^[:space:]]+$' "$edge_validate_file" || die "ARGUS_HEARTBEAT_URL inválida"
 
+  edge_secondary_count=0
+  for edge_secondary_key in \
+    ARGUS_SECONDARY_SYNC_URL ARGUS_SECONDARY_HEARTBEAT_URL ARGUS_SECONDARY_SYNC_TOKEN; do
+    edge_secondary_lines="$(grep -c "^${edge_secondary_key}=" "$edge_validate_file" || true)"
+    [ "$edge_secondary_lines" -le 1 ] || die "a configuração deve conter no máximo uma linha ${edge_secondary_key}="
+    if [ "$edge_secondary_lines" -eq 1 ]; then
+      edge_secondary_value="$(sed -n "s/^${edge_secondary_key}=//p" "$edge_validate_file")"
+      if [ -n "$edge_secondary_value" ]; then edge_secondary_count=$((edge_secondary_count + 1)); fi
+    fi
+  done
+  if [ "$edge_secondary_count" -ne 0 ] && [ "$edge_secondary_count" -ne 3 ]; then
+    die "o destino secundário exige as duas URLs e o token"
+  fi
+  if [ "$edge_secondary_count" -eq 3 ]; then
+    grep -Eq '^ARGUS_SECONDARY_SYNC_URL=https?://[^[:space:]]+$' "$edge_validate_file" || \
+      die "ARGUS_SECONDARY_SYNC_URL inválida"
+    grep -Eq '^ARGUS_SECONDARY_HEARTBEAT_URL=https?://[^[:space:]]+$' "$edge_validate_file" || \
+      die "ARGUS_SECONDARY_HEARTBEAT_URL inválida"
+  fi
+
   for edge_port_key in ARGUS_NETFLOW_PORT ARGUS_SYSLOG_PORT; do
     edge_port="$(sed -n "s/^${edge_port_key}=//p" "$edge_validate_file")"
     case "$edge_port" in ''|*[!0-9]*) die "${edge_port_key} deve ser uma porta numérica" ;; esac

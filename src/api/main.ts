@@ -30,6 +30,9 @@ import { hostname } from 'node:os';
 import { readFileSync } from 'node:fs';
 import { preparePrimaryContinuity } from '../core/continuity-host-control.js';
 import { registerBackupRoutes, startBackupProcessor } from './backups.js';
+import { configureAdministrativeReadOnly } from './access-control.js';
+import { registerRedundancyRoutes, startRedundancyConfigurationSync } from './redundancy.js';
+import type { RedundancyMode } from './postgres.js';
 
 const config = loadApiConfig();
 const applicationVersion = (() => {
@@ -58,6 +61,19 @@ const drProvisioningEnvironment = Object.fromEntries(drProvisioningKeys
   .map((key) => [key, process.env[key] ?? '']).filter(([, value]) => value !== ''));
 const app = Fastify({ logger: true, trustProxy: true });
 const postgres = new PostgresRepository(config.ARGUS_POSTGRES_URL);
+if (config.ARGUS_REDUNDANCY_ROLE !== 'standalone') {
+  await postgres.initializeRedundancyRuntime({
+    mode: config.ARGUS_REDUNDANCY_ROLE,
+    siteId: config.ARGUS_REDUNDANCY_SITE_ID,
+    siteName: config.ARGUS_REDUNDANCY_SITE_NAME,
+    publicUrl: config.ARGUS_PUBLIC_URL,
+    primaryUrl: config.ARGUS_REDUNDANCY_PRIMARY_URL,
+    primarySiteId: config.ARGUS_REDUNDANCY_PRIMARY_SITE_ID
+  });
+}
+let currentRedundancyMode: RedundancyMode = (await postgres.getRedundancySettings()).mode;
+let stopRedundancyConfigurationSync: () => void = () => undefined;
+configureAdministrativeReadOnly(() => currentRedundancyMode === 'secondary');
 await postgres.synchronizeInfrastructureFirewallIdentity({
   serverName: config.ARGUS_FIREWALL_SERVER_NAME
 });
@@ -290,7 +306,14 @@ registerDeviceRoutes(app, { postgres, clickhouse });
 registerCollectorRoutes(app, {
   postgres,
   cloudPortStart: config.ARGUS_MANAGED_CLOUD_PORT_START,
-  cloudPortEnd: config.ARGUS_MANAGED_CLOUD_PORT_END
+  cloudPortEnd: config.ARGUS_MANAGED_CLOUD_PORT_END,
+  redundancyDestination: async () => {
+    const settings = await postgres.getRedundancySettings();
+    if (settings.mode !== 'primary') return null;
+    const secondary = (await postgres.listRedundancySites())
+      .find((site) => site.role === 'secondary' && site.status === 'active');
+    return secondary ? { publicUrl: secondary.publicUrl } : null;
+  }
 });
 registerFirewallRoutes(app, { postgres });
 registerUserRoutes(app, { postgres });
@@ -357,6 +380,19 @@ registerContinuityRoutes(app, {
     environment: drProvisioningEnvironment
   }
 });
+registerRedundancyRoutes(app, {
+  postgres,
+  applicationVersion,
+  publicUrl: config.ARGUS_PUBLIC_URL,
+  legacyConfigured: async () => {
+    const settings = await postgres.getPlatformContinuitySettings();
+    return Boolean(settings && (settings.enabled || settings.standbyApiUrl || settings.postgresStandbyUrlSecret));
+  },
+  onModeChanged: (mode) => {
+    currentRedundancyMode = mode;
+    if (mode !== 'secondary') stopRedundancyConfigurationSync();
+  }
+});
 const triggerTenantDeletion = await startTenantDeletionProcessor(app, {
   postgres,
   clickhouse,
@@ -376,6 +412,17 @@ registerPlatformRoutes(app, {
 });
 
 await app.listen({ host: config.ARGUS_API_HOST, port: config.ARGUS_API_PORT });
+stopRedundancyConfigurationSync = currentRedundancyMode === 'secondary'
+  ? startRedundancyConfigurationSync({
+      postgres,
+      primaryUrl: config.ARGUS_REDUNDANCY_PRIMARY_URL,
+      siteId: config.ARGUS_REDUNDANCY_SITE_ID,
+      siteToken: config.ARGUS_REDUNDANCY_SITE_TOKEN,
+      applicationVersion,
+      intervalMs: config.ARGUS_REDUNDANCY_SYNC_INTERVAL_MS,
+      onError: (error) => app.log.warn({ error }, 'Sincronização da configuração redundante adiada')
+    })
+  : () => undefined;
 const stopContinuityActivationProcessor = startContinuityActivationProcessor({
   loadSettings: async () => {
     const stored = await postgres.getPlatformContinuitySettings();
@@ -405,6 +452,7 @@ cloudMetricTimer.unref();
 async function shutdown(signal: string): Promise<void> {
   app.log.info({ signal }, 'Encerrando API');
   stopAlertProcessor();
+  stopRedundancyConfigurationSync();
   stopContinuityActivationProcessor();
   clearInterval(cloudMetricTimer);
   await app.close();

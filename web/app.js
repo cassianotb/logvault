@@ -300,6 +300,21 @@ const serversError = document.querySelector('#servers-error');
 const serversErrorMessage = document.querySelector('#servers-error-message');
 const serversList = document.querySelector('#servers-list');
 const refreshContinuityButton = document.querySelector('#refresh-continuity');
+const redundancyRole = document.querySelector('#redundancy-role');
+const redundancyLocalRole = document.querySelector('#redundancy-local-role');
+const redundancyReadOnly = document.querySelector('#redundancy-read-only');
+const redundancySiteCount = document.querySelector('#redundancy-site-count');
+const redundancyMigration = document.querySelector('#redundancy-migration');
+const redundancyMigrationDetail = document.querySelector('#redundancy-migration-detail');
+const redundancySites = document.querySelector('#redundancy-sites');
+const configureRedundancyPrimaryButton = document.querySelector('#configure-redundancy-primary');
+const createRedundancyEnrollmentButton = document.querySelector('#create-redundancy-enrollment');
+const advanceRedundancyMigrationButton = document.querySelector('#advance-redundancy-migration');
+const promoteRedundancySecondaryButton = document.querySelector('#promote-redundancy-secondary');
+const redundancyEnrollmentCommand = document.querySelector('#redundancy-enrollment-command');
+const redundancyCommand = document.querySelector('#redundancy-command');
+const copyRedundancyCommandButton = document.querySelector('#copy-redundancy-command');
+const redundancyFeedback = document.querySelector('#redundancy-feedback');
 const continuityStatus = document.querySelector('#continuity-status');
 const continuityStatusDetail = document.querySelector('#continuity-status-detail');
 const continuityRpo = document.querySelector('#continuity-rpo');
@@ -1230,7 +1245,7 @@ function navigateTo(view) {
           : ['company', 'integrations', 'users'].includes(view) ? 'Administração' : ['system', 'servers', 'continuity', 'firewall', 'alerts', 'capacity'].includes(view) ? 'Infraestrutura' : 'Operação CGNAT';
   pageTitle.textContent = view === 'devices'
     ? 'Equipamentos'
-    : view === 'dashboard' ? 'Dashboard' : view === 'collectors' ? 'Coletores' : view === 'system' ? 'Sistema' : view === 'continuity' ? 'Continuidade' : view === 'firewall' ? 'Firewall' : view === 'alerts' ? 'Alertas' : view === 'servers' ? 'Servidores' : view === 'capacity' ? 'Capacidade' : view === 'clients' ? 'Clientes' : view === 'plans' ? 'Planos' : view === 'platform-settings' ? 'Configurações' : view === 'manual' ? 'Manual' : view === 'users' ? 'Usuários' : view === 'company' ? 'Dados da empresa' : view === 'integrations' ? 'Integrações' : view === 'audit' ? 'Auditoria' : 'Consulta CGNAT';
+    : view === 'dashboard' ? 'Dashboard' : view === 'collectors' ? 'Coletores' : view === 'system' ? 'Sistema' : view === 'continuity' ? 'Redundância' : view === 'firewall' ? 'Firewall' : view === 'alerts' ? 'Alertas' : view === 'servers' ? 'Servidores' : view === 'capacity' ? 'Capacidade' : view === 'clients' ? 'Clientes' : view === 'plans' ? 'Planos' : view === 'platform-settings' ? 'Configurações' : view === 'manual' ? 'Manual' : view === 'users' ? 'Usuários' : view === 'company' ? 'Dados da empresa' : view === 'integrations' ? 'Integrações' : view === 'audit' ? 'Auditoria' : 'Consulta CGNAT';
   navLinks.forEach((link) => link.classList.toggle('active', link.dataset.view === view));
   document.body.classList.remove('menu-open');
   menuButton.setAttribute('aria-expanded', 'false');
@@ -2554,7 +2569,7 @@ function formatBytes(value) {
 
 function showCollectorCredentials(credentials) {
   const apiRoot = `${window.location.origin}${API_BASE}`;
-  credentialConfig.value = [
+  const lines = [
     'ARGUS_ENV=production',
     `ARGUS_TENANT_ID=${credentials.tenantId}`,
     `ARGUS_COLLECTOR_ID=${credentials.collectorId}`,
@@ -2578,7 +2593,16 @@ function showCollectorCredentials(credentials) {
     'ARGUS_EDGE_ACK_RETENTION_HOURS=24',
     'ARGUS_EDGE_BIND=0.0.0.0',
     'ARGUS_COLLECTOR_IMAGE_TAG=local'
-  ].join('\n');
+  ];
+  if (credentials.secondaryUrl) {
+    const secondaryApiRoot = `${credentials.secondaryUrl.replace(/\/$/, '')}${API_BASE}`;
+    lines.splice(6, 0,
+      `ARGUS_SECONDARY_SYNC_URL=${secondaryApiRoot}/v1/ingest/batches`,
+      `ARGUS_SECONDARY_HEARTBEAT_URL=${secondaryApiRoot}/v1/ingest/heartbeat`,
+      `ARGUS_SECONDARY_SYNC_TOKEN=${credentials.token}`
+    );
+  }
+  credentialConfig.value = lines.join('\n');
   setFormFeedback(credentialFeedback, '');
   credentialDialog.showModal();
 }
@@ -4927,6 +4951,170 @@ const continuityLabels = {
 const continuityPhaseLabels = {
   not_configured: 'Não implementado', preparing: 'Em preparação', protected: 'Protegido'
 };
+let latestRedundancyStatus = null;
+const redundancyModeLabels = { standalone: 'Não configurado', primary: 'Principal', secondary: 'Secundário' };
+const redundancyMigrationLabels = {
+  not_started: 'Não iniciada', ready: 'Preparada', migrated: 'Migrada', validated: 'Validada'
+};
+
+function renderRedundancyStatus(payload) {
+  latestRedundancyStatus = payload;
+  const canManage = hasPlatformPermission('continuity', 'manage');
+  redundancyRole.textContent = redundancyModeLabels[payload.mode] || payload.mode;
+  redundancyLocalRole.textContent = redundancyModeLabels[payload.mode] || payload.mode;
+  redundancyReadOnly.textContent = payload.administrationReadOnly
+    ? 'administração somente leitura · ingestão ativa'
+    : payload.mode === 'primary' ? 'autoridade de configuração · ingestão ativa' : 'ative antes de parear outra VM';
+  redundancySiteCount.textContent = String((payload.sites?.length || 0) + (payload.mode === 'standalone' ? 0 : 1));
+  redundancyMigration.textContent = redundancyMigrationLabels[payload.migrationStatus] || payload.migrationStatus;
+  redundancyMigrationDetail.textContent = payload.legacy?.configured
+    ? payload.legacy.message : 'nenhuma continuidade antiga ativa';
+
+  redundancySites.replaceChildren();
+  const local = document.createElement('article');
+  local.className = 'redundancy-site';
+  const localCopy = document.createElement('div');
+  const localName = document.createElement('strong');
+  const localUrl = document.createElement('small');
+  const localState = document.createElement('em');
+  localName.textContent = payload.siteName || 'Esta VM';
+  localUrl.textContent = payload.publicUrl || window.location.origin;
+  localState.textContent = payload.mode === 'standalone' ? 'local' : (redundancyModeLabels[payload.mode] || payload.mode);
+  localCopy.append(localName, localUrl);
+  local.append(localCopy, localState);
+  redundancySites.append(local);
+  for (const site of payload.sites || []) {
+    const card = document.createElement('article');
+    card.className = 'redundancy-site';
+    const copy = document.createElement('div');
+    const name = document.createElement('strong');
+    const detail = document.createElement('small');
+    const stateBox = document.createElement('div');
+    const state = document.createElement('em');
+    name.textContent = site.name;
+    detail.textContent = `${site.publicUrl} · ${site.lastSeenAt ? `visto ${formatDeviceMoment(site.lastSeenAt)}` : 'aguardando sincronização'}`;
+    state.textContent = site.status;
+    copy.append(name, detail);
+    stateBox.append(state);
+    if (canManage && payload.mode === 'primary') {
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'secondary-button redundancy-remove-site';
+      remove.dataset.siteId = site.id;
+      remove.textContent = 'Desvincular';
+      stateBox.append(remove);
+    }
+    card.append(copy, stateBox);
+    redundancySites.append(card);
+  }
+
+  configureRedundancyPrimaryButton.hidden = !canManage || payload.mode !== 'standalone';
+  createRedundancyEnrollmentButton.hidden = !canManage || payload.mode !== 'primary';
+  advanceRedundancyMigrationButton.hidden = !canManage || payload.mode !== 'primary' || payload.migrationStatus === 'validated';
+  promoteRedundancySecondaryButton.hidden = !canManage || payload.mode !== 'secondary';
+}
+
+redundancySites.addEventListener('click', async (event) => {
+  const button = event.target.closest('.redundancy-remove-site');
+  if (!button?.dataset.siteId || !window.confirm('Desvincular este servidor secundário? Ele deixará de receber configurações.')) return;
+  button.disabled = true;
+  try {
+    const response = await authenticatedFetch(`${API_BASE}/v1/redundancy/sites/${encodeURIComponent(button.dataset.siteId)}`, {
+      method: 'DELETE', headers: { Accept: 'application/json' }
+    });
+    if (!response.ok) throw new Error('Não foi possível desvincular o servidor.');
+    await loadRedundancyStatus();
+  } catch (error) {
+    setFormFeedback(redundancyFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
+    button.disabled = false;
+  }
+});
+
+async function loadRedundancyStatus() {
+  const response = await authenticatedFetch(`${API_BASE}/v1/redundancy/status`, {
+    headers: { Accept: 'application/json' }, cache: 'no-store'
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error('Não foi possível consultar a nova redundância.');
+  renderRedundancyStatus(payload);
+}
+
+configureRedundancyPrimaryButton.addEventListener('click', async () => {
+  const siteName = window.prompt('Nome deste ambiente principal:', 'Servidor principal');
+  if (!siteName) return;
+  const publicUrl = window.prompt('URL pública deste ambiente:', window.location.origin);
+  if (!publicUrl) return;
+  configureRedundancyPrimaryButton.disabled = true;
+  try {
+    const response = await authenticatedFetch(`${API_BASE}/v1/redundancy/primary`, {
+      method: 'PUT', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ siteName, publicUrl })
+    });
+    if (!response.ok) throw new Error('Não foi possível ativar este ambiente como principal.');
+    await loadRedundancyStatus();
+    setFormFeedback(redundancyFeedback, 'Ambiente principal ativado. Agora gere o pareamento da segunda VM.');
+  } catch (error) {
+    setFormFeedback(redundancyFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
+  } finally { configureRedundancyPrimaryButton.disabled = false; }
+});
+
+createRedundancyEnrollmentButton.addEventListener('click', async () => {
+  createRedundancyEnrollmentButton.disabled = true;
+  try {
+    const response = await authenticatedFetch(`${API_BASE}/v1/redundancy/enrollments`, {
+      method: 'POST', headers: { Accept: 'application/json' }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error('Não foi possível gerar o código de pareamento.');
+    const primaryUrl = latestRedundancyStatus?.publicUrl || window.location.origin;
+    const insecureFlag = primaryUrl.startsWith('http://') ? ' --allow-insecure-http' : '';
+    redundancyCommand.value = `sudo ./install.sh secondary --primary-url ${primaryUrl} --enrollment-token ${payload.token}${insecureFlag}`;
+    redundancyEnrollmentCommand.hidden = false;
+    setFormFeedback(redundancyFeedback, `Código válido até ${formatDeviceMoment(payload.expiresAt)}.`);
+  } catch (error) {
+    setFormFeedback(redundancyFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
+  } finally { createRedundancyEnrollmentButton.disabled = false; }
+});
+
+copyRedundancyCommandButton.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(redundancyCommand.value); }
+  catch { redundancyCommand.select(); document.execCommand('copy'); }
+  copyRedundancyCommandButton.textContent = 'Copiado';
+  window.setTimeout(() => { copyRedundancyCommandButton.textContent = 'Copiar comando'; }, 1800);
+});
+
+advanceRedundancyMigrationButton.addEventListener('click', async () => {
+  const next = { not_started: 'ready', ready: 'migrated', migrated: 'validated' }[latestRedundancyStatus?.migrationStatus];
+  if (!next || !window.confirm(`Avançar a migração para “${redundancyMigrationLabels[next]}”?`)) return;
+  advanceRedundancyMigrationButton.disabled = true;
+  try {
+    const response = await authenticatedFetch(`${API_BASE}/v1/redundancy/migration`, {
+      method: 'PUT', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: next })
+    });
+    if (!response.ok) throw new Error('A etapa não pode ser avançada antes da anterior.');
+    await loadRedundancyStatus();
+  } catch (error) {
+    setFormFeedback(redundancyFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
+  } finally { advanceRedundancyMigrationButton.disabled = false; }
+});
+
+promoteRedundancySecondaryButton.addEventListener('click', async () => {
+  const confirmation = window.prompt('Isole o servidor principal antigo e digite PROMOVER SECUNDARIO:');
+  if (confirmation !== 'PROMOVER SECUNDARIO') return;
+  promoteRedundancySecondaryButton.disabled = true;
+  try {
+    const response = await authenticatedFetch(`${API_BASE}/v1/redundancy/promote`, {
+      method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ confirmation, primaryIsolated: true })
+    });
+    if (!response.ok) throw new Error('Não foi possível promover esta VM.');
+    await loadRedundancyStatus();
+    setFormFeedback(redundancyFeedback, 'VM promovida. Mantenha o servidor antigo isolado até a reintegração.');
+  } catch (error) {
+    setFormFeedback(redundancyFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
+  } finally { promoteRedundancySecondaryButton.disabled = false; }
+});
 
 function continuityMetric(component) {
   if (!component?.data) return 'Sem telemetria';
@@ -5069,6 +5257,11 @@ async function loadContinuity() {
   continuityError.hidden = true;
   refreshContinuityButton.disabled = true;
   try {
+    try {
+      await loadRedundancyStatus();
+    } catch (error) {
+      setFormFeedback(redundancyFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
+    }
     const response = await authenticatedFetch(`${API_BASE}/v1/continuity/status`, {
       headers: { Accept: 'application/json' }, cache: 'no-store'
     });

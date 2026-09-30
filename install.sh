@@ -4,6 +4,7 @@ set -Eeuo pipefail
 script_dir="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 system_installer="$script_dir/scripts/install-argus.sh"
 collector_installer="$script_dir/scripts/install-edge.sh"
+secondary_installer="$script_dir/scripts/install-secondary.sh"
 dc_b_installer="$script_dir/scripts/install-dc-b.sh"
 system_updater="$script_dir/scripts/update-argus.sh"
 
@@ -42,13 +43,15 @@ Uso:
   sudo ./install.sh
   sudo ./install.sh system [opções do instalador do sistema]
   sudo ./install.sh collector
-  sudo ./install.sh dc-b [opções do instalador do datacenter B]
+  sudo ./install.sh secondary [opções do servidor secundário]
+  sudo ./install.sh dc-b [opções da continuidade legada]
   sudo ./install.sh update [opções de atualização]
 
 Sem argumentos, abre o assistente interativo para escolher entre:
   system       painel, API, bancos de dados e serviços de ingestão
   collector    coletor local e sincronização segura com o LogVault
-  dc-b         instala e sincroniza o servidor standby com o datacenter principal
+  secondary    segunda VM completa com ingestão redundante e administração somente leitura
+  dc-b         continuidade antiga por replicação direta (legada)
   update       atualiza somente o Sistema LogVault instalado nesta VM
 
 Opções do assistente:
@@ -83,7 +86,7 @@ while (($#)); do
     --dry-run) dry_run="true"; shift ;;
     -v|--version) printf 'LogVault %s' "$logvault_version"; [[ -z "$logvault_build" ]] || printf ' (build %s)' "$logvault_build"; printf '\n'; exit 0 ;;
     -h|--help) usage; exit 0 ;;
-    system|collector|dc-b|update)
+  system|collector|secondary|dc-b|update)
       requested_mode="$1"
       shift
       forwarded_args=("$@")
@@ -170,8 +173,9 @@ render_menu() {
   printf '%bO que deseja fazer neste servidor?%b\n\n' "$text" "$reset"
   render_option 0 1 'Sistema LogVault' 'Painel, API, bancos, proxy e HTTPS automático'
   render_option 1 2 'Coletor local' 'Coleta e envio seguro de registros para o LogVault'
-  render_option 2 3 'Datacenter B' 'Instala a VM standby e sincroniza os bancos com o DC-A'
-  render_option 3 4 'Atualizar LogVault' 'Atualiza o sistema preservando configurações e dados'
+  render_option 2 3 'Servidor redundante' 'Segunda VM completa, independente e pronta para promoção'
+  render_option 3 4 'Continuidade antiga (legada)' 'Replicação direta mantida apenas para migração'
+  render_option 4 5 'Atualizar LogVault' 'Atualiza o sistema preservando configurações e dados'
   printf '%b  0  Sair%b\n\n' "$muted" "$reset"
   printf '%b↑/↓ navegar  •  Enter selecionar  •  0 sair%b\n' "$muted" "$reset"
 }
@@ -182,7 +186,7 @@ clear_terminal() {
 
 choose_mode() {
   local key="" suffix=""
-  [[ -t 0 && -t 1 ]] || die "sem terminal interativo; informe 'system', 'collector', 'dc-b' ou 'update'"
+  [[ -t 0 && -t 1 ]] || die "sem terminal interativo; informe 'system', 'collector', 'secondary', 'dc-b' ou 'update'"
   while true; do
     clear_terminal
     render_menu
@@ -193,19 +197,21 @@ choose_mode() {
       key+="$suffix"
     fi
     case "$key" in
-      $'\033[A') selected_index=$(( (selected_index + 3) % 4 )) ;;
-      $'\033[B') selected_index=$(( (selected_index + 1) % 4 )) ;;
+      $'\033[A') selected_index=$(( (selected_index + 4) % 5 )) ;;
+      $'\033[B') selected_index=$(( (selected_index + 1) % 5 )) ;;
       1) requested_mode="system"; return ;;
       2) requested_mode="collector"; return ;;
-      3) requested_mode="dc-b"; return ;;
-      4) requested_mode="update"; return ;;
+      3) requested_mode="secondary"; return ;;
+      4) requested_mode="dc-b"; return ;;
+      5) requested_mode="update"; return ;;
       0|q|Q) clear_terminal; printf 'Instalação cancelada.\n'; exit 0 ;;
       '')
         case "$selected_index" in
           0) requested_mode="system" ;;
           1) requested_mode="collector" ;;
-          2) requested_mode="dc-b" ;;
-          3) requested_mode="update" ;;
+          2) requested_mode="secondary" ;;
+          3) requested_mode="dc-b" ;;
+          4) requested_mode="update" ;;
         esac
         return
         ;;
@@ -225,10 +231,14 @@ confirm_mode() {
     printf '%bPerfil selecionado%b\n' "$blue$bold" "$reset"
     printf '%bColetor local%b\n' "$text$bold" "$reset"
     printf '%bColeta e envio seguro de registros para o LogVault.%b\n\n' "$muted" "$reset"
+  elif [[ "$requested_mode" == "secondary" ]]; then
+    printf '%bPerfil selecionado%b\n' "$blue$bold" "$reset"
+    printf '%bServidor redundante%b\n' "$text$bold" "$reset"
+    printf '%bSegunda VM completa, com ingestão ativa e administração somente leitura.%b\n\n' "$muted" "$reset"
   elif [[ "$requested_mode" == "dc-b" ]]; then
     printf '%bPerfil selecionado%b\n' "$blue$bold" "$reset"
-    printf '%bDatacenter B%b\n' "$text$bold" "$reset"
-    printf '%bInstala a VM standby e sincroniza os bancos com o DC-A.%b\n\n' "$muted" "$reset"
+    printf '%bContinuidade antiga (legada)%b\n' "$text$bold" "$reset"
+    printf '%bReplicação direta mantida temporariamente para migração.%b\n\n' "$muted" "$reset"
   else
     printf '%bAção selecionada%b\n' "$blue$bold" "$reset"
     printf '%bAtualizar LogVault%b\n' "$text$bold" "$reset"
@@ -254,6 +264,9 @@ run_installer() {
   elif [[ "$requested_mode" == "collector" ]]; then
     [[ -r "$collector_installer" ]] || die "instalador do coletor não encontrado: $collector_installer"
     command=(sh "$collector_installer" "${forwarded_args[@]}")
+  elif [[ "$requested_mode" == "secondary" ]]; then
+    [[ -r "$secondary_installer" ]] || die "instalador do secundário não encontrado: $secondary_installer"
+    command=(bash "$secondary_installer" "${forwarded_args[@]}")
   elif [[ "$requested_mode" == "dc-b" ]]; then
     [[ -r "$dc_b_installer" ]] || die "instalador do DC-B não encontrado: $dc_b_installer"
     command=(bash "$dc_b_installer" install "${forwarded_args[@]}")

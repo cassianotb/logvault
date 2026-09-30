@@ -36,7 +36,10 @@ export function collectorConnectionStatus(lastSeenAt: string | null, nowMs = Dat
 
 export function registerCollectorRoutes(
   app: FastifyInstance,
-  dependencies: { postgres: PostgresRepository; cloudPortStart: number; cloudPortEnd: number }
+  dependencies: {
+    postgres: PostgresRepository; cloudPortStart: number; cloudPortEnd: number;
+    redundancyDestination?: () => Promise<{ publicUrl: string } | null>;
+  }
 ): void {
   app.get('/v1/collectors/status', async (request, reply) => {
     const session = await authenticateRequest(request, reply, dependencies.postgres, { allowPlatformContext: true });
@@ -90,6 +93,8 @@ export function registerCollectorRoutes(
       return reply.code(503).send({ error: 'cloud_port_capacity_exhausted' });
     }
     const { collector } = result;
+    const redundancy = collector.mode === 'edge' && dependencies.redundancyDestination
+      ? await dependencies.redundancyDestination() : null;
     return reply.code(201).send({
       collector,
       managed: collector.mode === 'cloud',
@@ -97,7 +102,7 @@ export function registerCollectorRoutes(
         ? { netflowPort: collector.netflowPort, syslogPort: collector.syslogPort }
         : null,
       credentials: collector.mode === 'edge'
-        ? { tenantId: session.tenantId, collectorId: collector.id, token }
+        ? { tenantId: session.tenantId, collectorId: collector.id, token, secondaryUrl: redundancy?.publicUrl ?? '' }
         : null
     });
   });
@@ -136,8 +141,13 @@ export function registerCollectorRoutes(
       tokenHash: sha256(token)
     });
     if (!rotated) return reply.code(404).send({ error: 'collector_not_found' });
+    const redundancy = dependencies.redundancyDestination
+      ? await dependencies.redundancyDestination() : null;
     return reply.send({
-      credentials: { tenantId: session.tenantId, collectorId: params.data.collectorId, token }
+      credentials: {
+        tenantId: session.tenantId, collectorId: params.data.collectorId, token,
+        secondaryUrl: redundancy?.publicUrl ?? ''
+      }
     });
   });
 

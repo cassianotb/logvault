@@ -153,7 +153,8 @@ console.log(JSON.stringify({
   configuredDevices: devicesByExporter.size,
   unregisteredDeviceId: UNREGISTERED_DEVICE_ID
 }));
-const synchronizer = new BatchSynchronizer(spool, {
+const primarySynchronizer = new BatchSynchronizer(spool, {
+  destinationId: 'primary',
   url: config.ARGUS_SYNC_URL,
   token: config.ARGUS_SYNC_TOKEN,
   batchSize: config.ARGUS_SYNC_BATCH_SIZE,
@@ -167,7 +168,26 @@ const synchronizer = new BatchSynchronizer(spool, {
   netflowPort: config.ARGUS_NETFLOW_PORT,
   syslogPort: config.ARGUS_SYSLOG_PORT
 }, undefined, undefined, (devices) => applyDeviceRegistry(devices, true), () => hostMetrics.sample());
-synchronizer.start();
+const synchronizers = [primarySynchronizer];
+if (config.ARGUS_SECONDARY_SYNC_URL) {
+  synchronizers.push(new BatchSynchronizer(spool, {
+    destinationId: 'secondary',
+    url: config.ARGUS_SECONDARY_SYNC_URL,
+    token: config.ARGUS_SECONDARY_SYNC_TOKEN,
+    batchSize: config.ARGUS_SYNC_BATCH_SIZE,
+    intervalMs: config.ARGUS_SYNC_INTERVAL_MS,
+    acknowledgedRetentionHours: config.ARGUS_EDGE_ACK_RETENTION_HOURS,
+    heartbeatUrl: config.ARGUS_SECONDARY_HEARTBEAT_URL,
+    heartbeatIntervalMs: config.ARGUS_HEARTBEAT_INTERVAL_MS,
+    tenantId: config.ARGUS_TENANT_ID,
+    collectorId: config.ARGUS_COLLECTOR_ID,
+    version: config.ARGUS_COLLECTOR_VERSION,
+    netflowPort: config.ARGUS_NETFLOW_PORT,
+    syslogPort: config.ARGUS_SYSLOG_PORT
+  }, undefined, undefined, undefined, () => hostMetrics.sample()));
+}
+spool.configureDestinations(config.ARGUS_SECONDARY_SYNC_URL ? ['primary', 'secondary'] : ['primary']);
+for (const item of synchronizers) item.start();
 const managedCloud = config.ARGUS_MANAGED_CLOUD_ENABLED
   ? new ManagedCloudCollectorManager(spool, {
       registryUrl: config.ARGUS_MANAGED_CLOUD_REGISTRY_URL,
@@ -184,7 +204,7 @@ managedCloud?.start();
 
 function shutdown(signal: string): void {
   console.log(JSON.stringify({ level: 'info', message: 'Encerrando coletor', signal }));
-  synchronizer.stop();
+  for (const item of synchronizers) item.stop();
   managedCloud?.stop();
   netflowSocket.close();
   syslogSocket.close();

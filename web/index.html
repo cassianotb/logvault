@@ -167,7 +167,7 @@
             <p class="nav-section-title" id="nav-platform-infrastructure-title">Infraestrutura</p>
             <a class="nav-item" href="#sistema" data-view="system" id="platform-system-nav" hidden><svg aria-hidden="true"><use href="#icon-activity"/></svg> Sistema</a>
             <a class="nav-item" href="#servidores" data-view="servers" id="platform-servers-nav" hidden><svg aria-hidden="true"><use href="#icon-server"/></svg> Servidores</a>
-            <a class="nav-item" href="#continuidade" data-view="continuity" id="platform-continuity-nav" hidden><svg aria-hidden="true"><use href="#icon-datacenters"/></svg> Continuidade</a>
+            <a class="nav-item" href="#continuidade" data-view="continuity" id="platform-continuity-nav" hidden><svg aria-hidden="true"><use href="#icon-datacenters"/></svg> Redundância</a>
             <a class="nav-item" href="#firewall" data-view="firewall" id="platform-firewall-nav" hidden><svg aria-hidden="true"><use href="#icon-shield"/></svg> Firewall</a>
             <a class="nav-item" href="#alertas" data-view="alerts" id="platform-alerts-nav" hidden><svg aria-hidden="true"><use href="#icon-bell"/></svg> Alertas</a>
             <a class="nav-item" href="#capacidade" data-view="capacity" id="platform-capacity-nav" hidden><svg aria-hidden="true"><use href="#icon-gauge"/></svg> Capacidade</a>
@@ -793,9 +793,33 @@
 
         <section class="content" id="continuity-view" hidden>
           <div class="intro devices-intro">
-            <div><h2>Continuidade entre datacenters</h2><p>Acompanhe a replicação assíncrona, o RPO observado e a prontidão do ambiente standby.</p></div>
+            <div><h2>Redundância entre ambientes</h2><p>Duas instalações completas recebem os dados de forma independente e permanecem prontas para operação.</p></div>
             <button class="secondary-button refresh-button" id="refresh-continuity" type="button">Atualizar agora</button>
           </div>
+
+          <section class="devices-panel redundancy-panel" id="redundancy-panel">
+            <div class="devices-panel-head"><div><p class="eyebrow">Arquitetura atual</p><h2>Redundância por dupla ingestão</h2></div><span class="redundancy-role" id="redundancy-role">Consultando</span></div>
+            <div class="redundancy-summary">
+              <article><span>PAPEL DESTA VM</span><strong id="redundancy-local-role">—</strong><small id="redundancy-read-only">aguardando configuração</small></article>
+              <article><span>AMBIENTES PAREADOS</span><strong id="redundancy-site-count">—</strong><small>servidores independentes</small></article>
+              <article><span>MIGRAÇÃO DO LEGADO</span><strong id="redundancy-migration">—</strong><small id="redundancy-migration-detail">sem alteração automática</small></article>
+            </div>
+            <div class="redundancy-sites" id="redundancy-sites"></div>
+            <div class="device-page-actions redundancy-actions">
+              <button class="secondary-button" id="configure-redundancy-primary" type="button">Ativar como principal</button>
+              <button class="primary-button" id="create-redundancy-enrollment" type="button" hidden>Adicionar servidor secundário</button>
+              <button class="secondary-button" id="advance-redundancy-migration" type="button" hidden>Avançar migração</button>
+              <button class="primary-button" id="promote-redundancy-secondary" type="button" hidden>Promover esta VM</button>
+            </div>
+            <div class="continuity-enrollment-command" id="redundancy-enrollment-command" hidden>
+              <label for="redundancy-command">Comando de pareamento válido por 30 minutos e uma única vez</label>
+              <textarea id="redundancy-command" rows="4" readonly spellcheck="false"></textarea>
+              <button class="secondary-button" id="copy-redundancy-command" type="button">Copiar comando</button>
+            </div>
+            <p class="form-feedback" id="redundancy-feedback" hidden></p>
+          </section>
+
+          <div class="legacy-section-heading"><div><span>LEGADO</span><strong>Replicação direta de bancos</strong></div><p>Mantida temporariamente para migração controlada. Não será removida antes da validação completa.</p></div>
 
           <section class="continuity-command-center" aria-live="polite">
             <div class="continuity-command-primary">

@@ -15,6 +15,22 @@ export const fullPlatformPermissions: PlatformPermissions = Object.fromEntries(
 ) as PlatformPermissions;
 
 const accessRank: Record<PlatformAccessLevel, number> = { none: 0, view: 1, manage: 2 };
+let administrativeReadOnlyProvider = () => false;
+
+export function configureAdministrativeReadOnly(provider: () => boolean): void {
+  administrativeReadOnlyProvider = provider;
+}
+
+function isAdministrativeMutation(request: FastifyRequest): boolean {
+  if (request.method === 'GET' || request.method === 'HEAD' || request.method === 'OPTIONS') return false;
+  const path = request.url.split('?')[0] ?? request.url;
+  if (path === '/v1/redundancy/promote') return false;
+  if (path === '/v1/auth/change-password') return true;
+  return [
+    '/v1/devices', '/v1/collectors', '/v1/users', '/v1/company', '/v1/integrations',
+    '/v1/firewall', '/v1/alerts', '/v1/continuity', '/v1/platform', '/v1/system/alert-settings'
+  ].some((prefix) => path.startsWith(prefix));
+}
 
 export function normalizePlatformPermissions(input: unknown): PlatformPermissions {
   const record = typeof input === 'object' && input !== null ? input as Record<string, unknown> : {};
@@ -60,6 +76,7 @@ function platformRouteRequirement(request: FastifyRequest): {
   if (path.startsWith('/v1/system/alert-settings')) return { module: 'alerts', level };
   if (path.startsWith('/v1/system')) return { module: 'system', level };
   if (path.startsWith('/v1/servers')) return { module: 'servers', level };
+  if (path.startsWith('/v1/redundancy')) return { module: 'continuity', level };
   if (path.startsWith('/v1/continuity')) return { module: 'continuity', level };
   if (path.startsWith('/v1/firewall')) return { module: 'firewall', level };
   if (path.startsWith('/v1/alerts')) return { module: 'alerts', level };
@@ -75,6 +92,13 @@ function platformRouteRequirement(request: FastifyRequest): {
 }
 
 export function authorizePlatformRoute(request: FastifyRequest, reply: FastifyReply, session: AuthSession): boolean {
+  if (administrativeReadOnlyProvider() && isAdministrativeMutation(request)) {
+    void reply.code(423).send({
+      error: 'secondary_administration_read_only',
+      message: 'Este servidor secundário recebe dados e permite consultas, mas alterações administrativas exigem promoção.'
+    });
+    return false;
+  }
   if (session.context !== 'platform') return true;
   const path = request.url.split('?')[0] ?? request.url;
   if (path === '/v1/system/status' && request.method === 'GET') {

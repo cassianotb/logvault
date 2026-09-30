@@ -25,6 +25,8 @@ interface BatchRow {
   created_at: string;
 }
 
+const DEFAULT_DESTINATION_ID = 'primary';
+
 export interface SpoolIdentity {
   tenantId: string;
   collectorId: string;
@@ -87,14 +89,48 @@ export class CollectorSpool implements NetflowTemplateStore {
     return transaction();
   }
 
-  nextBatch(limit: number): IngestBatch | undefined {
+  configureDestinations(destinationIds: string[]): void {
+    const normalized = [...new Set(destinationIds.map((value) => value.trim()).filter(Boolean))];
+    if (!normalized.length) normalized.push(DEFAULT_DESTINATION_ID);
+    for (const destinationId of normalized) {
+      if (!/^[A-Za-z0-9._-]{1,100}$/.test(destinationId)) throw new Error(`Destino de sincronização inválido: ${destinationId}`);
+    }
+    this.db.transaction(() => {
+      this.db.prepare('UPDATE sync_destinations SET active = 0').run();
+      const upsert = this.db.prepare(`
+        INSERT INTO sync_destinations (destination_id, active, updated_at)
+        VALUES (?, 1, ?)
+        ON CONFLICT (destination_id) DO UPDATE SET active = 1, updated_at = excluded.updated_at
+      `);
+      const createDelivery = this.db.prepare(`
+        INSERT INTO sync_batch_deliveries (batch_id, destination_id, status, attempts)
+        SELECT batch_id, ?, 'pending', 0
+        FROM sync_batches
+        WHERE status = 'pending'
+        ON CONFLICT (batch_id, destination_id) DO NOTHING
+      `);
+      const now = new Date().toISOString();
+      for (const destinationId of normalized) {
+        upsert.run(destinationId, now);
+        createDelivery.run(destinationId);
+      }
+      this.acknowledgeBatchesWithoutPendingDestinations(now);
+    })();
+  }
+
+  nextBatch(limit: number, destinationId = DEFAULT_DESTINATION_ID): IngestBatch | undefined {
+    this.ensureDestination(destinationId);
     const fresh = this.db.prepare(`
-      SELECT batch_id, checksum, created_at
-      FROM sync_batches
-      WHERE status = 'pending' AND last_attempt_at IS NULL
-      ORDER BY created_at
+      SELECT batches.batch_id, batches.checksum, batches.created_at
+      FROM sync_batches batches
+      JOIN sync_batch_deliveries deliveries ON deliveries.batch_id = batches.batch_id
+      WHERE batches.status = 'pending'
+        AND deliveries.destination_id = ?
+        AND deliveries.status = 'pending'
+        AND deliveries.last_attempt_at IS NULL
+      ORDER BY batches.created_at
       LIMIT 1
-    `).get() as BatchRow | undefined;
+    `).get(destinationId) as BatchRow | undefined;
     if (fresh) return this.buildBatch(fresh);
 
     const transaction = this.db.transaction(() => {
@@ -135,6 +171,10 @@ export class CollectorSpool implements NetflowTemplateStore {
               (batch_id, checksum, status, attempts, created_at, tenant_id, collector_id)
             VALUES (?, ?, 'pending', 0, ?, ?, ?)
           `).run(batchId, checksum, createdAt, identity.tenant_id, identity.collector_id);
+          this.db.prepare(`
+            INSERT INTO sync_batch_deliveries (batch_id, destination_id, status, attempts)
+            SELECT ?, destination_id, 'pending', 0 FROM sync_destinations WHERE active = 1
+          `).run(batchId);
           const assign = this.db.prepare(`
             UPDATE raw_spool SET state = 'batched', batch_id = ? WHERE sequence = ?
           `);
@@ -144,12 +184,15 @@ export class CollectorSpool implements NetflowTemplateStore {
       }
 
       const retry = this.db.prepare(`
-        SELECT batch_id, checksum, created_at
-        FROM sync_batches
-        WHERE status = 'pending'
-        ORDER BY last_attempt_at, created_at
+        SELECT batches.batch_id, batches.checksum, batches.created_at
+        FROM sync_batches batches
+        JOIN sync_batch_deliveries deliveries ON deliveries.batch_id = batches.batch_id
+        WHERE batches.status = 'pending'
+          AND deliveries.destination_id = ?
+          AND deliveries.status = 'pending'
+        ORDER BY deliveries.last_attempt_at, batches.created_at
         LIMIT 1
-      `).get() as BatchRow | undefined;
+      `).get(destinationId) as BatchRow | undefined;
       return retry ? this.buildBatch(retry) : undefined;
     });
     return transaction();
@@ -213,23 +256,36 @@ export class CollectorSpool implements NetflowTemplateStore {
     })();
   }
 
-  acknowledge(batchId: string, acknowledgedAt = new Date().toISOString()): void {
+  acknowledge(
+    batchId: string,
+    acknowledgedAt = new Date().toISOString(),
+    destinationId = DEFAULT_DESTINATION_ID
+  ): void {
     this.db.transaction(() => {
       this.db.prepare(`
-        UPDATE sync_batches SET status = 'acked', acked_at = ?, last_error = '' WHERE batch_id = ?
-      `).run(acknowledgedAt, batchId);
-      this.db.prepare(`
-        UPDATE raw_spool SET state = 'acked', acked_at = ? WHERE batch_id = ?
-      `).run(acknowledgedAt, batchId);
+        UPDATE sync_batch_deliveries
+        SET status = 'acked', acked_at = ?, last_error = ''
+        WHERE batch_id = ? AND destination_id = ?
+      `).run(acknowledgedAt, batchId, destinationId);
+      this.acknowledgeBatchesWithoutPendingDestinations(acknowledgedAt, batchId);
     })();
   }
 
-  recordFailure(batchId: string, error: string): void {
-    this.db.prepare(`
-      UPDATE sync_batches
-      SET attempts = attempts + 1, last_error = ?, last_attempt_at = ?
-      WHERE batch_id = ?
-    `).run(error.slice(0, 4000), new Date().toISOString(), batchId);
+  recordFailure(batchId: string, error: string, destinationId = DEFAULT_DESTINATION_ID): void {
+    const message = error.slice(0, 4000);
+    const attemptedAt = new Date().toISOString();
+    this.db.transaction(() => {
+      this.db.prepare(`
+        UPDATE sync_batch_deliveries
+        SET attempts = attempts + 1, last_error = ?, last_attempt_at = ?
+        WHERE batch_id = ? AND destination_id = ?
+      `).run(message, attemptedAt, batchId, destinationId);
+      this.db.prepare(`
+        UPDATE sync_batches
+        SET attempts = attempts + 1, last_error = ?, last_attempt_at = ?
+        WHERE batch_id = ?
+      `).run(`[${destinationId}] ${message}`, attemptedAt, batchId);
+    })();
   }
 
   cleanupAcknowledged(retentionHours: number): number {
@@ -497,6 +553,25 @@ export class CollectorSpool implements NetflowTemplateStore {
         collector_id TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS sync_destinations
+      (
+        destination_id TEXT PRIMARY KEY,
+        active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS sync_batch_deliveries
+      (
+        batch_id TEXT NOT NULL REFERENCES sync_batches(batch_id) ON DELETE CASCADE,
+        destination_id TEXT NOT NULL REFERENCES sync_destinations(destination_id),
+        status TEXT NOT NULL CHECK (status IN ('pending', 'acked')),
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT NOT NULL DEFAULT '',
+        last_attempt_at TEXT,
+        acked_at TEXT,
+        PRIMARY KEY (batch_id, destination_id)
+      );
+
       CREATE TABLE IF NOT EXISTS netflow_templates
       (
         exporter_ip TEXT NOT NULL,
@@ -547,6 +622,47 @@ export class CollectorSpool implements NetflowTemplateStore {
       CREATE INDEX IF NOT EXISTS sync_batches_identity_status_created_idx
         ON sync_batches (tenant_id, collector_id, status, created_at)
         WHERE tenant_id IS NOT NULL AND collector_id IS NOT NULL;
+      CREATE INDEX IF NOT EXISTS sync_batch_deliveries_pending_idx
+        ON sync_batch_deliveries (destination_id, status, last_attempt_at, batch_id);
     `);
+  }
+
+  private ensureDestination(destinationId: string): void {
+    const existing = this.db.prepare(`
+      SELECT destination_id FROM sync_destinations WHERE destination_id = ? AND active = 1
+    `).get(destinationId);
+    if (existing) return;
+    this.configureDestinations([
+      ...this.db.prepare('SELECT destination_id FROM sync_destinations WHERE active = 1')
+        .all().map((row) => (row as { destination_id: string }).destination_id),
+      destinationId
+    ]);
+  }
+
+  private acknowledgeBatchesWithoutPendingDestinations(acknowledgedAt: string, batchId?: string): void {
+    const parameters = batchId ? [acknowledgedAt, batchId] : [acknowledgedAt];
+    this.db.prepare(`
+      UPDATE sync_batches AS batches
+      SET status = 'acked', acked_at = ?, last_error = ''
+      WHERE batches.status = 'pending'
+        ${batchId ? 'AND batches.batch_id = ?' : ''}
+        AND EXISTS (
+          SELECT 1 FROM sync_batch_deliveries deliveries
+          JOIN sync_destinations destinations ON destinations.destination_id = deliveries.destination_id
+          WHERE deliveries.batch_id = batches.batch_id AND destinations.active = 1
+        )
+        AND NOT EXISTS (
+          SELECT 1 FROM sync_batch_deliveries deliveries
+          JOIN sync_destinations destinations ON destinations.destination_id = deliveries.destination_id
+          WHERE deliveries.batch_id = batches.batch_id
+            AND destinations.active = 1 AND deliveries.status = 'pending'
+        )
+    `).run(...parameters);
+    this.db.prepare(`
+      UPDATE raw_spool SET state = 'acked', acked_at = ?
+      WHERE state = 'batched' AND batch_id IN (
+        SELECT batch_id FROM sync_batches WHERE status = 'acked' ${batchId ? 'AND batch_id = ?' : ''}
+      )
+    `).run(...parameters);
   }
 }

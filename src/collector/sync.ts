@@ -9,6 +9,7 @@ import type { HostMetrics } from '../core/host-metrics.js';
 import { CollectorSpool } from './spool.js';
 
 export interface SyncOptions {
+  destinationId?: string;
   url: string;
   token: string;
   batchSize: number;
@@ -60,20 +61,26 @@ export class BatchSynchronizer {
     if (this.running) return;
     this.running = true;
     try {
-      const batch = this.spool.nextBatch(this.options.batchSize);
+      const destinationId = this.options.destinationId ?? 'primary';
+      const batch = this.spool.nextBatch(this.options.batchSize, destinationId);
       if (!batch) return;
       try {
         if (this.sender) await this.sender(batch);
         else await sendBatch(batch, this.options.url, this.options.token);
-        this.spool.acknowledge(batch.batchId);
+        this.spool.acknowledge(batch.batchId, new Date().toISOString(), destinationId);
         this.spool.cleanupAcknowledged(this.options.acknowledgedRetentionHours);
       } catch (error) {
-        this.spool.recordFailure(batch.batchId, error instanceof Error ? error.message : String(error));
+        this.spool.recordFailure(
+          batch.batchId,
+          error instanceof Error ? error.message : String(error),
+          destinationId
+        );
       }
     } catch (error) {
       console.warn(JSON.stringify({
         level: 'warn',
         component: 'batch-sync',
+        destinationId: this.options.destinationId ?? 'primary',
         message: 'Sincronização adiada; o spool permanece preservado para nova tentativa',
         error: error instanceof Error ? error.message : String(error)
       }));
@@ -101,7 +108,10 @@ export class BatchSynchronizer {
         : await sendHeartbeat(heartbeat, this.options.heartbeatUrl, this.options.token);
       this.configurationReceiver?.(response.devices);
       if (this.heartbeatHealthy === false) {
-        console.info(JSON.stringify({ level: 'info', component: 'heartbeat', message: 'Conexão com a API restabelecida' }));
+        console.info(JSON.stringify({
+          level: 'info', component: 'heartbeat', destinationId: this.options.destinationId ?? 'primary',
+          message: 'Conexão com a API restabelecida'
+        }));
       }
       this.heartbeatHealthy = true;
     } catch (error) {
@@ -109,6 +119,7 @@ export class BatchSynchronizer {
         console.warn(JSON.stringify({
           level: 'warn',
           component: 'heartbeat',
+          destinationId: this.options.destinationId ?? 'primary',
           message: 'Não foi possível reportar a telemetria do coletor',
           error: error instanceof Error ? error.message : String(error)
         }));

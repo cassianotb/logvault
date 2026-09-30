@@ -71,6 +71,44 @@ describe('CollectorSpool', () => {
     spool.close();
   });
 
+  it('confirma cada destino de forma independente e retém o lote até ambos concluírem', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'argus-redundant-spool-'));
+    directories.push(directory);
+    const spool = new CollectorSpool(join(directory, 'spool.sqlite'));
+    spool.configureDestinations(['primary', 'secondary']);
+    const payload = Buffer.from('evento redundante');
+    const raw: RawRecord = {
+      rawId: '31000000-0000-4000-8000-000000000001', batchId: null,
+      tenantId: '31000000-0000-4000-8000-000000000002',
+      collectorId: '31000000-0000-4000-8000-000000000003',
+      deviceId: '31000000-0000-4000-8000-000000000004', vendor: 'a10', sourceType: 'syslog',
+      exporterIp: '10.0.0.10', exporterPort: 514, localSequence: 0,
+      receivedAt: '2026-09-30T12:00:00.000Z', exporterTime: null,
+      observationDomainId: null, exportSequence: null, templateId: null,
+      payloadFormat: 'base64', rawPayload: payload.toString('base64'), rawSha256: sha256(payload),
+      decodedJson: '{}', parseStatus: 'unrecognized', parserVersion: 'test/1', parseError: ''
+    };
+    spool.append(raw, []);
+
+    const primary = spool.nextBatch(100, 'primary')!;
+    const secondary = spool.nextBatch(100, 'secondary')!;
+    expect(secondary.batchId).toBe(primary.batchId);
+    spool.acknowledge(primary.batchId, '2026-09-30T12:00:01.000Z', 'primary');
+    expect(spool.nextBatch(100, 'primary')).toBeUndefined();
+    expect(spool.statistics()).toMatchObject({ pendingRecords: 1, pendingBatches: 1 });
+
+    spool.recordFailure(secondary.batchId, 'secondary offline', 'secondary');
+    expect(spool.nextBatch(100, 'secondary')?.batchId).toBe(primary.batchId);
+    spool.acknowledge(secondary.batchId, '2026-09-30T12:00:02.000Z', 'secondary');
+    expect(spool.statistics()).toMatchObject({
+      pendingRecords: 0,
+      pendingBatches: 0,
+      acknowledgedRecordsRetained: 1,
+      lastSyncAt: '2026-09-30T12:00:02.000Z'
+    });
+    spool.close();
+  });
+
   it('persiste o cadastro de equipamentos para reinícios sem acesso à API', () => {
     const directory = mkdtempSync(join(tmpdir(), 'argus-registry-'));
     directories.push(directory);

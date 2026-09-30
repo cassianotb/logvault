@@ -430,6 +430,73 @@ export interface CollectorIdentity {
   tenantId: string;
 }
 
+export type RedundancyMode = 'standalone' | 'primary' | 'secondary';
+export type RedundancyMigrationStatus = 'not_started' | 'ready' | 'migrated' | 'validated';
+
+export interface RedundancySettings {
+  mode: RedundancyMode;
+  siteId: string;
+  siteName: string;
+  publicUrl: string;
+  primarySiteId: string | null;
+  primaryUrl: string;
+  authorityEpoch: number;
+  configurationRevision: number;
+  migrationStatus: RedundancyMigrationStatus;
+  pairedAt: string | null;
+  promotedAt: string | null;
+  updatedAt: string;
+}
+
+export interface RedundancySite {
+  id: string;
+  name: string;
+  role: 'primary' | 'secondary';
+  publicUrl: string;
+  status: 'pending' | 'active' | 'offline' | 'revoked';
+  version: string;
+  lastSeenAt: string | null;
+  pairedAt: string;
+}
+
+export interface RedundancyConfigurationSnapshot {
+  generatedAt: string;
+  authorityEpoch: number;
+  configurationRevision: number;
+  tenants: Array<{ id: string; name: string; timezone: string; active: boolean; tenantKind: string; createdAt: string }>;
+  users: Array<{
+    id: string; tenantId: string; name: string; email: string; passwordHash: string;
+    role: 'admin' | 'operator' | 'auditor'; active: boolean; createdAt: string;
+    lastLoginAt: string | null; updatedAt: string; deletedAt: string | null;
+  }>;
+  servicePlans: Array<{
+    id: string; code: string; name: string; maxDevices: number | null; active: boolean;
+    sortOrder: number; createdAt: string; updatedAt: string;
+  }>;
+  tenantPlanAssignments: Array<{
+    tenantId: string; planCode: string; deviceLimitOverride: number | null; assignedAt: string; updatedAt: string;
+  }>;
+  companyProfiles: Array<{
+    tenantId: string; legalName: string; tradeName: string; cnpj: string; phone: string; email: string;
+    postalCode: string; street: string; addressNumber: string; complement: string; district: string;
+    city: string; state: string; logoData: string | null; logoMime: string | null; updatedAt: string;
+  }>;
+  collectors: Array<{
+    id: string; tenantId: string; name: string; mode: 'edge' | 'cloud'; apiKeyHash: string; status: string;
+    version: string | null; lastSeenAt: string | null; createdAt: string; updatedAt: string;
+    deletedAt: string | null; netflowPort: number | null; syslogPort: number | null;
+  }>;
+  devices: Array<{
+    id: string; tenantId: string; collectorId: string | null; name: string; vendor: string; model: string | null;
+    managementIp: string | null; exporterIp: string; timezone: string; enabled: boolean;
+    settings: Record<string, unknown>; createdAt: string; deletedAt: string | null;
+  }>;
+  firewallPolicies: Array<{ collectorId: string; tenantId: string; mode: FirewallMode; createdAt: string; updatedAt: string }>;
+  firewallAuthorizations: Array<{
+    id: string; collectorId: string; tenantId: string; sourceCidr: string; description: string; createdAt: string;
+  }>;
+}
+
 export interface ManagedCollector {
   id: string;
   name: string;
@@ -5570,6 +5637,436 @@ export class PostgresRepository {
         collectorChanges24h: Number(summary?.collector_changes_24h ?? 0)
       }
     };
+  }
+
+  async getRedundancySettings(): Promise<RedundancySettings> {
+    const result = await this.pool.query<{
+      mode: RedundancyMode; site_id: string; site_name: string; public_url: string;
+      primary_site_id: string | null; primary_url: string; authority_epoch: string;
+      configuration_revision: string; migration_status: RedundancyMigrationStatus;
+      paired_at: Date | string | null; promoted_at: Date | string | null; updated_at: Date | string;
+    }>(`SELECT * FROM platform_redundancy_settings WHERE singleton = true`);
+    const row = result.rows[0];
+    if (!row) throw new Error('Configuração de redundância ausente');
+    return {
+      mode: row.mode, siteId: row.site_id, siteName: row.site_name, publicUrl: row.public_url,
+      primarySiteId: row.primary_site_id, primaryUrl: row.primary_url,
+      authorityEpoch: Number(row.authority_epoch), configurationRevision: Number(row.configuration_revision),
+      migrationStatus: row.migration_status,
+      pairedAt: row.paired_at ? new Date(row.paired_at).toISOString() : null,
+      promotedAt: row.promoted_at ? new Date(row.promoted_at).toISOString() : null,
+      updatedAt: new Date(row.updated_at).toISOString()
+    };
+  }
+
+  async initializeRedundancyRuntime(input: {
+    mode: RedundancyMode; siteId?: string; siteName: string; publicUrl: string;
+    primaryUrl?: string; primarySiteId?: string;
+  }): Promise<RedundancySettings> {
+    if (input.mode === 'standalone') return this.getRedundancySettings();
+    await this.pool.query(`
+      UPDATE platform_redundancy_settings SET
+        mode = $1,
+        site_id = COALESCE($2::uuid, site_id),
+        site_name = $3,
+        public_url = $4,
+        primary_url = CASE WHEN $1 = 'secondary' THEN $5 ELSE '' END,
+        primary_site_id = CASE WHEN $1 = 'secondary' THEN $6::uuid ELSE NULL END,
+        paired_at = CASE WHEN $1 = 'secondary' THEN COALESCE(paired_at, now()) ELSE paired_at END,
+        updated_at = now()
+      WHERE singleton = true AND mode = 'standalone'
+    `, [input.mode, input.siteId || null, input.siteName, input.publicUrl, input.primaryUrl ?? '', input.primarySiteId || null]);
+    return this.getRedundancySettings();
+  }
+
+  async configureRedundancyPrimary(input: {
+    actorUserId: string; siteName: string; publicUrl: string;
+  }): Promise<RedundancySettings> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const configured = await client.query(`
+        UPDATE platform_redundancy_settings SET
+          mode = 'primary', site_name = $2, public_url = $3,
+          primary_site_id = NULL, primary_url = '', configuration_revision = configuration_revision + 1,
+          updated_by_user_id = $1, updated_at = now()
+        WHERE singleton = true AND mode <> 'secondary'
+      `, [input.actorUserId, input.siteName, input.publicUrl]);
+      if (configured.rowCount !== 1) throw new Error('redundancy_secondary_required');
+      await client.query(`
+        INSERT INTO platform_management_audit (actor_user_id, action, details)
+        VALUES ($1, 'redundancy_primary_configured', jsonb_build_object('siteName', $2::text, 'publicUrl', $3::text))
+      `, [input.actorUserId, input.siteName, input.publicUrl]);
+      await client.query('COMMIT');
+      return this.getRedundancySettings();
+    } catch (error) {
+      await this.safeRollback(client);
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async listRedundancySites(): Promise<RedundancySite[]> {
+    const result = await this.pool.query<{
+      id: string; name: string; role: 'primary' | 'secondary'; public_url: string;
+      status: RedundancySite['status']; version: string; last_seen_at: Date | string | null; paired_at: Date | string;
+    }>(`SELECT id, name, role, public_url, status, version, last_seen_at, paired_at FROM redundancy_sites ORDER BY paired_at`);
+    return result.rows.map((row) => ({
+      id: row.id, name: row.name, role: row.role, publicUrl: row.public_url, status: row.status,
+      version: row.version, lastSeenAt: row.last_seen_at ? new Date(row.last_seen_at).toISOString() : null,
+      pairedAt: new Date(row.paired_at).toISOString()
+    }));
+  }
+
+  async createRedundancyEnrollment(input: {
+    actorUserId: string; tokenHash: string; expiresAt: string;
+  }): Promise<{ id: string; expiresAt: string }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const settings = await client.query<{ mode: RedundancyMode }>(`
+        SELECT mode FROM platform_redundancy_settings WHERE singleton = true FOR UPDATE
+      `);
+      if (settings.rows[0]?.mode !== 'primary') throw new Error('redundancy_primary_required');
+      const activeSite = await client.query(`
+        SELECT 1 FROM redundancy_sites WHERE role = 'secondary' AND status <> 'revoked' LIMIT 1
+      `);
+      if (activeSite.rowCount) throw new Error('redundancy_secondary_already_exists');
+      await client.query(`UPDATE redundancy_enrollments SET status = 'revoked' WHERE status = 'pending'`);
+      const result = await client.query<{ id: string; expires_at: Date | string }>(`
+        INSERT INTO redundancy_enrollments (token_hash, expires_at, created_by_user_id)
+        VALUES ($1, $2, $3) RETURNING id, expires_at
+      `, [input.tokenHash, input.expiresAt, input.actorUserId]);
+      await client.query(`
+        INSERT INTO platform_management_audit (actor_user_id, action, details)
+        VALUES ($1, 'redundancy_enrollment_created', jsonb_build_object('expiresAt', $2::text))
+      `, [input.actorUserId, input.expiresAt]);
+      await client.query('COMMIT');
+      const row = result.rows[0]!;
+      return { id: row.id, expiresAt: new Date(row.expires_at).toISOString() };
+    } catch (error) {
+      await this.safeRollback(client);
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async consumeRedundancyEnrollment(input: {
+    enrollmentTokenHash: string; siteTokenHash: string; siteName: string; publicUrl: string;
+  }): Promise<{ status: 'enrolled'; siteId: string; settings: RedundancySettings } | { status: 'invalid' }> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const enrollment = await client.query<{ id: string; created_by_user_id: string }>(`
+        SELECT id, created_by_user_id FROM redundancy_enrollments
+        WHERE token_hash = $1 AND status = 'pending' AND expires_at > now() FOR UPDATE
+      `, [input.enrollmentTokenHash]);
+      const pending = enrollment.rows[0];
+      if (!pending) { await client.query('ROLLBACK'); return { status: 'invalid' }; }
+      const activeSite = await client.query(`
+        SELECT 1 FROM redundancy_sites WHERE role = 'secondary' AND status <> 'revoked' LIMIT 1
+      `);
+      if (activeSite.rowCount) throw new Error('redundancy_secondary_already_exists');
+      const created = await client.query<{ id: string }>(`
+        INSERT INTO redundancy_sites (name, role, public_url, token_hash, status)
+        VALUES ($1, 'secondary', $2, $3, 'active') RETURNING id
+      `, [input.siteName, input.publicUrl, input.siteTokenHash]);
+      const siteId = created.rows[0]!.id;
+      await client.query(`
+        UPDATE redundancy_enrollments SET status = 'enrolled', enrolled_at = now(), site_id = $2 WHERE id = $1
+      `, [pending.id, siteId]);
+      await client.query(`
+        UPDATE platform_redundancy_settings
+        SET configuration_revision = configuration_revision + 1, updated_at = now()
+        WHERE singleton = true
+      `);
+      await client.query(`
+        INSERT INTO platform_management_audit (actor_user_id, action, details)
+        VALUES ($1, 'redundancy_site_enrolled', jsonb_build_object('siteId', $2::uuid, 'siteName', $3::text))
+      `, [pending.created_by_user_id, siteId, input.siteName]);
+      await client.query('COMMIT');
+      return { status: 'enrolled', siteId, settings: await this.getRedundancySettings() };
+    } catch (error) {
+      await this.safeRollback(client);
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async findRedundancySiteByTokenHash(tokenHash: string): Promise<RedundancySite | undefined> {
+    const result = await this.pool.query<{
+      id: string; name: string; role: 'primary' | 'secondary'; public_url: string;
+      status: RedundancySite['status']; version: string; last_seen_at: Date | string | null; paired_at: Date | string;
+    }>(`
+      SELECT id, name, role, public_url, status, version, last_seen_at, paired_at
+      FROM redundancy_sites WHERE token_hash = $1 AND status <> 'revoked' LIMIT 1
+    `, [tokenHash]);
+    const row = result.rows[0];
+    return row ? {
+      id: row.id, name: row.name, role: row.role, publicUrl: row.public_url, status: row.status,
+      version: row.version, lastSeenAt: row.last_seen_at ? new Date(row.last_seen_at).toISOString() : null,
+      pairedAt: new Date(row.paired_at).toISOString()
+    } : undefined;
+  }
+
+  async touchRedundancySite(siteId: string, version: string): Promise<void> {
+    await this.pool.query(`
+      UPDATE redundancy_sites SET version = $2, status = 'active', last_seen_at = now(), updated_at = now()
+      WHERE id = $1 AND status <> 'revoked'
+    `, [siteId, version]);
+  }
+
+  async revokeRedundancySite(actorUserId: string, siteId: string): Promise<boolean> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const updated = await client.query(`
+        UPDATE redundancy_sites SET status='revoked', updated_at=now()
+        WHERE id=$1 AND role='secondary' AND status <> 'revoked'
+      `, [siteId]);
+      if (updated.rowCount === 1) {
+        await client.query(`
+          INSERT INTO platform_management_audit (actor_user_id, action, details)
+          VALUES ($1, 'redundancy_site_revoked', jsonb_build_object('siteId', $2::uuid))
+        `, [actorUserId, siteId]);
+      }
+      await client.query('COMMIT');
+      return updated.rowCount === 1;
+    } catch (error) {
+      await this.safeRollback(client);
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async exportRedundancyConfiguration(): Promise<RedundancyConfigurationSnapshot> {
+    const [settings, tenants, users, servicePlans, planAssignments, companyProfiles,
+      collectors, devices, policies, authorizations] = await Promise.all([
+      this.getRedundancySettings(),
+      this.pool.query(`
+        SELECT id, name, timezone, active, tenant_kind, created_at
+        FROM tenants WHERE id <> '00000000-0000-0000-0000-000000000000'::uuid ORDER BY id
+      `),
+      this.pool.query(`
+        SELECT id, tenant_id, name, email, password_hash, role, active, created_at,
+          last_login_at, updated_at, deleted_at
+        FROM users WHERE tenant_id <> '00000000-0000-0000-0000-000000000000'::uuid ORDER BY id
+      `),
+      this.pool.query(`
+        SELECT id, code, name, max_devices, active, sort_order, created_at, updated_at
+        FROM service_plans ORDER BY id
+      `),
+      this.pool.query(`
+        SELECT assignment.tenant_id, plan.code AS plan_code, assignment.device_limit_override,
+          assignment.assigned_at, assignment.updated_at
+        FROM tenant_plan_assignments assignment
+        JOIN service_plans plan ON plan.id = assignment.plan_id
+        WHERE assignment.tenant_id <> '00000000-0000-0000-0000-000000000000'::uuid
+        ORDER BY assignment.tenant_id
+      `),
+      this.pool.query(`
+        SELECT tenant_id, legal_name, trade_name, cnpj, phone, email, postal_code, street,
+          address_number, complement, district, city, state,
+          CASE WHEN logo_data IS NULL THEN NULL ELSE encode(logo_data, 'base64') END AS logo_data,
+          logo_mime, updated_at
+        FROM tenant_company_profiles
+        WHERE tenant_id <> '00000000-0000-0000-0000-000000000000'::uuid ORDER BY tenant_id
+      `),
+      this.pool.query(`
+        SELECT id, tenant_id, name, mode, api_key_hash, status, version, last_seen_at,
+          created_at, updated_at, deleted_at, netflow_port, syslog_port
+        FROM collectors WHERE tenant_id <> '00000000-0000-0000-0000-000000000000'::uuid ORDER BY id
+      `),
+      this.pool.query(`
+        SELECT id, tenant_id, collector_id, name, vendor, model, host(management_ip) AS management_ip,
+          host(exporter_ip) AS exporter_ip, timezone, enabled, settings, created_at, deleted_at
+        FROM devices WHERE tenant_id <> '00000000-0000-0000-0000-000000000000'::uuid ORDER BY id
+      `),
+      this.pool.query(`
+        SELECT collector_id, tenant_id, mode, created_at, updated_at FROM collector_firewall_policies ORDER BY collector_id
+      `),
+      this.pool.query(`
+        SELECT id, collector_id, tenant_id, source_cidr::text, description, created_at
+        FROM collector_firewall_authorizations ORDER BY id
+      `)
+    ]);
+    const iso = (value: unknown) => new Date(value as string | Date).toISOString();
+    const optionalIso = (value: unknown) => value ? iso(value) : null;
+    return {
+      generatedAt: new Date().toISOString(), authorityEpoch: settings.authorityEpoch,
+      configurationRevision: settings.configurationRevision,
+      tenants: tenants.rows.map((row) => ({ id: row.id, name: row.name, timezone: row.timezone,
+        active: row.active, tenantKind: row.tenant_kind, createdAt: iso(row.created_at) })),
+      users: users.rows.map((row) => ({ id: row.id, tenantId: row.tenant_id, name: row.name,
+        email: row.email, passwordHash: row.password_hash, role: row.role, active: row.active,
+        createdAt: iso(row.created_at), lastLoginAt: optionalIso(row.last_login_at),
+        updatedAt: iso(row.updated_at), deletedAt: optionalIso(row.deleted_at) })),
+      servicePlans: servicePlans.rows.map((row) => ({ id: row.id, code: row.code, name: row.name,
+        maxDevices: row.max_devices, active: row.active, sortOrder: row.sort_order,
+        createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) })),
+      tenantPlanAssignments: planAssignments.rows.map((row) => ({ tenantId: row.tenant_id,
+        planCode: row.plan_code, deviceLimitOverride: row.device_limit_override,
+        assignedAt: iso(row.assigned_at), updatedAt: iso(row.updated_at) })),
+      companyProfiles: companyProfiles.rows.map((row) => ({ tenantId: row.tenant_id,
+        legalName: row.legal_name, tradeName: row.trade_name, cnpj: row.cnpj, phone: row.phone,
+        email: row.email, postalCode: row.postal_code, street: row.street,
+        addressNumber: row.address_number, complement: row.complement, district: row.district,
+        city: row.city, state: row.state, logoData: row.logo_data, logoMime: row.logo_mime,
+        updatedAt: iso(row.updated_at) })),
+      collectors: collectors.rows.map((row) => ({ id: row.id, tenantId: row.tenant_id, name: row.name,
+        mode: row.mode, apiKeyHash: row.api_key_hash, status: row.status, version: row.version,
+        lastSeenAt: optionalIso(row.last_seen_at), createdAt: iso(row.created_at), updatedAt: iso(row.updated_at),
+        deletedAt: optionalIso(row.deleted_at), netflowPort: row.netflow_port, syslogPort: row.syslog_port })),
+      devices: devices.rows.map((row) => ({ id: row.id, tenantId: row.tenant_id,
+        collectorId: row.collector_id, name: row.name, vendor: row.vendor, model: row.model,
+        managementIp: row.management_ip, exporterIp: row.exporter_ip, timezone: row.timezone,
+        enabled: row.enabled, settings: row.settings, createdAt: iso(row.created_at), deletedAt: optionalIso(row.deleted_at) })),
+      firewallPolicies: policies.rows.map((row) => ({ collectorId: row.collector_id, tenantId: row.tenant_id,
+        mode: row.mode, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) })),
+      firewallAuthorizations: authorizations.rows.map((row) => ({ id: row.id, collectorId: row.collector_id,
+        tenantId: row.tenant_id, sourceCidr: row.source_cidr, description: row.description,
+        createdAt: iso(row.created_at) }))
+    };
+  }
+
+  async applyRedundancyConfiguration(snapshot: RedundancyConfigurationSnapshot): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const local = await client.query<{ mode: RedundancyMode; authority_epoch: string }>(`
+        SELECT mode, authority_epoch FROM platform_redundancy_settings WHERE singleton = true FOR UPDATE
+      `);
+      if (local.rows[0]?.mode !== 'secondary') throw new Error('redundancy_secondary_required');
+      if (snapshot.authorityEpoch < Number(local.rows[0].authority_epoch)) throw new Error('stale_authority_epoch');
+      for (const item of snapshot.tenants) await client.query(`
+        INSERT INTO tenants (id, name, timezone, active, tenant_kind, created_at)
+        VALUES ($1,$2,$3,$4,$5,$6)
+        ON CONFLICT (id) DO UPDATE SET name=excluded.name, timezone=excluded.timezone,
+          active=excluded.active, tenant_kind=excluded.tenant_kind, updated_at=now()
+      `, [item.id, item.name, item.timezone, item.active, item.tenantKind, item.createdAt]);
+      for (const item of snapshot.users) await client.query(`
+        INSERT INTO users
+          (id, tenant_id, name, email, password_hash, role, active, created_at, last_login_at, updated_at, deleted_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+        ON CONFLICT (id) DO UPDATE SET tenant_id=excluded.tenant_id, name=excluded.name,
+          email=excluded.email, password_hash=excluded.password_hash, role=excluded.role,
+          active=excluded.active, last_login_at=excluded.last_login_at,
+          updated_at=excluded.updated_at, deleted_at=excluded.deleted_at
+      `, [item.id, item.tenantId, item.name, item.email, item.passwordHash, item.role, item.active,
+        item.createdAt, item.lastLoginAt, item.updatedAt, item.deletedAt]);
+      for (const item of snapshot.servicePlans) await client.query(`
+        INSERT INTO service_plans (id, code, name, max_devices, active, sort_order, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        ON CONFLICT (code) DO UPDATE SET name=excluded.name,
+          max_devices=excluded.max_devices, active=excluded.active, sort_order=excluded.sort_order,
+          updated_at=excluded.updated_at
+      `, [item.id, item.code, item.name, item.maxDevices, item.active, item.sortOrder,
+        item.createdAt, item.updatedAt]);
+      for (const item of snapshot.tenantPlanAssignments) await client.query(`
+        INSERT INTO tenant_plan_assignments
+          (tenant_id, plan_id, device_limit_override, assigned_at, updated_at)
+        SELECT $1, id, $3, $4, $5 FROM service_plans WHERE code = $2
+        ON CONFLICT (tenant_id) DO UPDATE SET plan_id=excluded.plan_id,
+          device_limit_override=excluded.device_limit_override, updated_at=excluded.updated_at
+      `, [item.tenantId, item.planCode, item.deviceLimitOverride, item.assignedAt, item.updatedAt]);
+      for (const item of snapshot.companyProfiles) await client.query(`
+        INSERT INTO tenant_company_profiles
+          (tenant_id, legal_name, trade_name, cnpj, phone, email, postal_code, street,
+           address_number, complement, district, city, state, logo_data, logo_mime, updated_by_user_id, updated_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,
+          CASE WHEN $14::text IS NULL THEN NULL ELSE decode($14, 'base64') END,$15,NULL,$16)
+        ON CONFLICT (tenant_id) DO UPDATE SET legal_name=excluded.legal_name,
+          trade_name=excluded.trade_name, cnpj=excluded.cnpj, phone=excluded.phone, email=excluded.email,
+          postal_code=excluded.postal_code, street=excluded.street, address_number=excluded.address_number,
+          complement=excluded.complement, district=excluded.district, city=excluded.city,
+          state=excluded.state, logo_data=excluded.logo_data, logo_mime=excluded.logo_mime,
+          updated_by_user_id=NULL, updated_at=excluded.updated_at
+      `, [item.tenantId, item.legalName, item.tradeName, item.cnpj, item.phone, item.email,
+        item.postalCode, item.street, item.addressNumber, item.complement, item.district,
+        item.city, item.state, item.logoData, item.logoMime, item.updatedAt]);
+      for (const item of snapshot.collectors) await client.query(`
+        INSERT INTO collectors
+          (id, tenant_id, name, mode, api_key_hash, status, version, last_seen_at, created_at, updated_at,
+           deleted_at, netflow_port, syslog_port)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        ON CONFLICT (id) DO UPDATE SET tenant_id=excluded.tenant_id, name=excluded.name, mode=excluded.mode,
+          api_key_hash=excluded.api_key_hash, status=excluded.status, version=excluded.version,
+          deleted_at=excluded.deleted_at, netflow_port=excluded.netflow_port, syslog_port=excluded.syslog_port,
+          updated_at=excluded.updated_at
+      `, [item.id, item.tenantId, item.name, item.mode, item.apiKeyHash, item.status, item.version,
+        item.lastSeenAt, item.createdAt, item.updatedAt, item.deletedAt, item.netflowPort, item.syslogPort]);
+      for (const item of snapshot.devices) await client.query(`
+        INSERT INTO devices
+          (id, tenant_id, collector_id, name, vendor, model, management_ip, exporter_ip, timezone,
+           enabled, settings, created_at, deleted_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7::inet,$8::inet,$9,$10,$11::jsonb,$12,$13)
+        ON CONFLICT (id) DO UPDATE SET tenant_id=excluded.tenant_id, collector_id=excluded.collector_id,
+          name=excluded.name, vendor=excluded.vendor, model=excluded.model, management_ip=excluded.management_ip,
+          exporter_ip=excluded.exporter_ip, timezone=excluded.timezone, enabled=excluded.enabled,
+          settings=excluded.settings, deleted_at=excluded.deleted_at
+      `, [item.id, item.tenantId, item.collectorId, item.name, item.vendor, item.model, item.managementIp,
+        item.exporterIp, item.timezone, item.enabled, JSON.stringify(item.settings), item.createdAt, item.deletedAt]);
+      for (const item of snapshot.firewallPolicies) await client.query(`
+        INSERT INTO collector_firewall_policies (collector_id, tenant_id, mode, created_at, updated_at)
+        VALUES ($1,$2,$3,$4,$5)
+        ON CONFLICT (collector_id) DO UPDATE SET tenant_id=excluded.tenant_id, mode=excluded.mode,
+          updated_by_user_id=NULL, updated_at=excluded.updated_at
+      `, [item.collectorId, item.tenantId, item.mode, item.createdAt, item.updatedAt]);
+      const mirroredCollectorIds = snapshot.collectors.map((item) => item.id);
+      if (mirroredCollectorIds.length) {
+        await client.query(`
+          DELETE FROM collector_firewall_authorizations WHERE collector_id = ANY($1::uuid[])
+        `, [mirroredCollectorIds]);
+      }
+      for (const item of snapshot.firewallAuthorizations) await client.query(`
+        INSERT INTO collector_firewall_authorizations
+          (id, collector_id, tenant_id, source_cidr, description, created_by_user_id, created_at)
+        VALUES ($1,$2,$3,$4::cidr,$5,NULL,$6)
+        ON CONFLICT (id) DO UPDATE SET source_cidr=excluded.source_cidr, description=excluded.description
+      `, [item.id, item.collectorId, item.tenantId, item.sourceCidr, item.description, item.createdAt]);
+      await client.query(`
+        UPDATE platform_redundancy_settings SET authority_epoch=$1, configuration_revision=$2, updated_at=now()
+        WHERE singleton=true
+      `, [snapshot.authorityEpoch, snapshot.configurationRevision]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await this.safeRollback(client);
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async promoteRedundancySecondary(actorUserId: string): Promise<RedundancySettings> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const updated = await client.query(`
+        UPDATE platform_redundancy_settings SET mode='primary', primary_site_id=NULL, primary_url='',
+          authority_epoch=authority_epoch+1, configuration_revision=configuration_revision+1,
+          promoted_at=now(), updated_by_user_id=$1, updated_at=now()
+        WHERE singleton=true AND mode='secondary'
+      `, [actorUserId]);
+      if (updated.rowCount !== 1) throw new Error('redundancy_secondary_required');
+      await client.query(`
+        INSERT INTO platform_management_audit (actor_user_id, action, details)
+        VALUES ($1, 'redundancy_secondary_promoted', jsonb_build_object('manual', true))
+      `, [actorUserId]);
+      await client.query('COMMIT');
+      return this.getRedundancySettings();
+    } catch (error) {
+      await this.safeRollback(client);
+      throw error;
+    } finally { client.release(); }
+  }
+
+  async updateRedundancyMigrationStatus(
+    actorUserId: string,
+    status: RedundancyMigrationStatus
+  ): Promise<RedundancySettings> {
+    await this.pool.query(`
+      WITH changed AS (
+        UPDATE platform_redundancy_settings SET migration_status=$2, updated_by_user_id=$1, updated_at=now()
+        WHERE singleton=true RETURNING migration_status
+      )
+      INSERT INTO platform_management_audit (actor_user_id, action, details)
+      SELECT $1, 'redundancy_legacy_migration_updated', jsonb_build_object('status', migration_status) FROM changed
+    `, [actorUserId, status]);
+    return this.getRedundancySettings();
   }
 
   private async safeRollback(client: PoolClient): Promise<void> {

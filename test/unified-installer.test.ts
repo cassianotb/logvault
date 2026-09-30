@@ -37,7 +37,8 @@ describe('instalador unificado do LogVault', () => {
     expect(result.stdout).toContain('Sistema LogVault');
     expect(result.stdout).toContain('proxy e HTTPS automático');
     expect(result.stdout).toContain('Coletor local');
-    expect(result.stdout).toContain('Datacenter B');
+    expect(result.stdout).toContain('Servidor redundante');
+    expect(result.stdout).toContain('Continuidade antiga (legada)');
     expect(result.stdout).toContain('Atualizar LogVault');
     expect(result.stdout).not.toContain('\u001b[');
   });
@@ -84,6 +85,16 @@ describe('instalador unificado do LogVault', () => {
     expect(dryRun.stdout).toContain('--argus-url https://logs.example.com --prepare-only');
   });
 
+  it('seleciona a segunda VM e encaminha o pareamento ao novo instalador', () => {
+    const dryRun = run([
+      '--dry-run', 'secondary', '--primary-url', 'https://principal.example.com',
+      '--enrollment-token', 'abcdefghijklmnopqrstuvwxyz123456'
+    ], { NO_COLOR: '1' });
+    expect(dryRun.status, dryRun.stderr).toBe(0);
+    expect(dryRun.stdout).toContain('install-secondary.sh');
+    expect(dryRun.stdout).toContain('--primary-url https://principal.example.com');
+  });
+
   it('encaminha a atualização somente ao atualizador do sistema', () => {
     const dryRun = run([
       '--dry-run', 'update', '--check'
@@ -96,6 +107,6 @@ describe('instalador unificado do LogVault', () => {
   it('exige seleção explícita quando não há terminal interativo', () => {
     const result = run([], { NO_COLOR: '1' });
     expect(result.status).toBe(2);
-    expect(result.stderr).toContain("informe 'system', 'collector', 'dc-b' ou 'update'");
+    expect(result.stderr).toContain("informe 'system', 'collector', 'secondary', 'dc-b' ou 'update'");
   });
 });

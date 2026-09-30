@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
-import { describe, expect, it } from 'vitest';
-import { fullPlatformPermissions, hasPlatformAccess } from '../src/api/access-control.js';
+import { afterEach, describe, expect, it } from 'vitest';
+import { configureAdministrativeReadOnly, fullPlatformPermissions, hasPlatformAccess } from '../src/api/access-control.js';
 import type { AuthSession, PostgresRepository } from '../src/api/postgres.js';
 import { registerUserRoutes } from '../src/api/users.js';
 
@@ -27,6 +27,7 @@ const baseSession: AuthSession = {
 };
 
 describe('perfis de acesso da plataforma', () => {
+  afterEach(() => configureAdministrativeReadOnly(() => false));
   it('diferencia visualização de gerenciamento', () => {
     expect(hasPlatformAccess(baseSession, 'users', 'view')).toBe(true);
     expect(hasPlatformAccess(baseSession, 'users', 'manage')).toBe(false);
@@ -60,6 +61,30 @@ describe('perfis de acesso da plataforma', () => {
     });
     expect(denied.statusCode).toBe(403);
     expect(denied.json()).toMatchObject({ error: 'platform_permission_required', module: 'users', level: 'manage' });
+    expect(created).toBe(false);
+    await app.close();
+  });
+
+  it('bloqueia mutações administrativas no secundário antes de alterar dados', async () => {
+    let created = false;
+    const repository = {
+      findActiveSession: async () => ({
+        ...baseSession,
+        platformOwner: true,
+        platformPermissions: fullPlatformPermissions
+      }),
+      createPlatformAccessProfile: async () => { created = true; throw new Error('não deveria ser chamado'); }
+    } as unknown as PostgresRepository;
+    configureAdministrativeReadOnly(() => true);
+    const app = Fastify();
+    registerUserRoutes(app, { postgres: repository });
+    const response = await app.inject({
+      method: 'POST', url: '/v1/platform/access-profiles',
+      headers: { cookie, 'content-type': 'application/json' },
+      payload: { name: 'NOC', description: '', permissions: fullPlatformPermissions }
+    });
+    expect(response.statusCode).toBe(423);
+    expect(response.json()).toMatchObject({ error: 'secondary_administration_read_only' });
     expect(created).toBe(false);
     await app.close();
   });

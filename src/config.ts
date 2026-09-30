@@ -50,6 +50,9 @@ export const collectorConfigSchema = commonSchema.extend({
   ARGUS_SYNC_URL: z.string().url(),
   ARGUS_HEARTBEAT_URL: z.string().url(),
   ARGUS_SYNC_TOKEN: z.string().min(1),
+  ARGUS_SECONDARY_SYNC_URL: z.string().url().or(z.literal('')).default(''),
+  ARGUS_SECONDARY_HEARTBEAT_URL: z.string().url().or(z.literal('')).default(''),
+  ARGUS_SECONDARY_SYNC_TOKEN: z.string().default(''),
   ARGUS_COLLECTOR_VERSION: z.string().min(1).max(100).default('0.1.0'),
   ARGUS_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(5000).max(300000).default(10000),
   ARGUS_SYNC_BATCH_SIZE: z.coerce.number().int().positive().max(100000).default(5000),
@@ -57,6 +60,19 @@ export const collectorConfigSchema = commonSchema.extend({
   ARGUS_EDGE_ACK_RETENTION_HOURS: z.coerce.number().int().nonnegative().default(24),
   ARGUS_MANAGED_CLOUD_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   ARGUS_MANAGED_CLOUD_REGISTRY_URL: z.string().url().default('http://127.0.0.1:8080/v1/ingest/managed-cloud/registry')
+}).superRefine((config, context) => {
+  const secondaryValues = [
+    config.ARGUS_SECONDARY_SYNC_URL,
+    config.ARGUS_SECONDARY_HEARTBEAT_URL,
+    config.ARGUS_SECONDARY_SYNC_TOKEN
+  ];
+  const configured = secondaryValues.filter(Boolean).length;
+  if (configured !== 0 && configured !== secondaryValues.length) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'O destino secundário exige URL de ingestão, URL de heartbeat e token'
+    });
+  }
 });
 
 export const apiConfigSchema = z.object({
@@ -79,6 +95,13 @@ export const apiConfigSchema = z.object({
   ARGUS_BACKUP_RETENTION_DAYS: z.coerce.number().int().min(1).max(3650).default(15),
   ARGUS_CONTINUITY_CONTROL_PATH: z.string().min(1).default('/var/lib/argus/control'),
   ARGUS_BACKUP_REMOTE_TARGET: z.string().default(''),
+  ARGUS_REDUNDANCY_ROLE: z.enum(['standalone', 'primary', 'secondary']).default('standalone'),
+  ARGUS_REDUNDANCY_SITE_ID: z.string().uuid().or(z.literal('')).default(''),
+  ARGUS_REDUNDANCY_PRIMARY_SITE_ID: z.string().uuid().or(z.literal('')).default(''),
+  ARGUS_REDUNDANCY_SITE_NAME: z.string().trim().min(1).max(100).default('Servidor principal'),
+  ARGUS_REDUNDANCY_PRIMARY_URL: z.string().url().or(z.literal('')).default(''),
+  ARGUS_REDUNDANCY_SITE_TOKEN: z.string().default(''),
+  ARGUS_REDUNDANCY_SYNC_INTERVAL_MS: z.coerce.number().int().min(5000).max(300000).default(15000),
   ARGUS_CAPACITY_OFFLINE_HOURS: z.coerce.number().int().min(1).max(168).default(6),
   ARGUS_DR_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   ARGUS_DR_LOCAL_SITE: z.enum(['a', 'b']).default('a'),
@@ -125,6 +148,11 @@ export const apiConfigSchema = z.object({
 }).refine((config) => config.ARGUS_DR_LAG_CRITICAL_SECONDS > config.ARGUS_DR_LAG_WARNING_SECONDS, {
   message: 'O limite crítico de replicação deve ser maior que o limite de aviso',
   path: ['ARGUS_DR_LAG_CRITICAL_SECONDS']
+}).refine((config) => config.ARGUS_REDUNDANCY_ROLE !== 'secondary'
+  || Boolean(config.ARGUS_REDUNDANCY_SITE_ID && config.ARGUS_REDUNDANCY_PRIMARY_SITE_ID
+    && config.ARGUS_REDUNDANCY_PRIMARY_URL && config.ARGUS_REDUNDANCY_SITE_TOKEN), {
+  message: 'O servidor secundário exige site ID, URL primária e token de pareamento',
+  path: ['ARGUS_REDUNDANCY_ROLE']
 });
 
 export function loadCollectorConfig() {
