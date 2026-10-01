@@ -118,9 +118,11 @@ export class BatchSynchronizer {
         : await sendHeartbeat(heartbeat, this.options.heartbeatUrl, this.options.token);
       this.configurationReceiver?.(response.devices);
       if (this.heartbeatHealthy === false) {
+        const recovery = this.spool.requeueAcknowledged(this.options.destinationId ?? 'primary');
         console.info(JSON.stringify({
           level: 'info', component: 'heartbeat', destinationId: this.options.destinationId ?? 'primary',
-          message: 'Conexão com a API restabelecida'
+          message: 'Conexão com a API restabelecida; lotes retidos serão revalidados',
+          recovery
         }));
       }
       this.heartbeatHealthy = true;

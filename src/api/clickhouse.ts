@@ -1,7 +1,7 @@
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import type { CgnatEvent, IngestBatch, RawRecord } from '../domain/models.js';
 import type { HostMetrics } from '../core/host-metrics.js';
-import { sha256 } from '../core/crypto.js';
+import { newId, sha256 } from '../core/crypto.js';
 
 export const CLOUD_METRICS_TENANT_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -367,18 +367,27 @@ export class ClickHouseRepository {
     };
   }
 
-  async insertBatch(batch: IngestBatch, contents?: BatchContents): Promise<void> {
+  async insertBatch(batch: IngestBatch, contents?: BatchContents, repair = false): Promise<void> {
     const rawRecords = contents
       ? batch.rawRecords.filter((record) => !contents.rawIds.has(record.rawId))
       : batch.rawRecords;
     const events = contents
       ? batch.events.filter((event) => !contents.eventIds.has(event.eventId))
       : batch.events;
+    // A reparacao precisa de um token novo. O token da escrita original pode ter
+    // sobrevivido no log de deduplicacao mesmo quando um desligamento abrupto
+    // removeu a parte de dados que ele confirmava.
+    const repairAttempt = repair ? newId() : '';
     const settingsFor = (kind: 'raw' | 'events', ids: string[]) => ({
       async_insert: 1,
       wait_for_async_insert: 1,
       async_insert_deduplicate: 1,
-      insert_deduplication_token: `${batch.batchId}:${kind}:${sha256([...ids].sort().join(','))}`,
+      insert_deduplication_token: [
+        batch.batchId,
+        kind,
+        sha256([...ids].sort().join(',')),
+        ...(repairAttempt ? ['repair', repairAttempt] : [])
+      ].join(':'),
       date_time_input_format: 'best_effort'
     } as const);
 

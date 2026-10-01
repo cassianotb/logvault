@@ -42,6 +42,38 @@ function rawRecord(rawId: string, receivedAt: string): RawRecord {
 }
 
 describe('BatchSynchronizer', () => {
+  it('reabre automaticamente os lotes retidos quando um destino volta', async () => {
+    const requeueAcknowledged = vi.fn(() => ({
+      destinationId: 'secondary', batches: 2, records: 3, events: 72
+    }));
+    const spool = {
+      statistics: vi.fn(() => ({
+        pendingRecords: 0, pendingEvents: 0, pendingBatches: 0,
+        acknowledgedRecordsRetained: 3, oldestPendingAt: null,
+        spoolBytes: 1024, lastSyncAt: null, lastSyncError: ''
+      })),
+      requeueAcknowledged
+    } as unknown as CollectorSpool;
+    const heartbeatSender = vi.fn()
+      .mockRejectedValueOnce(new Error('secondary offline'))
+      .mockResolvedValueOnce({ status: 'recorded', receivedAt: new Date().toISOString(), devices: [] });
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const info = vi.spyOn(console, 'info').mockImplementation(() => undefined);
+    const synchronizer = new BatchSynchronizer(
+      spool, options('secondary'), undefined, heartbeatSender
+    );
+
+    await synchronizer.heartbeat();
+    expect(requeueAcknowledged).not.toHaveBeenCalled();
+    await synchronizer.heartbeat();
+
+    expect(requeueAcknowledged).toHaveBeenCalledOnce();
+    expect(requeueAcknowledged).toHaveBeenCalledWith('secondary');
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('revalidados'));
+    warning.mockRestore();
+    info.mockRestore();
+  });
+
   it('mantém o processo ativo quando o SQLite está temporariamente ocupado', async () => {
     let attempts = 0;
     const spool = {

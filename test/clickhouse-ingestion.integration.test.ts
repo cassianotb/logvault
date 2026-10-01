@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import Fastify from 'fastify';
+import { createClient } from '@clickhouse/client';
 import { ClickHouseRepository } from '../src/api/clickhouse.js';
 import { registerIngestionRoutes } from '../src/api/ingestion.js';
 import type { PostgresRepository } from '../src/api/postgres.js';
@@ -41,17 +42,20 @@ function fixture(): IngestBatch {
 }
 
 describe.skipIf(!enabled)('persistência ClickHouse real', () => {
-  const repository = new ClickHouseRepository({
+  const connection = {
     url: process.env.ARGUS_CLICKHOUSE_URL ?? 'http://127.0.0.1:8123',
     username: process.env.ARGUS_CLICKHOUSE_USER ?? 'argus',
     password: process.env.ARGUS_CLICKHOUSE_PASSWORD ?? 'change-me',
     database: 'argus'
-  });
+  };
+  const repository = new ClickHouseRepository(connection);
+  const client = createClient(connection);
 
   beforeAll(async () => { await repository.deleteTenantData(tenantId); });
   afterAll(async () => {
     await repository.deleteTenantData(tenantId);
     await repository.close();
+    await client.close();
   });
 
   it('completa uma escrita parcial pela API, grava o comprovante e usa o caminho rápido no reenvio', async () => {
@@ -89,11 +93,28 @@ describe.skipIf(!enabled)('persistência ClickHouse real', () => {
     });
     expect(second.statusCode, second.body).toBe(200);
     expect(second.json()).toMatchObject({ batchId, duplicate: true, repaired: false });
-    await app.close();
 
     expect(await repository.getBatchReceipt(batchId)).toMatchObject({
       batchId, tenantId, collectorId, checksum: full.checksum, rawCount: 2, eventCount: 2
     });
     expect(await repository.countBatch(batchId)).toEqual({ rawCount: 2, eventCount: 2 });
+
+    // Simula o caso observado em campo: a VM foi desligada depois do ACK,
+    // uma linha sumiu, mas o comprovante do lote permaneceu.
+    await client.command({
+      query: 'ALTER TABLE cgnat_events DELETE WHERE event_id = {eventId:UUID}',
+      query_params: { eventId: full.events[1]!.eventId },
+      clickhouse_settings: { mutations_sync: 2 }
+    });
+    expect(await repository.countBatch(batchId)).toEqual({ rawCount: 2, eventCount: 1 });
+
+    const recovered = await app.inject({
+      method: 'POST', url: '/v1/ingest/batches',
+      headers: { authorization: 'Bearer integration-token' }, payload: full
+    });
+    expect(recovered.statusCode, recovered.body).toBe(200);
+    expect(recovered.json()).toMatchObject({ batchId, duplicate: true, repaired: true });
+    expect(await repository.countBatch(batchId)).toEqual({ rawCount: 2, eventCount: 2 });
+    await app.close();
   });
 });

@@ -83,9 +83,11 @@ describe('confirmação durável da ingestão', () => {
     expect(result.markBatchCommitted).toHaveBeenCalledOnce();
   });
 
-  it('usa o comprovante indexado no caminho rápido de um reenvio', async () => {
+  it('revalida no ClickHouse até mesmo um lote que já possui comprovante', async () => {
     const value = batch();
-    const inspectBatch = vi.fn();
+    const inspectBatch = vi.fn(async () => ({
+      rawIds: new Set([rawId]), eventIds: new Set([eventId])
+    }));
     const insertBatch = vi.fn();
     const result = await request({
       registration: 'committed',
@@ -99,8 +101,34 @@ describe('confirmação durável da ingestão', () => {
 
     expect(result.response.statusCode).toBe(200);
     expect(result.response.json()).toMatchObject({ duplicate: true, repaired: false });
-    expect(inspectBatch).not.toHaveBeenCalled();
+    expect(inspectBatch).toHaveBeenCalledOnce();
     expect(insertBatch).not.toHaveBeenCalled();
+    expect(result.markBatchCommitted).toHaveBeenCalledOnce();
+  });
+
+  it('repara linhas perdidas após desligamento mesmo quando o comprovante sobreviveu', async () => {
+    const value = batch();
+    const missing = { rawIds: new Set([rawId]), eventIds: new Set<string>() };
+    const complete = { rawIds: new Set([rawId]), eventIds: new Set([eventId]) };
+    const inspectBatch = vi.fn()
+      .mockResolvedValueOnce(missing)
+      .mockResolvedValueOnce(complete);
+    const insertBatch = vi.fn(async () => undefined);
+    const recordBatchReceipt = vi.fn(async () => undefined);
+    const result = await request({
+      registration: 'committed',
+      clickhouse: {
+        getBatchReceipt: async () => ({
+          batchId, tenantId, collectorId, checksum: value.checksum, rawCount: 1, eventCount: 1
+        }),
+        inspectBatch, insertBatch, recordBatchReceipt
+      }
+    });
+
+    expect(result.response.statusCode, result.response.body).toBe(200);
+    expect(result.response.json()).toMatchObject({ duplicate: true, repaired: true });
+    expect(insertBatch).toHaveBeenCalledWith(expect.objectContaining({ batchId }), missing, true);
+    expect(recordBatchReceipt).toHaveBeenCalledOnce();
     expect(result.markBatchCommitted).toHaveBeenCalledOnce();
   });
 
@@ -119,7 +147,7 @@ describe('confirmação durável da ingestão', () => {
 
     expect(result.response.statusCode).toBe(200);
     expect(result.response.json()).toMatchObject({ duplicate: true, repaired: true });
-    expect(insertBatch).toHaveBeenCalledWith(expect.objectContaining({ batchId }), partial);
+    expect(insertBatch).toHaveBeenCalledWith(expect.objectContaining({ batchId }), partial, true);
     expect(recordBatchReceipt).toHaveBeenCalledOnce();
     expect(result.markBatchCommitted).toHaveBeenCalledOnce();
   });

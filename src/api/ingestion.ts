@@ -157,6 +157,31 @@ export function registerIngestionRoutes(
         ) {
           throw new Error(`Comprovante ClickHouse divergente para o lote ${batch.batchId}`);
         }
+        const current = await dependencies.clickhouse.inspectBatch(batch.batchId);
+        const expectedRawIds = new Set(batch.rawRecords.map((record) => record.rawId));
+        const expectedEventIds = new Set(batch.events.map((event) => event.eventId));
+        const unexpectedRaw = [...current.rawIds].find((id) => !expectedRawIds.has(id));
+        const unexpectedEvent = [...current.eventIds].find((id) => !expectedEventIds.has(id));
+        if (unexpectedRaw || unexpectedEvent) {
+          throw new Error(`Conteúdo ClickHouse divergente para o lote ${batch.batchId}`);
+        }
+        if (current.rawIds.size !== expectedRawIds.size || current.eventIds.size !== expectedEventIds.size) {
+          repaired = true;
+          await dependencies.clickhouse.insertBatch(batch, current, true);
+          const confirmed = await dependencies.clickhouse.inspectBatch(batch.batchId);
+          if (
+            confirmed.rawIds.size !== expectedRawIds.size
+            || confirmed.eventIds.size !== expectedEventIds.size
+            || [...confirmed.rawIds].some((id) => !expectedRawIds.has(id))
+            || [...confirmed.eventIds].some((id) => !expectedEventIds.has(id))
+          ) {
+            throw new Error(
+              `Contagem persistida divergente: raw=${confirmed.rawIds.size}/${expectedRawIds.size}, `
+              + `eventos=${confirmed.eventIds.size}/${expectedEventIds.size}`
+            );
+          }
+          await dependencies.clickhouse.recordBatchReceipt(batch);
+        }
       } else {
         if (registration.status === 'new') {
           await dependencies.clickhouse.insertBatch(batch);
@@ -178,7 +203,7 @@ export function registerIngestionRoutes(
           }
           if (current.rawIds.size !== expectedRawIds.size || current.eventIds.size !== expectedEventIds.size) {
             repaired = true;
-            await dependencies.clickhouse.insertBatch(batch, current);
+            await dependencies.clickhouse.insertBatch(batch, current, true);
           }
           const confirmed = await dependencies.clickhouse.inspectBatch(batch.batchId);
           if (
