@@ -312,8 +312,8 @@ const createRedundancyEnrollmentButton = document.querySelector('#create-redunda
 const advanceRedundancyMigrationButton = document.querySelector('#advance-redundancy-migration');
 const promoteRedundancySecondaryButton = document.querySelector('#promote-redundancy-secondary');
 const redundancyEnrollmentCommand = document.querySelector('#redundancy-enrollment-command');
-const redundancyCommand = document.querySelector('#redundancy-command');
-const copyRedundancyCommandButton = document.querySelector('#copy-redundancy-command');
+const redundancyToken = document.querySelector('#redundancy-token');
+const copyRedundancyTokenButton = document.querySelector('#copy-redundancy-token');
 const redundancyFeedback = document.querySelector('#redundancy-feedback');
 const continuityStatus = document.querySelector('#continuity-status');
 const continuityStatusDetail = document.querySelector('#continuity-status-detail');
@@ -5066,21 +5066,19 @@ createRedundancyEnrollmentButton.addEventListener('click', async () => {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error('Não foi possível gerar o código de pareamento.');
-    const primaryUrl = latestRedundancyStatus?.publicUrl || window.location.origin;
-    const insecureFlag = primaryUrl.startsWith('http://') ? ' --allow-insecure-http' : '';
-    redundancyCommand.value = `sudo ./install.sh secondary --primary-url ${primaryUrl} --enrollment-token ${payload.token}${insecureFlag}`;
+    redundancyToken.value = payload.token;
     redundancyEnrollmentCommand.hidden = false;
-    setFormFeedback(redundancyFeedback, `Código válido até ${formatDeviceMoment(payload.expiresAt)}.`);
+    setFormFeedback(redundancyFeedback, `Código válido até ${formatDeviceMoment(payload.expiresAt)}. Na VM secundária, cole somente este código quando o instalador solicitar o pareamento.`);
   } catch (error) {
     setFormFeedback(redundancyFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
   } finally { createRedundancyEnrollmentButton.disabled = false; }
 });
 
-copyRedundancyCommandButton.addEventListener('click', async () => {
-  try { await navigator.clipboard.writeText(redundancyCommand.value); }
-  catch { redundancyCommand.select(); document.execCommand('copy'); }
-  copyRedundancyCommandButton.textContent = 'Copiado';
-  window.setTimeout(() => { copyRedundancyCommandButton.textContent = 'Copiar comando'; }, 1800);
+copyRedundancyTokenButton.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(redundancyToken.value); }
+  catch { redundancyToken.select(); document.execCommand('copy'); }
+  copyRedundancyTokenButton.textContent = 'Copiado';
+  window.setTimeout(() => { copyRedundancyTokenButton.textContent = 'Copiar código'; }, 1800);
 });
 
 advanceRedundancyMigrationButton.addEventListener('click', async () => {

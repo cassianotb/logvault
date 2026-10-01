@@ -227,7 +227,8 @@ observa e permite controlar as origens pela tela **Firewall**.
 
 Instale e valide primeiro o ambiente principal. No painel da plataforma, abra
 **Redundância**, ative a VM como principal e gere um código de pareamento. Na
-segunda VM, clone o mesmo repositório e execute o comando gerado. O código
+segunda VM, clone o mesmo repositório, execute `sudo ./install.sh`, selecione
+**Servidor redundante** e cole somente o código quando solicitado. O código
 expira em 30 minutos e pode ser consumido uma única vez.
 
 A segunda VM executa seu próprio painel, API, PostgreSQL, ClickHouse, coletor

@@ -16,8 +16,9 @@ administrativamente somente leitura.
 
 1. Instale a primeira VM com `sudo ./install.sh system`.
 2. No painel, abra **Redundância** e selecione **Ativar como principal**.
-3. Selecione **Adicionar servidor secundário** e copie o comando temporário.
-4. Em uma VM nova, clone o mesmo repositório e execute o comando.
+3. Selecione **Adicionar servidor secundário** e copie o código temporário.
+4. Em uma VM nova, clone o mesmo repositório, execute `sudo ./install.sh`,
+   selecione **Servidor redundante** e cole somente o código quando solicitado.
 5. Confirme no painel principal que o secundário apresenta heartbeat recente.
 6. Configure cada equipamento Cloud com os dois destinos. O par de portas é o
    mesmo em ambas as VMs.
