@@ -8,6 +8,8 @@ import {
 import type { HostMetrics } from '../core/host-metrics.js';
 import { CollectorSpool } from './spool.js';
 
+const BATCH_REQUEST_TIMEOUT_MS = 30_000;
+
 export interface SyncOptions {
   destinationId?: string;
   url: string;
@@ -138,7 +140,8 @@ async function sendBatch(batch: IngestBatch, url: string, token: string): Promis
       authorization: `Bearer ${token}`,
       'content-type': 'application/json'
     },
-    body: JSON.stringify(batch)
+    body: JSON.stringify(batch),
+    signal: AbortSignal.timeout(BATCH_REQUEST_TIMEOUT_MS)
   });
   if (!response.ok) throw new Error(`Sincronização recusada: HTTP ${response.status} ${await response.text()}`);
 }

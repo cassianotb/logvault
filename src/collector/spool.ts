@@ -134,19 +134,14 @@ export class CollectorSpool implements NetflowTemplateStore {
     if (fresh) return this.buildBatch(fresh);
 
     const transaction = this.db.transaction(() => {
+      // Uma entrega pendente em outro destino não pode impedir a formação de
+      // novos lotes para os destinos que continuam disponíveis.
       const identity = this.db.prepare(`
         SELECT
           COALESCE(tenant_id, json_extract(raw_json, '$.tenantId')) AS tenant_id,
           COALESCE(collector_id, json_extract(raw_json, '$.collectorId')) AS collector_id
         FROM raw_spool
         WHERE state = 'pending'
-          AND NOT EXISTS (
-            SELECT 1
-            FROM sync_batches
-            WHERE sync_batches.status = 'pending'
-              AND sync_batches.tenant_id = COALESCE(raw_spool.tenant_id, json_extract(raw_spool.raw_json, '$.tenantId'))
-              AND sync_batches.collector_id = COALESCE(raw_spool.collector_id, json_extract(raw_spool.raw_json, '$.collectorId'))
-          )
         ORDER BY sequence
         LIMIT 1
       `).get() as { tenant_id: string; collector_id: string } | undefined;
