@@ -28,8 +28,10 @@ describe('sincronização da redundância', () => {
     await vi.waitFor(() => expect(applied).toHaveLength(1));
     expect(applied[0]).toEqual(snapshot);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+    const configurationCall = fetchImpl.mock.calls[0];
     const heartbeatCall = fetchImpl.mock.calls[1];
-    expect(String(heartbeatCall?.[0])).toContain('/v1/redundancy/heartbeat');
+    expect(String(configurationCall?.[0])).toBe('https://primary.example.com/api/v1/redundancy/configuration');
+    expect(String(heartbeatCall?.[0])).toBe('https://primary.example.com/api/v1/redundancy/heartbeat');
     stop();
   });
 

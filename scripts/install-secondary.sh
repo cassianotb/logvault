@@ -88,7 +88,7 @@ curl_protocol='=https'
 [[ "$allow_insecure_http" != "true" ]] || curl_protocol='=http,https'
 curl --fail --silent --show-error --proto "$curl_protocol" --tlsv1.2 \
   -H 'content-type: application/json' --data-binary "@$request_file" \
-  "$primary_url/v1/redundancy/enroll" >"$response_file" \
+  "$primary_url/api/v1/redundancy/enroll" >"$response_file" \
   || die "o servidor principal recusou o pareamento; gere um novo código e tente novamente"
 
 IFS=$'\t' read -r site_id site_token primary_site_id confirmed_primary_url < <(

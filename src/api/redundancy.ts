@@ -298,14 +298,14 @@ export function startRedundancyConfigurationSync(dependencies: {
     running = true;
     try {
       const request = dependencies.fetchImpl ?? fetch;
-      const response = await request(new URL('/v1/redundancy/configuration', dependencies.primaryUrl), {
+      const response = await request(new URL('/api/v1/redundancy/configuration', dependencies.primaryUrl), {
         headers: { authorization: `Bearer ${dependencies.siteToken}`, accept: 'application/json' },
         redirect: 'error', signal: AbortSignal.timeout(10_000)
       });
       if (!response.ok) throw new Error(`Sincronização de configuração recusada: HTTP ${response.status}`);
       const snapshot = redundancySnapshotSchema.parse(await response.json()) as RedundancyConfigurationSnapshot;
       await dependencies.postgres.applyRedundancyConfiguration(snapshot);
-      const heartbeat = await request(new URL('/v1/redundancy/heartbeat', dependencies.primaryUrl), {
+      const heartbeat = await request(new URL('/api/v1/redundancy/heartbeat', dependencies.primaryUrl), {
         method: 'POST',
         headers: { authorization: `Bearer ${dependencies.siteToken}`, 'content-type': 'application/json' },
         body: JSON.stringify({ siteId: dependencies.siteId, version: dependencies.applicationVersion }),
