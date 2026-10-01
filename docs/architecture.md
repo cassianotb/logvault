@@ -20,6 +20,7 @@
 16. Administradores globais pertencem a um tenant interno sem dados operacionais. Eles iniciam no contexto da plataforma e precisam selecionar explicitamente um cliente antes de acessar consultas, logs, equipamentos ou coletores.
 17. A troca de contexto é mantida no servidor, nunca em parâmetro livre do navegador, e registra tanto a entrada no ambiente quanto o retorno à plataforma na auditoria global.
 18. O firewall de ingestão usa o IP de transporte observado no socket UDP para autorizar a origem. Esse endereço não substitui o IP lógico do exportador usado para identificar Cisco/A10. Coletores Cloud começam em monitoramento e só podem bloquear após existir ao menos uma origem autorizada.
+19. A API só confirma um lote depois de verificar os IDs persistidos e gravar no ClickHouse um comprovante indexado contendo `batch_id`, checksum e contagens. O coletor valida esse comprovante antes de retirar a entrega da fila.
 
 ## Fluxo híbrido
 
@@ -62,8 +63,9 @@ O modo cloud-only utiliza o mesmo processo coletor executado na nuvem, com liste
 
 - API e coletor cloud sem estado persistente fora do spool.
 - Identificadores globais gerados na borda.
-- Inserções em lotes reproduzíveis, com checksum e contagem esperada.
-- `ReplacingMergeTree` converge reenvios físicos do mesmo identificador; confirmações usam contagem de IDs únicos.
+- Inserções em lotes reproduzíveis, com checksum, contagem esperada e comprovante durável por servidor.
+- O caminho normal consulta `ingest_batch_receipts`, ordenada por `batch_id`; somente lotes sem comprovante inspecionam as tabelas extensas.
+- Escritas interrompidas são retomadas pelos IDs ausentes. `ReplacingMergeTree` e tokens de deduplicação convergem reenvios do mesmo identificador.
 - Espelhamento assíncrono incremental do ClickHouse com checkpoint persistente,
   sem exigir Keeper ou uma terceira VM.
 - Configuração externa por variáveis de ambiente, sem endereços de infraestrutura no código.

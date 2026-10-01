@@ -50,6 +50,13 @@ export interface SpoolStatistics {
   lastSyncError: string;
 }
 
+export interface RequeuedDeliverySummary {
+  destinationId: string;
+  batches: number;
+  records: number;
+  events: number;
+}
+
 export class CollectorSpool implements NetflowTemplateStore {
   private readonly db: Database.Database;
 
@@ -280,6 +287,50 @@ export class CollectorSpool implements NetflowTemplateStore {
         SET attempts = attempts + 1, last_error = ?, last_attempt_at = ?
         WHERE batch_id = ?
       `).run(`[${destinationId}] ${message}`, attemptedAt, batchId);
+    })();
+  }
+
+  requeueAcknowledged(destinationId: string): RequeuedDeliverySummary {
+    this.ensureDestination(destinationId);
+    return this.db.transaction(() => {
+      const batches = this.db.prepare(`
+        SELECT deliveries.batch_id
+        FROM sync_batch_deliveries deliveries
+        JOIN sync_batches batches ON batches.batch_id = deliveries.batch_id
+        WHERE deliveries.destination_id = ?
+          AND deliveries.status = 'acked'
+          AND EXISTS (SELECT 1 FROM raw_spool raw WHERE raw.batch_id = batches.batch_id)
+        ORDER BY batches.created_at
+      `).all(destinationId) as Array<{ batch_id: string }>;
+      const updateDelivery = this.db.prepare(`
+        UPDATE sync_batch_deliveries
+        SET status = 'pending', attempts = 0, last_error = '', last_attempt_at = NULL, acked_at = NULL
+        WHERE batch_id = ? AND destination_id = ? AND status = 'acked'
+      `);
+      const updateBatch = this.db.prepare(`
+        UPDATE sync_batches
+        SET status = 'pending', last_error = '', last_attempt_at = NULL, acked_at = NULL
+        WHERE batch_id = ?
+      `);
+      const updateRaw = this.db.prepare(`
+        UPDATE raw_spool SET state = 'batched', acked_at = NULL
+        WHERE batch_id = ? AND state = 'acked'
+      `);
+      let records = 0;
+      let events = 0;
+      const batchContents = this.db.prepare(`
+        SELECT count(*) AS records, COALESCE(sum(json_array_length(events_json)), 0) AS events
+        FROM raw_spool WHERE batch_id = ?
+      `);
+      for (const batch of batches) {
+        const counts = batchContents.get(batch.batch_id) as { records: number; events: number };
+        records += Number(counts.records);
+        events += Number(counts.events);
+        updateDelivery.run(batch.batch_id, destinationId);
+        updateBatch.run(batch.batch_id);
+        updateRaw.run(batch.batch_id);
+      }
+      return { destinationId, batches: batches.length, records, events };
     })();
   }
 

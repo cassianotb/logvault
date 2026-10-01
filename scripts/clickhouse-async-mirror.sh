@@ -56,7 +56,7 @@ until ch 'SELECT 1' >/dev/null 2>&1; do sleep 2; done
 while true; do
   caught_up="true"
   had_error="false"
-  for table_spec in 'ingest_raw ingested_at' 'cgnat_events ingested_at' 'server_metrics ingested_at'; do
+  for table_spec in 'ingest_raw ingested_at' 'cgnat_events ingested_at' 'server_metrics ingested_at' 'ingest_batch_receipts committed_at'; do
     read -r table timestamp_column <<<"$table_spec"
     if sync_table "$table" "$timestamp_column"; then
       :

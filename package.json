@@ -1,6 +1,6 @@
 {
   "name": "argus-cgnat",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "private": true,
   "type": "module",
   "engines": {
@@ -15,6 +15,7 @@
     "reprocess:a10": "node dist/collector/reprocess-a10.js",
     "reprocess:a10-shared": "node dist/api/reprocess-a10-shared.js",
     "reprocess:cisco": "node dist/collector/reprocess-cisco.js",
+    "reverify:retained": "node dist/collector/reverify-retained.js",
     "replay:a10": "node scripts/replay-a10-sample.mjs",
     "test": "vitest run",
     "test:watch": "vitest"

@@ -114,8 +114,10 @@ describe('ingestão do Cloud gerenciado', () => {
       markBatchCommitted: async () => undefined
     } as unknown as PostgresRepository;
     const clickhouse = {
+      getBatchReceipt: async () => undefined,
+      insertBatch: async () => undefined,
       countBatch: async () => ({ rawCount: 1, eventCount: 0 }),
-      insertBatch: async () => undefined
+      recordBatchReceipt: async () => undefined
     } as unknown as ClickHouseRepository;
     const app = Fastify();
     registerIngestionRoutes(app, { postgres, clickhouse, managedCloudTokenHash: sha256(token) });

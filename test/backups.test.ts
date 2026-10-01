@@ -89,8 +89,9 @@ describe('backup criptografado', () => {
       expect(result.byteCount).toBeGreaterThan(0);
       const { stdout } = await execFileAsync('tar', ['-tzf', join(root, 'tenant', 'archives', result.archiveName)]);
       expect(stdout.trim().split('\n').sort()).toEqual([
-        'CHECKSUMS.sha256', 'clickhouse-cgnat-events.jsonl', 'clickhouse-ingest-raw.jsonl',
-        'clickhouse-server-metrics.jsonl', 'manifest.json', 'postgres.json'
+        'CHECKSUMS.sha256', 'clickhouse-cgnat-events.jsonl',
+        'clickhouse-ingest-batch-receipts.jsonl', 'clickhouse-ingest-raw.jsonl', 'clickhouse-server-metrics.jsonl',
+        'manifest.json', 'postgres.json'
       ]);
     } finally {
       await app.close();

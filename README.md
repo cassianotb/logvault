@@ -58,6 +58,11 @@ dados ainda ficam no SQLite por `24` horas por padrão para reprocessamento e s�
 então podem ser removidos. Falta de disco, desligamento da VM ou perda do pacote
 antes de ele chegar ao Edge não são recuperáveis pelo spool.
 
+A confirmação inclui `batchId`, checksum e as contagens efetivamente
+persistidas. O Edge rejeita respostas HTTP sem esse comprovante. Reenvios usam
+um manifesto pequeno e indexado no ClickHouse, enquanto a inspeção das tabelas
+de eventos ocorre apenas para completar um lote sem manifesto ou interrompido.
+
 ### 1. Prepare a VM
 
 Use uma VM nova com **Ubuntu Server 24.04 LTS ou superior** ou **Debian 12 ou

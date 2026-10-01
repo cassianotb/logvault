@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
-import { sha256 } from '../src/core/crypto.js';
+import { batchChecksum, sha256 } from '../src/core/crypto.js';
 import { BatchSynchronizer } from '../src/collector/sync.js';
 import { CollectorSpool } from '../src/collector/spool.js';
 import type { IngestBatch, RawRecord } from '../src/domain/models.js';
@@ -177,21 +177,87 @@ describe('BatchSynchronizer', () => {
   });
 
   it('limita o tempo da requisição de envio de lote', async () => {
+    const raw = rawRecord('12000000-0000-4000-8000-000000000002', '2026-10-01T12:00:00.000Z');
+    const batch: IngestBatch = {
+      batchId: '12000000-0000-4000-8000-000000000001', tenantId, collectorId,
+      checksum: batchChecksum([{ ...raw, batchId: '12000000-0000-4000-8000-000000000001' }], []),
+      createdAt: '2026-10-01T12:00:01.000Z',
+      rawRecords: [{ ...raw, batchId: '12000000-0000-4000-8000-000000000001' }], events: []
+    };
     const spool = {
-      nextBatch: () => ({ batchId: '12000000-0000-4000-8000-000000000001' }),
+      nextBatch: vi.fn()
+        .mockReturnValueOnce(batch)
+        .mockReturnValue(undefined),
       acknowledge: vi.fn(),
       cleanupAcknowledged: vi.fn(),
       recordFailure: vi.fn()
     } as unknown as CollectorSpool;
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
       expect(init?.signal).toBeInstanceOf(AbortSignal);
-      return new Response(null, { status: 200 });
+      return Response.json({
+        batchId: batch.batchId, status: 'committed', checksum: batch.checksum,
+        rawCount: 1, eventCount: 0, duplicate: false, repaired: false
+      });
     });
     const synchronizer = new BatchSynchronizer(spool, options('primary'));
 
     await synchronizer.tick();
 
     expect(fetchMock).toHaveBeenCalledOnce();
+    expect(spool.acknowledge).toHaveBeenCalledOnce();
     fetchMock.mockRestore();
+  });
+
+  it('não confirma um HTTP 200 sem comprovante válido de persistência', async () => {
+    const raw = rawRecord('14000000-0000-4000-8000-000000000002', '2026-10-01T12:00:00.000Z');
+    const batchId = '14000000-0000-4000-8000-000000000001';
+    const preparedRaw = { ...raw, batchId };
+    const batch: IngestBatch = {
+      batchId, tenantId, collectorId, checksum: batchChecksum([preparedRaw], []),
+      createdAt: '2026-10-01T12:00:01.000Z', rawRecords: [preparedRaw], events: []
+    };
+    const spool = {
+      nextBatch: vi.fn().mockReturnValue(batch), acknowledge: vi.fn(),
+      cleanupAcknowledged: vi.fn(), recordFailure: vi.fn()
+    } as unknown as CollectorSpool;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('<html>proxy fallback</html>', { status: 200, headers: { 'content-type': 'text/html' } })
+    );
+
+    await new BatchSynchronizer(spool, options('secondary')).tick();
+
+    expect(spool.acknowledge).not.toHaveBeenCalled();
+    expect(spool.recordFailure).toHaveBeenCalledWith(
+      batchId, expect.stringMatching(/JSON|Unexpected token/i), 'secondary'
+    );
+    fetchMock.mockRestore();
+  });
+
+  it('drena vários lotes por ciclo com limite de carga', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'argus-bounded-drain-'));
+    const spool = new CollectorSpool(join(directory, 'spool.sqlite'));
+    try {
+      spool.configureDestinations(['primary']);
+      for (let index = 1; index <= 3; index += 1) {
+        spool.append(rawRecord(
+          `15000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+          `2026-10-01T12:00:0${index}.000Z`
+        ), []);
+      }
+      const delivered: string[] = [];
+      const synchronizer = new BatchSynchronizer(spool, {
+        ...options('primary'), batchSize: 1, maxBatchesPerTick: 2
+      }, async (value) => { delivered.push(value.batchId); });
+
+      await synchronizer.tick();
+      expect(delivered).toHaveLength(2);
+      expect(spool.statistics().pendingRecords).toBe(1);
+      await synchronizer.tick();
+      expect(delivered).toHaveLength(3);
+      expect(spool.statistics().pendingRecords).toBe(0);
+    } finally {
+      spool.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 });

@@ -70,10 +70,13 @@ async function writeTenantBackup(input: {
     const postgresSnapshot = await input.postgres.exportTenantSnapshot(input.job.tenantId);
     const postgresPath = join(jobRoot, 'postgres.json');
     await writeFile(postgresPath, `${JSON.stringify(postgresSnapshot)}\n`, { mode: 0o600 });
-    const clickhouseFiles: Array<{ table: 'ingest_raw' | 'cgnat_events' | 'server_metrics'; file: string }> = [
+    const clickhouseFiles: Array<{
+      table: 'ingest_raw' | 'cgnat_events' | 'server_metrics' | 'ingest_batch_receipts'; file: string;
+    }> = [
       { table: 'ingest_raw', file: 'clickhouse-ingest-raw.jsonl' },
       { table: 'cgnat_events', file: 'clickhouse-cgnat-events.jsonl' },
-      { table: 'server_metrics', file: 'clickhouse-server-metrics.jsonl' }
+      { table: 'server_metrics', file: 'clickhouse-server-metrics.jsonl' },
+      { table: 'ingest_batch_receipts', file: 'clickhouse-ingest-batch-receipts.jsonl' }
     ];
     const rowCounts: Record<string, number> = {};
     for (const item of clickhouseFiles) {

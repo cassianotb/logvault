@@ -84,6 +84,24 @@ limpos. Se o disco esgotar, novos datagramas não terão garantia de persistênc
 acompanhe a ocupação e a fila pendente pela tela **Servidores** e por
 `edge-status.sh`.
 
+O coletor somente marca uma entrega como confirmada quando a API devolve um
+comprovante com o mesmo `batchId`, checksum e contagens. Um `HTTP 200` vazio,
+uma página de proxy ou um comprovante divergente mantém o lote pendente. Após
+uma indisponibilidade, até quatro lotes por destino são drenados sequencialmente
+em cada ciclo por padrão; ajuste `ARGUS_SYNC_MAX_BATCHES_PER_TICK` somente após
+medir a capacidade da API.
+
+Para revalidar no destino secundário todos os lotes confirmados que ainda estão
+retidos no spool, sem afetar a confirmação do principal:
+
+```bash
+docker compose -f compose.edge.yaml --env-file .env.edge exec collector \
+  npm run reverify:retained -- secondary
+```
+
+O comando apenas reabre a entrega do destino indicado. A API verifica o
+comprovante, completa membros ausentes e mantém os demais IDs idempotentes.
+
 A garantia começa depois que o datagrama UDP foi recebido e persistido. Uma parada do servidor local ou perda na rede entre equipamento e coletor ainda pode impedir o recebimento inicial.
 
 ## Roteiro do piloto

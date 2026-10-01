@@ -68,6 +68,17 @@ export const ingestBatchSchema = z.object({
 });
 export type IngestBatch = z.infer<typeof ingestBatchSchema>;
 
+export const ingestBatchReceiptSchema = z.object({
+  batchId: z.string().uuid(),
+  status: z.literal('committed'),
+  checksum: z.string().regex(/^[a-f0-9]{64}$/),
+  rawCount: z.number().int().nonnegative(),
+  eventCount: z.number().int().nonnegative(),
+  duplicate: z.boolean(),
+  repaired: z.boolean()
+});
+export type IngestBatchReceipt = z.infer<typeof ingestBatchReceiptSchema>;
+
 export const collectorHeartbeatSchema = z.object({
   tenantId: z.string().uuid(),
   collectorId: z.string().uuid(),

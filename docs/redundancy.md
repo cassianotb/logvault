@@ -35,7 +35,10 @@ laboratório isolado e nunca deve ser usado na Internet.
 Cada lote possui uma entrega para `primary` e outra para `secondary`. Tentativas,
 erros e confirmações são independentes. Um destino indisponível não impede o
 outro de avançar; o lote original permanece no SQLite até que todos os destinos
-ativos confirmem a gravação.
+ativos confirmem a gravação. Cada confirmação contém o checksum e as contagens
+do comprovante local do ClickHouse; uma resposta HTTP sem esse conteúdo não
+retira o lote da fila. Após a reconexão, o backlog é drenado sequencialmente e
+com concorrência limitada por destino.
 
 ## Promoção
 

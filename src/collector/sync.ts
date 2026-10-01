@@ -1,5 +1,6 @@
 import {
   collectorHeartbeatResponseSchema,
+  ingestBatchReceiptSchema,
   type CollectorDeviceConfiguration,
   type CollectorHeartbeat,
   type CollectorHeartbeatResponse,
@@ -16,6 +17,7 @@ export interface SyncOptions {
   token: string;
   batchSize: number;
   intervalMs: number;
+  maxBatchesPerTick?: number;
   acknowledgedRetentionHours: number;
   heartbeatUrl: string;
   heartbeatIntervalMs: number;
@@ -64,20 +66,26 @@ export class BatchSynchronizer {
     this.running = true;
     try {
       const destinationId = this.options.destinationId ?? 'primary';
-      const batch = this.spool.nextBatch(this.options.batchSize, destinationId);
-      if (!batch) return;
-      try {
-        if (this.sender) await this.sender(batch);
-        else await sendBatch(batch, this.options.url, this.options.token);
-        this.spool.acknowledge(batch.batchId, new Date().toISOString(), destinationId);
-        this.spool.cleanupAcknowledged(this.options.acknowledgedRetentionHours);
-      } catch (error) {
-        this.spool.recordFailure(
-          batch.batchId,
-          error instanceof Error ? error.message : String(error),
-          destinationId
-        );
+      const maximum = this.options.maxBatchesPerTick ?? 4;
+      let acknowledged = 0;
+      for (let index = 0; index < maximum; index += 1) {
+        const batch = this.spool.nextBatch(this.options.batchSize, destinationId);
+        if (!batch) break;
+        try {
+          if (this.sender) await this.sender(batch);
+          else await sendBatch(batch, this.options.url, this.options.token);
+          this.spool.acknowledge(batch.batchId, new Date().toISOString(), destinationId);
+          acknowledged += 1;
+        } catch (error) {
+          this.spool.recordFailure(
+            batch.batchId,
+            error instanceof Error ? error.message : String(error),
+            destinationId
+          );
+          break;
+        }
       }
+      if (acknowledged > 0) this.spool.cleanupAcknowledged(this.options.acknowledgedRetentionHours);
     } catch (error) {
       console.warn(JSON.stringify({
         level: 'warn',
@@ -144,6 +152,15 @@ async function sendBatch(batch: IngestBatch, url: string, token: string): Promis
     signal: AbortSignal.timeout(BATCH_REQUEST_TIMEOUT_MS)
   });
   if (!response.ok) throw new Error(`Sincronização recusada: HTTP ${response.status} ${await response.text()}`);
+  const receipt = ingestBatchReceiptSchema.parse(await response.json());
+  if (
+    receipt.batchId !== batch.batchId
+    || receipt.checksum !== batch.checksum
+    || receipt.rawCount !== batch.rawRecords.length
+    || receipt.eventCount !== batch.events.length
+  ) {
+    throw new Error(`Comprovante de persistência divergente para o lote ${batch.batchId}`);
+  }
 }
 
 async function sendHeartbeat(heartbeat: CollectorHeartbeat, url: string, token: string): Promise<CollectorHeartbeatResponse> {

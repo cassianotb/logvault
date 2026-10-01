@@ -106,6 +106,13 @@ describe('CollectorSpool', () => {
       acknowledgedRecordsRetained: 1,
       lastSyncAt: '2026-09-30T12:00:02.000Z'
     });
+
+    expect(spool.requeueAcknowledged('secondary')).toEqual({
+      destinationId: 'secondary', batches: 1, records: 1, events: 0
+    });
+    expect(spool.nextBatch(100, 'primary')).toBeUndefined();
+    expect(spool.nextBatch(100, 'secondary')?.batchId).toBe(primary.batchId);
+    expect(spool.statistics()).toMatchObject({ pendingRecords: 1, pendingBatches: 1 });
     spool.close();
   });
 

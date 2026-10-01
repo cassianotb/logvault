@@ -1,6 +1,7 @@
 import { createClient, type ClickHouseClient } from '@clickhouse/client';
 import type { CgnatEvent, IngestBatch, RawRecord } from '../domain/models.js';
 import type { HostMetrics } from '../core/host-metrics.js';
+import { sha256 } from '../core/crypto.js';
 
 export const CLOUD_METRICS_TENANT_ID = '00000000-0000-0000-0000-000000000000';
 
@@ -20,6 +21,20 @@ export interface ServerMetricSample {
   serverId: string;
   sampledAt: string;
   metrics: HostMetrics;
+}
+
+export interface BatchReceiptRecord {
+  batchId: string;
+  tenantId: string;
+  collectorId: string;
+  checksum: string;
+  rawCount: number;
+  eventCount: number;
+}
+
+export interface BatchContents {
+  rawIds: Set<string>;
+  eventIds: Set<string>;
 }
 
 const serverHistoryWindows: Record<ServerHistoryPeriod, { seconds: number; bucketSeconds: number }> = {
@@ -262,10 +277,10 @@ export class ClickHouseRepository {
   }
 
   async *exportTenantTable(
-    table: 'ingest_raw' | 'cgnat_events' | 'server_metrics',
+    table: 'ingest_raw' | 'cgnat_events' | 'server_metrics' | 'ingest_batch_receipts',
     tenantId: string
   ): AsyncGenerator<string> {
-    const allowed = new Set(['ingest_raw', 'cgnat_events', 'server_metrics']);
+    const allowed = new Set(['ingest_raw', 'cgnat_events', 'server_metrics', 'ingest_batch_receipts']);
     if (!allowed.has(table)) throw new Error('Tabela de exportação inválida');
     const result = await this.client.query({
       query: `SELECT * FROM ${table} WHERE tenant_id = {tenantId:UUID}`,
@@ -310,7 +325,7 @@ export class ClickHouseRepository {
     const topologyResult = await this.client.query({
       query: `
         SELECT
-          countIf(name IN ('ingest_raw', 'cgnat_events', 'server_metrics')) AS data_tables,
+          countIf(name IN ('ingest_raw', 'cgnat_events', 'server_metrics', 'ingest_batch_receipts')) AS data_tables,
           countIf(name = 'dr_mirror_state') AS state_tables
         FROM system.tables
         WHERE database = currentDatabase()
@@ -352,29 +367,106 @@ export class ClickHouseRepository {
     };
   }
 
-  async insertBatch(batch: IngestBatch): Promise<void> {
-    const settings = {
+  async insertBatch(batch: IngestBatch, contents?: BatchContents): Promise<void> {
+    const rawRecords = contents
+      ? batch.rawRecords.filter((record) => !contents.rawIds.has(record.rawId))
+      : batch.rawRecords;
+    const events = contents
+      ? batch.events.filter((event) => !contents.eventIds.has(event.eventId))
+      : batch.events;
+    const settingsFor = (kind: 'raw' | 'events', ids: string[]) => ({
       async_insert: 1,
       wait_for_async_insert: 1,
       async_insert_deduplicate: 1,
-      insert_deduplication_token: batch.batchId,
+      insert_deduplication_token: `${batch.batchId}:${kind}:${sha256([...ids].sort().join(','))}`,
       date_time_input_format: 'best_effort'
-    } as const;
+    } as const);
 
-    await this.client.insert({
-      table: 'ingest_raw',
-      values: batch.rawRecords.map(rawRow),
-      format: 'JSONEachRow',
-      clickhouse_settings: settings
-    });
-    if (batch.events.length) {
+    if (rawRecords.length) {
       await this.client.insert({
-        table: 'cgnat_events',
-        values: batch.events.map(eventRow),
+        table: 'ingest_raw',
+        values: rawRecords.map(rawRow),
         format: 'JSONEachRow',
-        clickhouse_settings: settings
+        clickhouse_settings: settingsFor('raw', rawRecords.map((record) => record.rawId))
       });
     }
+    if (events.length) {
+      await this.client.insert({
+        table: 'cgnat_events',
+        values: events.map(eventRow),
+        format: 'JSONEachRow',
+        clickhouse_settings: settingsFor('events', events.map((event) => event.eventId))
+      });
+    }
+  }
+
+  async getBatchReceipt(batchId: string): Promise<BatchReceiptRecord | undefined> {
+    const result = await this.client.query({
+      query: `
+        SELECT
+          toString(batch_id) AS batch_id_text,
+          toString(tenant_id) AS tenant_id_text,
+          toString(collector_id) AS collector_id_text,
+          checksum,
+          raw_count,
+          event_count
+        FROM ingest_batch_receipts FINAL
+        WHERE batch_id = {batchId:UUID}
+        LIMIT 1
+      `,
+      query_params: { batchId },
+      format: 'JSONEachRow'
+    });
+    const [row] = await result.json<{
+      batch_id_text: string; tenant_id_text: string; collector_id_text: string; checksum: string;
+      raw_count: string | number; event_count: string | number;
+    }>();
+    return row ? {
+      batchId: row.batch_id_text,
+      tenantId: row.tenant_id_text,
+      collectorId: row.collector_id_text,
+      checksum: row.checksum,
+      rawCount: Number(row.raw_count),
+      eventCount: Number(row.event_count)
+    } : undefined;
+  }
+
+  async inspectBatch(batchId: string): Promise<BatchContents> {
+    const result = await this.client.query({
+      query: `
+        SELECT
+          (SELECT groupUniqArray(toString(raw_id)) FROM ingest_raw WHERE batch_id = {batchId:UUID}) AS raw_ids,
+          (SELECT groupUniqArray(toString(event_id)) FROM cgnat_events WHERE batch_id = {batchId:UUID}) AS event_ids
+      `,
+      query_params: { batchId },
+      format: 'JSONEachRow'
+    });
+    const [row] = await result.json<{ raw_ids: string[]; event_ids: string[] }>();
+    return {
+      rawIds: new Set(row?.raw_ids ?? []),
+      eventIds: new Set(row?.event_ids ?? [])
+    };
+  }
+
+  async recordBatchReceipt(batch: IngestBatch): Promise<void> {
+    await this.client.insert({
+      table: 'ingest_batch_receipts',
+      values: [{
+        batch_id: batch.batchId,
+        tenant_id: batch.tenantId,
+        collector_id: batch.collectorId,
+        checksum: batch.checksum,
+        raw_count: batch.rawRecords.length,
+        event_count: batch.events.length
+      }],
+      format: 'JSONEachRow',
+      clickhouse_settings: {
+        async_insert: 1,
+        wait_for_async_insert: 1,
+        async_insert_deduplicate: 1,
+        insert_deduplication_token: `${batch.batchId}:receipt:${batch.checksum}`
+      }
+    });
   }
 
   async listUnrecognizedA10SharedProtocolRecords(limit = 1000): Promise<A10SharedProtocolRawRecord[]> {
@@ -1177,21 +1269,30 @@ export class ClickHouseRepository {
       query_params: { tenantId },
       clickhouse_settings: { mutations_sync: '2' }
     });
+    await this.client.command({
+      query: `ALTER TABLE ingest_batch_receipts DELETE WHERE tenant_id = {tenantId:UUID}`,
+      query_params: { tenantId },
+      clickhouse_settings: { mutations_sync: '2' }
+    });
     const verification = await this.client.query({
       query: `
         SELECT
           (SELECT count() FROM ingest_raw WHERE tenant_id = {tenantId:UUID}) AS raw_rows,
           (SELECT count() FROM cgnat_events WHERE tenant_id = {tenantId:UUID}) AS event_rows,
-          (SELECT count() FROM server_metrics WHERE tenant_id = {tenantId:UUID}) AS metric_rows
+          (SELECT count() FROM server_metrics WHERE tenant_id = {tenantId:UUID}) AS metric_rows,
+          (SELECT count() FROM ingest_batch_receipts WHERE tenant_id = {tenantId:UUID}) AS receipt_rows
       `,
       query_params: { tenantId },
       format: 'JSONEachRow'
     });
-    const remaining = await verification.json<{ raw_rows: string; event_rows: string; metric_rows: string }>();
+    const remaining = await verification.json<{
+      raw_rows: string; event_rows: string; metric_rows: string; receipt_rows: string;
+    }>();
     if (
       Number(remaining[0]?.raw_rows ?? 0) !== 0
       || Number(remaining[0]?.event_rows ?? 0) !== 0
       || Number(remaining[0]?.metric_rows ?? 0) !== 0
+      || Number(remaining[0]?.receipt_rows ?? 0) !== 0
     ) {
       throw new Error('ClickHouse ainda contém registros do tenant após a mutação de exclusão');
     }

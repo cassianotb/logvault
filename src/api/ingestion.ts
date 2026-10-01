@@ -5,6 +5,7 @@ import {
   collectorHeartbeatSchema,
   appliedFirewallPolicySchema,
   firewallObservationSchema,
+  ingestBatchReceiptSchema,
   ingestBatchSchema,
   managedCloudCollectorConfigurationSchema,
   managedCloudCollectorTelemetrySchema
@@ -142,21 +143,68 @@ export function registerIngestionRoutes(
     if (expectedChecksum !== batch.checksum) return reply.code(400).send({ error: 'batch_checksum_mismatch' });
 
     const registration = await dependencies.postgres.registerBatch(batch);
-    if (registration.status === 'committed') {
-      return reply.send({ batchId: batch.batchId, status: 'committed', duplicate: true });
-    }
-
     try {
-      const counts = await dependencies.clickhouse.countBatch(batch.batchId);
-      if (counts.rawCount !== batch.rawRecords.length || counts.eventCount !== batch.events.length) {
-        await dependencies.clickhouse.insertBatch(batch);
-      }
-      const confirmed = await dependencies.clickhouse.countBatch(batch.batchId);
-      if (confirmed.rawCount !== batch.rawRecords.length || confirmed.eventCount !== batch.events.length) {
-        throw new Error(`Contagem persistida divergente: raw=${confirmed.rawCount}/${batch.rawRecords.length}, eventos=${confirmed.eventCount}/${batch.events.length}`);
+      const receipt = await dependencies.clickhouse.getBatchReceipt(batch.batchId);
+      let repaired = false;
+      if (receipt) {
+        if (
+          receipt.batchId !== batch.batchId
+          || receipt.tenantId !== batch.tenantId
+          || receipt.collectorId !== batch.collectorId
+          || receipt.checksum !== batch.checksum
+          || receipt.rawCount !== batch.rawRecords.length
+          || receipt.eventCount !== batch.events.length
+        ) {
+          throw new Error(`Comprovante ClickHouse divergente para o lote ${batch.batchId}`);
+        }
+      } else {
+        if (registration.status === 'new') {
+          await dependencies.clickhouse.insertBatch(batch);
+          const confirmed = await dependencies.clickhouse.countBatch(batch.batchId);
+          if (confirmed.rawCount !== batch.rawRecords.length || confirmed.eventCount !== batch.events.length) {
+            throw new Error(
+              `Contagem persistida divergente: raw=${confirmed.rawCount}/${batch.rawRecords.length}, `
+              + `eventos=${confirmed.eventCount}/${batch.events.length}`
+            );
+          }
+        } else {
+          const current = await dependencies.clickhouse.inspectBatch(batch.batchId);
+          const expectedRawIds = new Set(batch.rawRecords.map((record) => record.rawId));
+          const expectedEventIds = new Set(batch.events.map((event) => event.eventId));
+          const unexpectedRaw = [...current.rawIds].find((id) => !expectedRawIds.has(id));
+          const unexpectedEvent = [...current.eventIds].find((id) => !expectedEventIds.has(id));
+          if (unexpectedRaw || unexpectedEvent) {
+            throw new Error(`Conteúdo ClickHouse divergente para o lote ${batch.batchId}`);
+          }
+          if (current.rawIds.size !== expectedRawIds.size || current.eventIds.size !== expectedEventIds.size) {
+            repaired = true;
+            await dependencies.clickhouse.insertBatch(batch, current);
+          }
+          const confirmed = await dependencies.clickhouse.inspectBatch(batch.batchId);
+          if (
+            confirmed.rawIds.size !== expectedRawIds.size
+            || confirmed.eventIds.size !== expectedEventIds.size
+            || [...confirmed.rawIds].some((id) => !expectedRawIds.has(id))
+            || [...confirmed.eventIds].some((id) => !expectedEventIds.has(id))
+          ) {
+            throw new Error(
+              `Contagem persistida divergente: raw=${confirmed.rawIds.size}/${expectedRawIds.size}, `
+              + `eventos=${confirmed.eventIds.size}/${expectedEventIds.size}`
+            );
+          }
+        }
+        await dependencies.clickhouse.recordBatchReceipt(batch);
       }
       await dependencies.postgres.markBatchCommitted(batch.batchId);
-      return reply.send({ batchId: batch.batchId, status: 'committed', duplicate: registration.status !== 'new' });
+      return reply.send(ingestBatchReceiptSchema.parse({
+        batchId: batch.batchId,
+        status: 'committed',
+        checksum: batch.checksum,
+        rawCount: batch.rawRecords.length,
+        eventCount: batch.events.length,
+        duplicate: registration.status !== 'new',
+        repaired
+      }));
     } catch (error) {
       request.log.error({ error, batchId: batch.batchId }, 'Falha ao persistir lote');
       return reply.code(503).send({ error: 'batch_not_committed', batchId: batch.batchId });

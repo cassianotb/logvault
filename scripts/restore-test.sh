@@ -118,7 +118,7 @@ ch_summary="$(restore_compose exec -T restore-clickhouse sh -c '
   "
 ')"
 ch_checks="$(restore_compose exec -T restore-clickhouse sh -c '
-  clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database argus --query "CHECK TABLE ingest_raw; CHECK TABLE cgnat_events; CHECK TABLE server_metrics" --multiquery --format TSVRaw
+  clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" --database argus --query "CHECK TABLE ingest_raw; CHECK TABLE cgnat_events; CHECK TABLE server_metrics; CHECK TABLE ingest_batch_receipts" --multiquery --format TSVRaw
 ')"
 if ! printf '%s\n' "$ch_checks" | awk -F '\t' '
   NF < 2 || $2 != "1" { failed = 1 }
