@@ -38,20 +38,56 @@ export function registerCollectorRoutes(
   app: FastifyInstance,
   dependencies: {
     postgres: PostgresRepository; cloudPortStart: number; cloudPortEnd: number;
+    secondaryCloudPortStart?: number; secondaryCloudPortEnd?: number;
+    publicUrl?: string;
+    primaryPublicUrl?: string;
+    useSecondaryCloudPorts?: boolean;
     redundancyDestination?: () => Promise<{ publicUrl: string } | null>;
   }
 ): void {
+  const cloudIngressDestinations = (
+    collector: {
+      netflowPort: number | null; syslogPort: number | null;
+      secondaryNetflowPort: number | null; secondarySyslogPort: number | null;
+    },
+    redundancy: { publicUrl: string } | null
+  ) => {
+    const secondaryUrl = dependencies.useSecondaryCloudPorts
+      ? dependencies.publicUrl ?? ''
+      : redundancy?.publicUrl ?? '';
+    const primaryUrl = dependencies.useSecondaryCloudPorts
+      ? dependencies.primaryPublicUrl ?? ''
+      : dependencies.publicUrl ?? '';
+    return [
+      {
+        role: 'primary', publicUrl: primaryUrl,
+        netflowPort: collector.netflowPort, syslogPort: collector.syslogPort
+      },
+      ...(secondaryUrl && collector.secondaryNetflowPort && collector.secondarySyslogPort ? [{
+        role: 'secondary', publicUrl: secondaryUrl,
+        netflowPort: collector.secondaryNetflowPort, syslogPort: collector.secondarySyslogPort
+      }] : [])
+    ];
+  };
+
   app.get('/v1/collectors/status', async (request, reply) => {
     const session = await authenticateRequest(request, reply, dependencies.postgres, { allowPlatformContext: true });
     if (!session) return;
     const nowMs = Date.now();
     const platformScope = session.context === 'platform';
-    const collectors = (await dependencies.postgres.listCollectors(platformScope ? null : session.tenantId))
+    const [collectorRecords, redundancy] = await Promise.all([
+      dependencies.postgres.listCollectors(platformScope ? null : session.tenantId),
+      dependencies.redundancyDestination?.() ?? Promise.resolve(null)
+    ]);
+    const collectors = collectorRecords
       .map((collector) => {
         const { tenantId, tenantName, ...details } = collector;
+        const ingressDestinations = collector.mode === 'cloud'
+          ? cloudIngressDestinations(collector, redundancy) : [];
         return {
           ...details,
           ...(platformScope ? { tenantId, tenantName } : {}),
+          ingressDestinations,
           connectionStatus: collector.configuredStatus === 'disabled'
             ? 'disabled' as const
             : collectorConnectionStatus(collector.lastSeenAt, nowMs)
@@ -84,7 +120,9 @@ export function registerCollectorRoutes(
       mode: parsed.data.mode,
       tokenHash: sha256(token),
       cloudPortStart: dependencies.cloudPortStart,
-      cloudPortEnd: dependencies.cloudPortEnd
+      cloudPortEnd: dependencies.cloudPortEnd,
+      secondaryCloudPortStart: dependencies.secondaryCloudPortStart ?? 32000,
+      secondaryCloudPortEnd: dependencies.secondaryCloudPortEnd ?? 33999
     });
     if (result.status === 'cloud_collector_already_exists') {
       return reply.code(409).send({ error: 'cloud_collector_already_exists' });
@@ -93,13 +131,16 @@ export function registerCollectorRoutes(
       return reply.code(503).send({ error: 'cloud_port_capacity_exhausted' });
     }
     const { collector } = result;
-    const redundancy = collector.mode === 'edge' && dependencies.redundancyDestination
+    const redundancy = dependencies.redundancyDestination
       ? await dependencies.redundancyDestination() : null;
     return reply.code(201).send({
       collector,
       managed: collector.mode === 'cloud',
       ingress: collector.mode === 'cloud'
-        ? { netflowPort: collector.netflowPort, syslogPort: collector.syslogPort }
+        ? {
+            netflowPort: collector.netflowPort, syslogPort: collector.syslogPort,
+            destinations: cloudIngressDestinations(collector, redundancy)
+          }
         : null,
       credentials: collector.mode === 'edge'
         ? { tenantId: session.tenantId, collectorId: collector.id, token, secondaryUrl: redundancy?.publicUrl ?? '' }

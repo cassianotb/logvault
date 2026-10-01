@@ -138,6 +138,8 @@ export const apiConfigSchema = z.object({
   ARGUS_COOKIE_SECURE: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   ARGUS_MANAGED_CLOUD_PORT_START: z.coerce.number().int().min(1024).max(65535).default(30000),
   ARGUS_MANAGED_CLOUD_PORT_END: z.coerce.number().int().min(1025).max(65535).default(31999),
+  ARGUS_MANAGED_CLOUD_SECONDARY_PORT_START: z.coerce.number().int().min(1024).max(65535).default(32000),
+  ARGUS_MANAGED_CLOUD_SECONDARY_PORT_END: z.coerce.number().int().min(1025).max(65535).default(33999),
   ARGUS_BOOTSTRAP_ADMIN_NAME: z.string().min(1).default('Administrador'),
   ARGUS_BOOTSTRAP_ADMIN_EMAIL: z.string().email(),
   // Instalações novas exigem 15; o piso de 12 preserva upgrades criados pela política anterior.
@@ -145,6 +147,14 @@ export const apiConfigSchema = z.object({
 }).refine((config) => config.ARGUS_MANAGED_CLOUD_PORT_END >= config.ARGUS_MANAGED_CLOUD_PORT_START + 1, {
   message: 'O intervalo Cloud deve conter ao menos um par de portas',
   path: ['ARGUS_MANAGED_CLOUD_PORT_END']
+}).refine((config) => config.ARGUS_MANAGED_CLOUD_SECONDARY_PORT_END
+  >= config.ARGUS_MANAGED_CLOUD_SECONDARY_PORT_START + 1, {
+  message: 'O intervalo Cloud redundante deve conter ao menos um par de portas',
+  path: ['ARGUS_MANAGED_CLOUD_SECONDARY_PORT_END']
+}).refine((config) => config.ARGUS_MANAGED_CLOUD_PORT_END < config.ARGUS_MANAGED_CLOUD_SECONDARY_PORT_START
+  || config.ARGUS_MANAGED_CLOUD_SECONDARY_PORT_END < config.ARGUS_MANAGED_CLOUD_PORT_START, {
+  message: 'Os intervalos Cloud principal e redundante não podem se sobrepor',
+  path: ['ARGUS_MANAGED_CLOUD_SECONDARY_PORT_START']
 }).refine((config) => config.ARGUS_DR_LAG_CRITICAL_SECONDS > config.ARGUS_DR_LAG_WARNING_SECONDS, {
   message: 'O limite crítico de replicação deve ser maior que o limite de aviso',
   path: ['ARGUS_DR_LAG_CRITICAL_SECONDS']

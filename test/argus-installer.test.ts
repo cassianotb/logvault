@@ -107,6 +107,10 @@ describe('instalador do Sistema LogVault', () => {
     expect(env.get('ARGUS_HTTPS_BIND')).toBe('0.0.0.0');
     expect(env.get('ARGUS_PUBLIC_URL')).toBe('https://logs.example.com');
     expect(env.get('ARGUS_COOKIE_SECURE')).toBe('true');
+    expect(env.get('ARGUS_MANAGED_CLOUD_PORT_START')).toBe('30000');
+    expect(env.get('ARGUS_MANAGED_CLOUD_PORT_END')).toBe('31999');
+    expect(env.get('ARGUS_MANAGED_CLOUD_SECONDARY_PORT_START')).toBe('32000');
+    expect(env.get('ARGUS_MANAGED_CLOUD_SECONDARY_PORT_END')).toBe('33999');
     expect(env.get('ARGUS_DR_PANEL_HOST')).toBe('logs.example.com');
     expect(env.get('ARGUS_DR_INGEST_HOST')).toBe('logs.example.com');
     expect(env.get('ARGUS_DR_CONTROL_HOST')).toBe('logs.example.com');

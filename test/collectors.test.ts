@@ -68,7 +68,11 @@ describe('visão global dos coletores', () => {
       }
     } as unknown as PostgresRepository;
     const app = Fastify();
-    registerCollectorRoutes(app, { postgres, cloudPortStart: 30000, cloudPortEnd: 31999 });
+    registerCollectorRoutes(app, {
+      postgres, cloudPortStart: 30000, cloudPortEnd: 31999,
+      publicUrl: 'https://primary.example.com',
+      redundancyDestination: async () => ({ publicUrl: 'https://secondary.example.com' })
+    });
 
     const response = await app.inject({ method: 'GET', url: '/v1/collectors/status', headers: { cookie } });
 
@@ -79,6 +83,39 @@ describe('visão global dos coletores', () => {
       summary: { total: 1, connected: 1, pendingRecords: 3 },
       collectors: [{ tenantName: 'ISP Teste', name: 'Coletor POP', connectionStatus: 'connected' }]
     });
+    await app.close();
+  });
+
+  it('mostra na VM secundária o par local da faixa redundante', async () => {
+    const postgres = {
+      findActiveSession: async () => platformSession,
+      listCollectors: async () => [{
+        id: '30000000-0000-4000-8000-000000000001',
+        tenantId: '20000000-0000-4000-8000-000000000001', tenantName: 'ISP Teste',
+        name: 'Cloud ISP', mode: 'cloud', netflowPort: 30000, syslogPort: 30001,
+        secondaryNetflowPort: 32000, secondarySyslogPort: 32001,
+        configuredStatus: 'online', version: '1.1.3', deviceCount: 1,
+        lastSeenAt: null, telemetrySentAt: null, pendingRecords: 0, pendingEvents: 0,
+        pendingBatches: 0, acknowledgedRecordsRetained: 0, oldestPendingAt: null,
+        spoolBytes: 0, lastSyncAt: null, lastSyncError: '', batches24h: 0,
+        rawRecords24h: 0, events24h: 0, hostMetrics: null
+      }]
+    } as unknown as PostgresRepository;
+    const app = Fastify();
+    registerCollectorRoutes(app, {
+      postgres, cloudPortStart: 30000, cloudPortEnd: 31999,
+      publicUrl: 'https://secondary.example.com',
+      primaryPublicUrl: 'https://primary.example.com',
+      useSecondaryCloudPorts: true
+    });
+
+    const response = await app.inject({ method: 'GET', url: '/v1/collectors/status', headers: { cookie } });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().collectors[0].ingressDestinations).toEqual([
+      { role: 'primary', publicUrl: 'https://primary.example.com', netflowPort: 30000, syslogPort: 30001 },
+      { role: 'secondary', publicUrl: 'https://secondary.example.com', netflowPort: 32000, syslogPort: 32001 }
+    ]);
     await app.close();
   });
 });
@@ -102,12 +139,17 @@ describe('coletor Cloud gerenciado', () => {
         collector: {
           id: '30000000-0000-4000-8000-000000000001', name: 'Cloud ISP', mode: 'cloud',
           netflowPort: 30012, syslogPort: 30013, configuredStatus: 'provisioned',
+          secondaryNetflowPort: 32014, secondarySyslogPort: 32015,
           createdAt: '2026-08-12T12:00:00.000Z', updatedAt: '2026-08-12T12:00:00.000Z'
         }
       })
     } as unknown as PostgresRepository;
     const app = Fastify();
-    registerCollectorRoutes(app, { postgres, cloudPortStart: 30000, cloudPortEnd: 31999 });
+    registerCollectorRoutes(app, {
+      postgres, cloudPortStart: 30000, cloudPortEnd: 31999,
+      publicUrl: 'https://primary.example.com',
+      redundancyDestination: async () => ({ publicUrl: 'https://secondary.example.com' })
+    });
     const response = await app.inject({
       method: 'POST', url: '/v1/collectors', headers: { cookie },
       payload: { name: 'Cloud ISP', mode: 'cloud' }
@@ -115,7 +157,13 @@ describe('coletor Cloud gerenciado', () => {
     expect(response.statusCode).toBe(201);
     expect(response.json()).toMatchObject({
       managed: true,
-      ingress: { netflowPort: 30012, syslogPort: 30013 },
+      ingress: {
+        netflowPort: 30012, syslogPort: 30013,
+        destinations: [
+          { role: 'primary', publicUrl: 'https://primary.example.com', netflowPort: 30012, syslogPort: 30013 },
+          { role: 'secondary', publicUrl: 'https://secondary.example.com', netflowPort: 32014, syslogPort: 32015 }
+        ]
+      },
       credentials: null
     });
     await app.close();

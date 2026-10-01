@@ -49,7 +49,8 @@ const drProvisioningKeys = [
   'ARGUS_SYNC_TOKEN', 'ARGUS_ALERT_ENCRYPTION_KEY', 'ARGUS_TENANT_ID', 'ARGUS_COLLECTOR_ID',
   'ARGUS_DEVICE_ID', 'ARGUS_DEVICE_VENDOR', 'ARGUS_DEVICE_TIMEZONE', 'ARGUS_DEVICES_JSON',
   'ARGUS_SESSION_TTL_HOURS', 'ARGUS_PASSWORD_RESET_TTL_MINUTES', 'ARGUS_MANAGED_CLOUD_PORT_START',
-  'ARGUS_MANAGED_CLOUD_PORT_END', 'ARGUS_BOOTSTRAP_ADMIN_NAME', 'ARGUS_BOOTSTRAP_ADMIN_EMAIL',
+  'ARGUS_MANAGED_CLOUD_PORT_END', 'ARGUS_MANAGED_CLOUD_SECONDARY_PORT_START',
+  'ARGUS_MANAGED_CLOUD_SECONDARY_PORT_END', 'ARGUS_BOOTSTRAP_ADMIN_NAME', 'ARGUS_BOOTSTRAP_ADMIN_EMAIL',
   'ARGUS_BOOTSTRAP_ADMIN_PASSWORD', 'ARGUS_SMTP_HOST', 'ARGUS_SMTP_PORT', 'ARGUS_SMTP_SECURE',
   'ARGUS_SMTP_USER', 'ARGUS_SMTP_PASSWORD', 'ARGUS_SMTP_FROM', 'ARGUS_PUBLIC_URL',
   'ARGUS_COOKIE_SECURE', 'ARGUS_TLS_DOMAIN', 'ARGUS_TLS_EMAIL', 'ARGUS_TLS_CHALLENGE',
@@ -286,7 +287,8 @@ app.get('/health/ready', async (_request, reply) => {
 registerIngestionRoutes(app, {
   postgres,
   clickhouse,
-  managedCloudTokenHash: sha256(config.ARGUS_SYNC_TOKEN)
+  managedCloudTokenHash: sha256(config.ARGUS_SYNC_TOKEN),
+  useSecondaryCloudPorts: () => config.ARGUS_REDUNDANCY_ROLE === 'secondary'
 });
 registerAuthRoutes(app, {
   postgres,
@@ -305,8 +307,13 @@ registerOfficialReportRoutes(app, { postgres, clickhouse, subscriberResolver, tr
 registerDeviceRoutes(app, { postgres, clickhouse });
 registerCollectorRoutes(app, {
   postgres,
+  publicUrl: config.ARGUS_PUBLIC_URL,
+  primaryPublicUrl: config.ARGUS_REDUNDANCY_PRIMARY_URL,
+  useSecondaryCloudPorts: config.ARGUS_REDUNDANCY_ROLE === 'secondary',
   cloudPortStart: config.ARGUS_MANAGED_CLOUD_PORT_START,
   cloudPortEnd: config.ARGUS_MANAGED_CLOUD_PORT_END,
+  secondaryCloudPortStart: config.ARGUS_MANAGED_CLOUD_SECONDARY_PORT_START,
+  secondaryCloudPortEnd: config.ARGUS_MANAGED_CLOUD_SECONDARY_PORT_END,
   redundancyDestination: async () => {
     const settings = await postgres.getRedundancySettings();
     if (settings.mode !== 'primary') return null;

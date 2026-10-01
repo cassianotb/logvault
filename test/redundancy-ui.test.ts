@@ -12,5 +12,7 @@ describe('pareamento de redundância no painel', () => {
     expect(script).toContain('redundancyToken.value = payload.token');
     expect(script).toContain('navigator.clipboard.writeText(redundancyToken.value)');
     expect(script).not.toContain('redundancyToken.value = `sudo ./install.sh');
+    expect(script).toContain("metric('NetFlow redundante'");
+    expect(script).toContain("metric('Syslog redundante'");
   });
 });

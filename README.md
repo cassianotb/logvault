@@ -75,7 +75,8 @@ Você precisará de:
   certificado HTTPS;
 - conectividade HTTPS entre as duas VMs quando usar redundância;
 - para coletores **Cloud**, a faixa UDP configurada para Cloud — por padrão
-  `30000–31999` — encaminhada à VM principal e restrita às origens autorizadas.
+  `30000–31999` na VM principal e `32000–33999` na redundante — encaminhada
+  à VM correspondente e restrita às origens autorizadas.
 
 As portas UDP de um coletor **local** são abertas somente na respectiva VM
 local, não na VM do painel/DC-A.
@@ -219,9 +220,10 @@ atribuídas. Configure os equipamentos para enviar NetFlow/IPFIX à primeira e
 Syslog à segunda, usando o DNS/IP público do LogVault.
 
 No firewall externo da plataforma, permita o intervalo Cloud configurado —
-por padrão `30000–31999/UDP` — apenas das redes ou IPs de origem dos
-equipamentos quando essa restrição for conhecida. A própria aplicação também
-observa e permite controlar as origens pela tela **Firewall**.
+por padrão `30000–31999/UDP` na VM principal e `32000–33999/UDP` na VM
+redundante — apenas das redes ou IPs de origem dos equipamentos quando essa
+restrição for conhecida. A própria aplicação também observa e permite
+controlar as origens pela tela **Firewall**.
 
 ### 8. Instalar o servidor redundante
 
@@ -240,7 +242,9 @@ autoridade principal por HTTPS; logs não atravessam entre bancos.
 - Coletor local: o mesmo lote é enviado às duas APIs, com confirmação e fila
   separadas por destino.
 - Coletor Cloud: o equipamento precisa aceitar múltiplos destinos e envia
-  NetFlow/Syslog diretamente aos dois IPs, usando o mesmo par de portas.
+  NetFlow/Syslog diretamente aos dois IPs. Cada servidor usa um par exclusivo,
+  reservado automaticamente e exibido no painel — por exemplo, principal
+  `30000/30001` e redundante `32000/32001`.
 - Equipamentos que aceitam somente um destino não fazem parte desta topologia.
 - Falha de uma VM não interrompe a entrega à outra, e redundância não substitui
   os backups independentes.

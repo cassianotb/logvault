@@ -406,6 +406,8 @@ export interface CollectorStatusRecord {
   mode: 'edge' | 'cloud';
   netflowPort: number | null;
   syslogPort: number | null;
+  secondaryNetflowPort: number | null;
+  secondarySyslogPort: number | null;
   configuredStatus: string;
   version: string | null;
   deviceCount: number;
@@ -485,6 +487,7 @@ export interface RedundancyConfigurationSnapshot {
     id: string; tenantId: string; name: string; mode: 'edge' | 'cloud'; apiKeyHash: string; status: string;
     version: string | null; lastSeenAt: string | null; createdAt: string; updatedAt: string;
     deletedAt: string | null; netflowPort: number | null; syslogPort: number | null;
+    secondaryNetflowPort: number | null; secondarySyslogPort: number | null;
   }>;
   devices: Array<{
     id: string; tenantId: string; collectorId: string | null; name: string; vendor: string; model: string | null;
@@ -503,6 +506,8 @@ export interface ManagedCollector {
   mode: 'edge' | 'cloud';
   netflowPort: number | null;
   syslogPort: number | null;
+  secondaryNetflowPort: number | null;
+  secondarySyslogPort: number | null;
   configuredStatus: string;
   createdAt: string;
   updatedAt: string;
@@ -534,6 +539,8 @@ export interface FirewallCollectorRecord {
   configuredStatus: string;
   netflowPort: number | null;
   syslogPort: number | null;
+  secondaryNetflowPort: number | null;
+  secondarySyslogPort: number | null;
   policyMode: FirewallMode | null;
   policyUpdatedAt: string | null;
   appliedMode: FirewallMode | null;
@@ -2645,13 +2652,15 @@ export class PostgresRepository {
     }));
   }
 
-  async listManagedCloudCollectorConfiguration(): Promise<ManagedCloudCollectorConfiguration[]> {
+  async listManagedCloudCollectorConfiguration(useSecondaryPorts = false): Promise<ManagedCloudCollectorConfiguration[]> {
     const result = await this.pool.query<{
       tenant_id: string;
       collector_id: string;
       collector_name: string;
       netflow_port: number;
       syslog_port: number;
+      secondary_netflow_port: number;
+      secondary_syslog_port: number;
       exporter_ip: string | null;
       device_id: string | null;
       vendor: string | null;
@@ -2663,6 +2672,8 @@ export class PostgresRepository {
         c.name AS collector_name,
         c.netflow_port,
         c.syslog_port,
+        c.secondary_netflow_port,
+        c.secondary_syslog_port,
         host(d.exporter_ip) AS exporter_ip,
         d.id AS device_id,
         d.vendor,
@@ -2675,6 +2686,7 @@ export class PostgresRepository {
       WHERE c.mode = 'cloud' AND c.status <> 'disabled'
         AND c.deleted_at IS NULL
         AND c.netflow_port IS NOT NULL AND c.syslog_port IS NOT NULL
+        AND c.secondary_netflow_port IS NOT NULL AND c.secondary_syslog_port IS NOT NULL
       ORDER BY c.netflow_port, d.exporter_ip
     `);
     const policyResult = await this.pool.query<{
@@ -2705,8 +2717,8 @@ export class PostgresRepository {
           tenantId: row.tenant_id,
           collectorId: row.collector_id,
           name: row.collector_name,
-          netflowPort: Number(row.netflow_port),
-          syslogPort: Number(row.syslog_port),
+          netflowPort: Number(useSecondaryPorts ? row.secondary_netflow_port : row.netflow_port),
+          syslogPort: Number(useSecondaryPorts ? row.secondary_syslog_port : row.syslog_port),
           firewall: {
             mode: policy?.mode ?? 'monitor',
             allowedSources: policy?.allowed_sources ?? [],
@@ -2922,6 +2934,8 @@ export class PostgresRepository {
       configured_status: string;
       netflow_port: number | null;
       syslog_port: number | null;
+      secondary_netflow_port: number | null;
+      secondary_syslog_port: number | null;
       policy_mode: FirewallMode | null;
       policy_updated_at: string | null;
       applied_mode: FirewallMode | null;
@@ -2931,6 +2945,7 @@ export class PostgresRepository {
       SELECT
         c.id, c.tenant_id, t.name AS tenant_name, c.name, c.mode AS collector_mode,
         c.status AS configured_status, c.netflow_port, c.syslog_port,
+        c.secondary_netflow_port, c.secondary_syslog_port,
         p.mode AS policy_mode, p.updated_at AS policy_updated_at,
         p.applied_mode, p.applied_policy_updated_at, p.applied_at
       FROM collectors c
@@ -2989,6 +3004,8 @@ export class PostgresRepository {
       configuredStatus: row.configured_status,
       netflowPort: row.netflow_port === null ? null : Number(row.netflow_port),
       syslogPort: row.syslog_port === null ? null : Number(row.syslog_port),
+      secondaryNetflowPort: row.secondary_netflow_port === null ? null : Number(row.secondary_netflow_port),
+      secondarySyslogPort: row.secondary_syslog_port === null ? null : Number(row.secondary_syslog_port),
       policyMode: row.collector_mode === 'cloud' ? row.policy_mode ?? 'monitor' : null,
       policyUpdatedAt: row.policy_updated_at ? new Date(row.policy_updated_at).toISOString() : null,
       appliedMode: row.applied_mode,
@@ -3765,6 +3782,8 @@ export class PostgresRepository {
       mode: CollectorStatusRecord['mode'];
       netflow_port: number | null;
       syslog_port: number | null;
+      secondary_netflow_port: number | null;
+      secondary_syslog_port: number | null;
       configured_status: string;
       version: string | null;
       device_count: string;
@@ -3794,6 +3813,8 @@ export class PostgresRepository {
         c.id, c.tenant_id, tenant.name AS tenant_name, c.name, c.mode,
         COALESCE(c.netflow_port, t.netflow_port) AS netflow_port,
         COALESCE(c.syslog_port, t.syslog_port) AS syslog_port,
+        c.secondary_netflow_port,
+        c.secondary_syslog_port,
         c.status AS configured_status,
         COALESCE(t.version, c.version) AS version,
         (SELECT count(*) FROM devices d WHERE d.collector_id = c.id AND d.enabled = true AND d.deleted_at IS NULL) AS device_count,
@@ -3835,6 +3856,8 @@ export class PostgresRepository {
       mode: row.mode,
       netflowPort: row.netflow_port === null ? null : Number(row.netflow_port),
       syslogPort: row.syslog_port === null ? null : Number(row.syslog_port),
+      secondaryNetflowPort: row.secondary_netflow_port === null ? null : Number(row.secondary_netflow_port),
+      secondarySyslogPort: row.secondary_syslog_port === null ? null : Number(row.secondary_syslog_port),
       configuredStatus: row.configured_status,
       version: row.version,
       deviceCount: Number(row.device_count),
@@ -3875,6 +3898,8 @@ export class PostgresRepository {
     tokenHash: string;
     cloudPortStart: number;
     cloudPortEnd: number;
+    secondaryCloudPortStart: number;
+    secondaryCloudPortEnd: number;
   }): Promise<CreateManagedCollectorResult> {
     const client = await this.pool.connect();
     try {
@@ -3894,35 +3919,64 @@ export class PostgresRepository {
         }
       }
       const portPairResult = input.mode === 'cloud'
-        ? await client.query<{ netflow_port: number; syslog_port: number }>(`
-            SELECT candidate AS netflow_port, candidate + 1 AS syslog_port
-            FROM generate_series($1::integer, $2::integer - 1, 2) candidate
-            WHERE NOT EXISTS (
-              SELECT 1 FROM collectors
-              WHERE mode = 'cloud' AND deleted_at IS NULL
-                AND int4range(netflow_port, syslog_port, '[]')
-                  && int4range(candidate, candidate + 1, '[]')
+        ? await client.query<{
+            netflow_port: number | null; syslog_port: number | null;
+            secondary_netflow_port: number | null; secondary_syslog_port: number | null;
+          }>(`
+            WITH primary_pair AS (
+              SELECT candidate
+              FROM generate_series($1::integer, $2::integer - 1, 2) candidate
+              WHERE NOT EXISTS (
+                SELECT 1 FROM collectors
+                WHERE mode = 'cloud' AND deleted_at IS NULL
+                  AND int4range(netflow_port, syslog_port, '[]')
+                    && int4range(candidate, candidate + 1, '[]')
+              )
+              ORDER BY candidate
+              LIMIT 1
+            ), secondary_pair AS (
+              SELECT candidate
+              FROM generate_series($3::integer, $4::integer - 1, 2) candidate
+              WHERE NOT EXISTS (
+                SELECT 1 FROM collectors
+                WHERE mode = 'cloud' AND deleted_at IS NULL
+                  AND int4range(secondary_netflow_port, secondary_syslog_port, '[]')
+                    && int4range(candidate, candidate + 1, '[]')
+              )
+              ORDER BY candidate
+              LIMIT 1
             )
-            ORDER BY candidate
-            LIMIT 1
-          `, [input.cloudPortStart, input.cloudPortEnd])
+            SELECT
+              (SELECT candidate FROM primary_pair) AS netflow_port,
+              (SELECT candidate + 1 FROM primary_pair) AS syslog_port,
+              (SELECT candidate FROM secondary_pair) AS secondary_netflow_port,
+              (SELECT candidate + 1 FROM secondary_pair) AS secondary_syslog_port
+          `, [input.cloudPortStart, input.cloudPortEnd,
+            input.secondaryCloudPortStart, input.secondaryCloudPortEnd])
         : null;
       const netflowPort = portPairResult?.rows[0]?.netflow_port ?? null;
       const syslogPort = portPairResult?.rows[0]?.syslog_port ?? null;
-      if (input.mode === 'cloud' && (netflowPort === null || syslogPort === null)) {
+      const secondaryNetflowPort = portPairResult?.rows[0]?.secondary_netflow_port ?? null;
+      const secondarySyslogPort = portPairResult?.rows[0]?.secondary_syslog_port ?? null;
+      if (input.mode === 'cloud' && (netflowPort === null || syslogPort === null
+        || secondaryNetflowPort === null || secondarySyslogPort === null)) {
         await client.query('ROLLBACK');
         return { status: 'cloud_port_capacity_exhausted' };
       }
       const result = await client.query<{
         id: string; name: string; mode: ManagedCollector['mode']; status: string;
         netflow_port: number | null; syslog_port: number | null;
+        secondary_netflow_port: number | null; secondary_syslog_port: number | null;
         created_at: string; updated_at: string;
       }>(`
         INSERT INTO collectors
-          (tenant_id, name, mode, api_key_hash, status, netflow_port, syslog_port)
-        VALUES ($1, $2, $3, $4, 'provisioned', $5, $6)
-        RETURNING id, name, mode, status, netflow_port, syslog_port, created_at, updated_at
-      `, [input.tenantId, input.name, input.mode, input.tokenHash, netflowPort, syslogPort]);
+          (tenant_id, name, mode, api_key_hash, status, netflow_port, syslog_port,
+           secondary_netflow_port, secondary_syslog_port)
+        VALUES ($1, $2, $3, $4, 'provisioned', $5, $6, $7, $8)
+        RETURNING id, name, mode, status, netflow_port, syslog_port,
+          secondary_netflow_port, secondary_syslog_port, created_at, updated_at
+      `, [input.tenantId, input.name, input.mode, input.tokenHash, netflowPort, syslogPort,
+        secondaryNetflowPort, secondarySyslogPort]);
       const row = result.rows[0];
       if (!row) throw new Error('Coletor não foi criado');
       if (row.mode === 'cloud') {
@@ -3943,6 +3997,8 @@ export class PostgresRepository {
         id: row.id, name: row.name, mode: row.mode,
         netflowPort: row.netflow_port === null ? null : Number(row.netflow_port),
         syslogPort: row.syslog_port === null ? null : Number(row.syslog_port),
+        secondaryNetflowPort: row.secondary_netflow_port === null ? null : Number(row.secondary_netflow_port),
+        secondarySyslogPort: row.secondary_syslog_port === null ? null : Number(row.secondary_syslog_port),
         configuredStatus: row.status,
         createdAt: new Date(row.created_at).toISOString(),
         updatedAt: new Date(row.updated_at).toISOString()
@@ -3986,12 +4042,14 @@ export class PostgresRepository {
       const result = await client.query<{
         id: string; name: string; mode: ManagedCollector['mode']; status: string;
         netflow_port: number | null; syslog_port: number | null;
+        secondary_netflow_port: number | null; secondary_syslog_port: number | null;
         created_at: string; updated_at: string;
       }>(`
         UPDATE collectors
         SET name = $3, status = $4, updated_at = now()
         WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
-        RETURNING id, name, mode, status, netflow_port, syslog_port, created_at, updated_at
+        RETURNING id, name, mode, status, netflow_port, syslog_port,
+          secondary_netflow_port, secondary_syslog_port, created_at, updated_at
       `, [input.collectorId, input.tenantId, input.name, nextStatus]);
       const row = result.rows[0];
       if (!row) throw new Error('Coletor não foi atualizado');
@@ -4010,6 +4068,8 @@ export class PostgresRepository {
         id: row.id, name: row.name, mode: row.mode,
         netflowPort: row.netflow_port === null ? null : Number(row.netflow_port),
         syslogPort: row.syslog_port === null ? null : Number(row.syslog_port),
+        secondaryNetflowPort: row.secondary_netflow_port === null ? null : Number(row.secondary_netflow_port),
+        secondarySyslogPort: row.secondary_syslog_port === null ? null : Number(row.secondary_syslog_port),
         configuredStatus: row.status,
         createdAt: new Date(row.created_at).toISOString(),
         updatedAt: new Date(row.updated_at).toISOString()
@@ -5870,7 +5930,8 @@ export class PostgresRepository {
       `),
       this.pool.query(`
         SELECT id, tenant_id, name, mode, api_key_hash, status, version, last_seen_at,
-          created_at, updated_at, deleted_at, netflow_port, syslog_port
+          created_at, updated_at, deleted_at, netflow_port, syslog_port,
+          secondary_netflow_port, secondary_syslog_port
         FROM collectors WHERE tenant_id <> '00000000-0000-0000-0000-000000000000'::uuid ORDER BY id
       `),
       this.pool.query(`
@@ -5912,7 +5973,9 @@ export class PostgresRepository {
       collectors: collectors.rows.map((row) => ({ id: row.id, tenantId: row.tenant_id, name: row.name,
         mode: row.mode, apiKeyHash: row.api_key_hash, status: row.status, version: row.version,
         lastSeenAt: optionalIso(row.last_seen_at), createdAt: iso(row.created_at), updatedAt: iso(row.updated_at),
-        deletedAt: optionalIso(row.deleted_at), netflowPort: row.netflow_port, syslogPort: row.syslog_port })),
+        deletedAt: optionalIso(row.deleted_at), netflowPort: row.netflow_port, syslogPort: row.syslog_port,
+        secondaryNetflowPort: row.secondary_netflow_port,
+        secondarySyslogPort: row.secondary_syslog_port })),
       devices: devices.rows.map((row) => ({ id: row.id, tenantId: row.tenant_id,
         collectorId: row.collector_id, name: row.name, vendor: row.vendor, model: row.model,
         managementIp: row.management_ip, exporterIp: row.exporter_ip, timezone: row.timezone,
@@ -5983,14 +6046,17 @@ export class PostgresRepository {
       for (const item of snapshot.collectors) await client.query(`
         INSERT INTO collectors
           (id, tenant_id, name, mode, api_key_hash, status, version, last_seen_at, created_at, updated_at,
-           deleted_at, netflow_port, syslog_port)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+           deleted_at, netflow_port, syslog_port, secondary_netflow_port, secondary_syslog_port)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
         ON CONFLICT (id) DO UPDATE SET tenant_id=excluded.tenant_id, name=excluded.name, mode=excluded.mode,
           api_key_hash=excluded.api_key_hash, status=excluded.status, version=excluded.version,
           deleted_at=excluded.deleted_at, netflow_port=excluded.netflow_port, syslog_port=excluded.syslog_port,
+          secondary_netflow_port=excluded.secondary_netflow_port,
+          secondary_syslog_port=excluded.secondary_syslog_port,
           updated_at=excluded.updated_at
       `, [item.id, item.tenantId, item.name, item.mode, item.apiKeyHash, item.status, item.version,
-        item.lastSeenAt, item.createdAt, item.updatedAt, item.deletedAt, item.netflowPort, item.syslogPort]);
+        item.lastSeenAt, item.createdAt, item.updatedAt, item.deletedAt, item.netflowPort, item.syslogPort,
+        item.secondaryNetflowPort, item.secondarySyslogPort]);
       for (const item of snapshot.devices) await client.query(`
         INSERT INTO devices
           (id, tenant_id, collector_id, name, vendor, model, management_ip, exporter_ip, timezone,

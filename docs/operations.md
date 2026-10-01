@@ -4,9 +4,8 @@
 
 - Interface publicada: URL configurada em `ARGUS_PUBLIC_URL`
 - API: `http://127.0.0.1:8080`
-- Coletores Cloud: pares UDP atribuídos pelo painel dentro de
-  `ARGUS_MANAGED_CLOUD_PORT_START–ARGUS_MANAGED_CLOUD_PORT_END` (padrão
-  `30000–31999`)
+- Coletores Cloud: pares UDP atribuídos automaticamente pelo painel, usando
+  `30000–31999` na VM principal e `32000–33999` na VM redundante por padrão
 - Coletores locais (Edge): portas UDP da própria VM Edge, normalmente
   `2055/UDP` para NetFlow/IPFIX e `5140/UDP` para Syslog
 
@@ -100,11 +99,11 @@ ela pode permanecer atrás de NAT e não requer uma porta de administração
 aberta pela plataforma.
 
 Para um **coletor Cloud**, não configure Edge nem abra `2055/5140` no DC-A.
-Crie o coletor no painel e use o par específico exibido. No firewall externo da
-plataforma, permita o intervalo Cloud configurado, por padrão
-`30000–31999/UDP`, e restrinja as origens quando possível. Depois, cadastre
-cada IP de origem pela opção **Equipamentos**. O cadastro chega ao coletor no
-próximo heartbeat (até 10 segundos) e fica persistido no SQLite.
+Crie o coletor no painel e use os pares específicos exibidos. No firewall
+externo, permita `30000–31999/UDP` na VM principal e `32000–33999/UDP` na VM
+redundante, restringindo as origens quando possível. Depois, cadastre cada IP
+de origem pela opção **Equipamentos**. O cadastro chega ao coletor no próximo
+heartbeat (até 10 segundos) e fica persistido no SQLite.
 
 Uma origem ainda não cadastrada não é descartada nem atribuída ao equipamento padrão: o bruto fica temporariamente associado a uma identidade técnica isolada e o coletor emite um alerta por IP. Use **Descobrir equipamentos** ou faça o cadastro manual para que os próximos pacotes sejam associados ao equipamento correto.
 
@@ -153,9 +152,16 @@ Na composição principal, configure a faixa reservada na API:
 ARGUS_MANAGED_CLOUD_ENABLED=true
 ARGUS_MANAGED_CLOUD_PORT_START=30000
 ARGUS_MANAGED_CLOUD_PORT_END=31999
+ARGUS_MANAGED_CLOUD_SECONDARY_PORT_START=32000
+ARGUS_MANAGED_CLOUD_SECONDARY_PORT_END=33999
 ```
 
-O intervalo acima possui 2.000 portas e comporta 1.000 clientes Cloud. O processo usa a rede do host e abre somente os sockets atribuídos. Em firewall externo, uma única regra UDP para `30000:31999` evita liberações por cliente; restrinja a origem aos IPs públicos ou redes privadas dos equipamentos sempre que possível.
+Cada faixa possui 2.000 portas e comporta 1.000 pares de coleta. Para cada
+cliente, a API reserva automaticamente um par na faixa principal e outro par
+na faixa redundante. O processo de cada VM abre somente os sockets que lhe
+foram atribuídos. No firewall externo, permita `30000:31999/UDP` somente na VM
+principal e `32000:33999/UDP` somente na VM redundante; restrinja as origens aos
+IPs públicos ou redes privadas dos equipamentos sempre que possível.
 
 O coletor envia heartbeat a cada 10 segundos com métricas calculadas diretamente no SQLite local: registros/eventos/lotes pendentes, item pendente mais antigo, tamanho do spool, último sincronismo e último erro. O mesmo heartbeat inclui CPU, RAM, armazenamento do filesystem do spool, sistema operacional e tempo ligado do servidor.
 

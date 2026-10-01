@@ -69,7 +69,8 @@ const redundancySnapshotSchema = z.object({
     id: z.string().uuid(), tenantId: z.string().uuid(), name: z.string(), mode: z.enum(['edge', 'cloud']),
     apiKeyHash: z.string(), status: z.string(), version: z.string().nullable(), lastSeenAt: nullableTimestampSchema,
     createdAt: timestampSchema, updatedAt: timestampSchema, deletedAt: nullableTimestampSchema,
-    netflowPort: z.number().int().nullable(), syslogPort: z.number().int().nullable()
+    netflowPort: z.number().int().nullable(), syslogPort: z.number().int().nullable(),
+    secondaryNetflowPort: z.number().int().nullable(), secondarySyslogPort: z.number().int().nullable()
   })).max(10000),
   devices: z.array(z.object({
     id: z.string().uuid(), tenantId: z.string().uuid(), collectorId: z.string().uuid().nullable(),

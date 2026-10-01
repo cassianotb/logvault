@@ -2683,9 +2683,23 @@ function renderCollectors(collectors) {
 
     const metrics = document.createElement('div');
     metrics.className = 'collector-metrics';
+    const primaryIngress = collector.ingressDestinations?.find((destination) => destination.role === 'primary');
+    const secondaryIngress = collector.ingressDestinations?.find((destination) => destination.role === 'secondary');
+    const ingressMetrics = isCloudCollector && primaryIngress
+      ? [
+          metric('NetFlow principal', `${primaryIngress.publicUrl} · ${primaryIngress.netflowPort}/UDP`),
+          metric('Syslog principal', `${primaryIngress.publicUrl} · ${primaryIngress.syslogPort}/UDP`),
+          ...(secondaryIngress ? [
+            metric('NetFlow redundante', `${secondaryIngress.publicUrl} · ${secondaryIngress.netflowPort}/UDP`),
+            metric('Syslog redundante', `${secondaryIngress.publicUrl} · ${secondaryIngress.syslogPort}/UDP`)
+          ] : [])
+        ]
+      : [
+          metric('NetFlow / IPFIX', collector.netflowPort ? `${collector.netflowPort}/UDP` : 'Não informado'),
+          metric('Syslog', collector.syslogPort ? `${collector.syslogPort}/UDP` : 'Não informado')
+        ];
     metrics.append(
-      metric('NetFlow / IPFIX', collector.netflowPort ? `${collector.netflowPort}/UDP` : 'Não informado'),
-      metric('Syslog', collector.syslogPort ? `${collector.syslogPort}/UDP` : 'Não informado'),
+      ...ingressMetrics,
       metric('Equipamentos', formatNumber(collector.deviceCount)),
       metric('Último heartbeat', formatDeviceMoment(collector.lastSeenAt)),
       metric('Último sincronismo', formatDeviceMoment(collector.lastSyncAt)),
@@ -3158,7 +3172,7 @@ function renderFirewallCollectors(collectors) {
     if (collector.collectorMode === 'cloud') {
       const ports = document.createElement('div');
       ports.className = 'firewall-port-list';
-      ports.innerHTML = `<span><small>NETFLOW/IPFIX</small><strong>${collector.netflowPort}/UDP</strong></span><span><small>SYSLOG</small><strong>${collector.syslogPort}/UDP</strong></span>`;
+      ports.innerHTML = `<span><small>NETFLOW PRINCIPAL</small><strong>${collector.netflowPort}/UDP</strong></span><span><small>SYSLOG PRINCIPAL</small><strong>${collector.syslogPort}/UDP</strong></span>${collector.secondaryNetflowPort ? `<span><small>NETFLOW REDUNDANTE</small><strong>${collector.secondaryNetflowPort}/UDP</strong></span><span><small>SYSLOG REDUNDANTE</small><strong>${collector.secondarySyslogPort}/UDP</strong></span>` : ''}`;
       copy.append(ports);
     } else {
       const localDescription = document.createElement('p');
@@ -3413,8 +3427,11 @@ createCollectorForm.addEventListener('submit', async (event) => {
           : 'Revise os dados do coletor.');
     }
     createCollectorForm.reset();
+    const ingressSummary = payload.ingress?.destinations?.map((destination) =>
+      `${destination.role === 'primary' ? 'Principal' : 'Redundante'} ${destination.publicUrl}: NetFlow UDP ${destination.netflowPort}, Syslog UDP ${destination.syslogPort}`
+    ).join(' · ');
     setFormFeedback(createCollectorFeedback, payload.managed
-      ? `${payload.collector.name} provisionado no servidor LogVault. NetFlow/IPFIX: UDP ${payload.ingress.netflowPort}. Syslog: UDP ${payload.ingress.syslogPort}.`
+      ? `${payload.collector.name} provisionado. ${ingressSummary || `NetFlow/IPFIX: UDP ${payload.ingress.netflowPort}. Syslog: UDP ${payload.ingress.syslogPort}.`}`
       : `${payload.collector.name} criado. Copie a credencial exibida para o servidor local.`);
     collectorsLoaded = false;
     firewallLoaded = false;

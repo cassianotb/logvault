@@ -32,6 +32,7 @@ export function registerIngestionRoutes(
     postgres: PostgresRepository;
     clickhouse: ClickHouseRepository;
     managedCloudTokenHash: string;
+    useSecondaryCloudPorts?: () => boolean;
   }
 ): void {
   app.post('/v1/ingest/managed-cloud/registry', async (request, reply) => {
@@ -49,7 +50,9 @@ export function registerIngestionRoutes(
       appliedFirewallPolicies: parsed.data.appliedFirewallPolicies,
       ...(parsed.data.hostMetrics ? { hostMetrics: parsed.data.hostMetrics } : {})
     });
-    const collectors = await dependencies.postgres.listManagedCloudCollectorConfiguration();
+    const collectors = await dependencies.postgres.listManagedCloudCollectorConfiguration(
+      dependencies.useSecondaryCloudPorts?.() ?? false
+    );
     const validated = managedCloudCollectorConfigurationSchema.array().max(1000).parse(collectors);
     return reply.send({ status: 'recorded', receivedAt: new Date().toISOString(), collectors: validated });
   });

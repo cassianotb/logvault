@@ -20,8 +20,10 @@ administrativamente somente leitura.
 4. Em uma VM nova, clone o mesmo repositório, execute `sudo ./install.sh`,
    selecione **Servidor redundante** e cole somente o código quando solicitado.
 5. Confirme no painel principal que o secundário apresenta heartbeat recente.
-6. Configure cada equipamento Cloud com os dois destinos. O par de portas é o
-   mesmo em ambas as VMs.
+6. Configure cada equipamento Cloud com os dois destinos e seus respectivos
+   pares de portas, exibidos no painel. Os pares são distintos para permitir
+   exportadores que exigem uma porta diferente por destino. Por padrão, a VM
+   principal usa `30000–31999/UDP` e a redundante usa `32000–33999/UDP`.
 7. Gere novamente a configuração dos coletores locais; ela passa a incluir as
    URLs e o token do destino secundário.
 

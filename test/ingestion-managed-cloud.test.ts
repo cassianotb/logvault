@@ -55,6 +55,35 @@ describe('ingestão do Cloud gerenciado', () => {
     await app.close();
   });
 
+  it('solicita o par exclusivo do servidor redundante', async () => {
+    let secondaryPorts = false;
+    const postgres = {
+      touchManagedCloudCollectors: async () => undefined,
+      listManagedCloudCollectorConfiguration: async (useSecondaryPorts: boolean) => {
+        secondaryPorts = useSecondaryPorts;
+        return [{
+          tenantId: '20000000-0000-4000-8000-000000000001',
+          collectorId: '30000000-0000-4000-8000-000000000001',
+          name: 'Cloud ISP', netflowPort: 32000, syslogPort: 32001, devices: []
+        }];
+      }
+    } as unknown as PostgresRepository;
+    const app = Fastify();
+    registerIngestionRoutes(app, {
+      postgres, clickhouse: {} as ClickHouseRepository, managedCloudTokenHash: sha256(token),
+      useSecondaryCloudPorts: () => true
+    });
+    const response = await app.inject({
+      method: 'POST', url: '/v1/ingest/managed-cloud/registry',
+      headers: { authorization: `Bearer ${token}` },
+      payload: { version: '0.1.0', sentAt: '2026-08-12T12:00:00.000Z' }
+    });
+    expect(response.statusCode).toBe(200);
+    expect(secondaryPorts).toBe(true);
+    expect(response.json().collectors[0]).toMatchObject({ netflowPort: 32000, syslogPort: 32001 });
+    await app.close();
+  });
+
   it('aceita com a chave interna um lote pertencente a um Cloud ativo', async () => {
     const batchId = '40000000-0000-4000-8000-000000000001';
     const payload = Buffer.from('syslog cloud');
