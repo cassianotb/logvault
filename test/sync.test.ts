@@ -378,4 +378,53 @@ describe('BatchSynchronizer', () => {
       rmSync(directory, { recursive: true, force: true });
     }
   });
+
+  it('não deixa lotes incompatíveis já tentados bloquearem uma identidade nova', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'argus-poisoned-identity-'));
+    const spool = new CollectorSpool(join(directory, 'spool.sqlite'));
+    try {
+      spool.configureDestinations(['primary', 'secondary']);
+      const oldTenantId = '17000000-0000-4000-8000-000000000001';
+      const oldCollectorId = '17000000-0000-4000-8000-000000000002';
+      spool.append({
+        ...rawRecord('17000000-0000-4000-8000-000000000003', '2026-10-01T12:00:00.000Z'),
+        tenantId: oldTenantId,
+        collectorId: oldCollectorId
+      }, []);
+
+      const oldBatch = spool.nextBatch(1, 'primary')!;
+      spool.acknowledge(oldBatch.batchId, '2026-10-01T12:00:01.000Z', 'primary');
+      spool.recordFailure(oldBatch.batchId, 'HTTP 403 collector_identity_mismatch', 'secondary');
+
+      spool.append(rawRecord(
+        '17000000-0000-4000-8000-000000000004',
+        '2026-10-01T12:00:02.000Z'
+      ), []);
+      const primary = new BatchSynchronizer(
+        spool, { ...options('primary'), batchSize: 1 }, async () => undefined
+      );
+      await primary.tick();
+
+      const delivered: IngestBatch[] = [];
+      const secondary = new BatchSynchronizer(
+        spool, options('secondary'), async (batch) => { delivered.push(batch); }
+      );
+      await secondary.tick();
+
+      expect(delivered).toHaveLength(1);
+      expect(delivered[0]).toMatchObject({ tenantId, collectorId });
+      expect(spool.statistics(tenantId, collectorId)).toMatchObject({
+        pendingRecords: 0,
+        pendingBatches: 0
+      });
+      expect(spool.statistics(oldTenantId, oldCollectorId)).toMatchObject({
+        pendingRecords: 1,
+        pendingBatches: 1,
+        lastSyncError: expect.stringContaining('collector_identity_mismatch')
+      });
+    } finally {
+      spool.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 });

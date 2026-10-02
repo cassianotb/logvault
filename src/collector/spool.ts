@@ -150,7 +150,11 @@ export class CollectorSpool implements NetflowTemplateStore {
       WHERE batches.status = 'pending'
         AND deliveries.destination_id = ?
         AND deliveries.status = 'pending'
-      ORDER BY batches.created_at, batches.batch_id
+      ORDER BY
+        deliveries.last_attempt_at IS NOT NULL,
+        deliveries.last_attempt_at,
+        batches.created_at,
+        batches.batch_id
       LIMIT ?
     `).all(destinationId, safeBatchLimit) as BatchRow[];
     if (!rows.length) return [];
