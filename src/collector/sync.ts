@@ -16,6 +16,7 @@ const BATCH_REQUEST_TIMEOUT_MS = 30_000;
 
 export interface SyncOptions {
   destinationId?: string;
+  identityScoped?: boolean;
   url: string;
   token: string;
   batchSize: number;
@@ -71,12 +72,15 @@ export class BatchSynchronizer {
     this.running = true;
     try {
       const destinationId = this.options.destinationId ?? 'primary';
+      const identity = this.options.identityScoped
+        ? { tenantId: this.options.tenantId, collectorId: this.options.collectorId }
+        : undefined;
       const pending = this.spool.pendingBatches(destinationId, {
         maxBatches: this.options.recoveryBatchSize ?? 100,
         maxRawRecords: 25000,
         maxEvents: 250000,
         maxBytes: 32 * 1024 * 1024
-      });
+      }, identity);
       if (pending.length) {
         await this.deliverPendingGroup(pending, destinationId);
         return;
@@ -87,7 +91,7 @@ export class BatchSynchronizer {
       // permanecem soltos no spool e voltam agrupados em lotes maiores.
       let acknowledged = 0;
       for (let index = 0; index < (this.options.maxBatchesPerTick ?? 4); index += 1) {
-        const batch = this.spool.nextBatch(this.options.batchSize, destinationId);
+        const batch = this.spool.nextBatch(this.options.batchSize, destinationId, identity);
         if (!batch) break;
         try {
           if (this.sender) await this.sender(batch);

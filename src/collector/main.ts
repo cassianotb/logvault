@@ -155,6 +155,7 @@ console.log(JSON.stringify({
 }));
 const primarySynchronizer = new BatchSynchronizer(spool, {
   destinationId: 'primary',
+  identityScoped: !config.ARGUS_MANAGED_CLOUD_ENABLED,
   url: config.ARGUS_SYNC_URL,
   token: config.ARGUS_SYNC_TOKEN,
   batchSize: config.ARGUS_SYNC_BATCH_SIZE,
@@ -174,6 +175,7 @@ const synchronizers = [primarySynchronizer];
 if (config.ARGUS_SECONDARY_SYNC_URL) {
   synchronizers.push(new BatchSynchronizer(spool, {
     destinationId: 'secondary',
+    identityScoped: !config.ARGUS_MANAGED_CLOUD_ENABLED,
     url: config.ARGUS_SECONDARY_SYNC_URL,
     token: config.ARGUS_SECONDARY_SYNC_TOKEN,
     batchSize: config.ARGUS_SYNC_BATCH_SIZE,

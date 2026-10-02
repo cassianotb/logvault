@@ -379,7 +379,7 @@ describe('BatchSynchronizer', () => {
     }
   });
 
-  it('não deixa lotes incompatíveis já tentados bloquearem uma identidade nova', async () => {
+  it('isola o Edge de lotes nunca tentados que pertencem a outra identidade', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'argus-poisoned-identity-'));
     const spool = new CollectorSpool(join(directory, 'spool.sqlite'));
     try {
@@ -394,20 +394,20 @@ describe('BatchSynchronizer', () => {
 
       const oldBatch = spool.nextBatch(1, 'primary')!;
       spool.acknowledge(oldBatch.batchId, '2026-10-01T12:00:01.000Z', 'primary');
-      spool.recordFailure(oldBatch.batchId, 'HTTP 403 collector_identity_mismatch', 'secondary');
 
       spool.append(rawRecord(
         '17000000-0000-4000-8000-000000000004',
         '2026-10-01T12:00:02.000Z'
       ), []);
       const primary = new BatchSynchronizer(
-        spool, { ...options('primary'), batchSize: 1 }, async () => undefined
+        spool, { ...options('primary'), identityScoped: true, batchSize: 1 }, async () => undefined
       );
       await primary.tick();
 
       const delivered: IngestBatch[] = [];
       const secondary = new BatchSynchronizer(
-        spool, options('secondary'), async (batch) => { delivered.push(batch); }
+        spool, { ...options('secondary'), identityScoped: true },
+        async (batch) => { delivered.push(batch); }
       );
       await secondary.tick();
 
@@ -420,7 +420,7 @@ describe('BatchSynchronizer', () => {
       expect(spool.statistics(oldTenantId, oldCollectorId)).toMatchObject({
         pendingRecords: 1,
         pendingBatches: 1,
-        lastSyncError: expect.stringContaining('collector_identity_mismatch')
+        lastSyncError: ''
       });
     } finally {
       spool.close();

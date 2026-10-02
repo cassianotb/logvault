@@ -139,10 +139,17 @@ export class CollectorSpool implements NetflowTemplateStore {
       maxRawRecords: 25000,
       maxEvents: 250000,
       maxBytes: 32 * 1024 * 1024
-    }
+    },
+    identity?: SpoolIdentity
   ): IngestBatch[] {
     this.ensureDestination(destinationId);
     const safeBatchLimit = Math.max(1, Math.min(100, Math.trunc(limits.maxBatches)));
+    const identityFilter = identity
+      ? 'AND batches.tenant_id = ? AND batches.collector_id = ?'
+      : '';
+    const parameters = identity
+      ? [destinationId, identity.tenantId, identity.collectorId, safeBatchLimit]
+      : [destinationId, safeBatchLimit];
     const rows = this.db.prepare(`
       SELECT batches.batch_id, batches.checksum, batches.created_at
       FROM sync_batches batches
@@ -150,24 +157,25 @@ export class CollectorSpool implements NetflowTemplateStore {
       WHERE batches.status = 'pending'
         AND deliveries.destination_id = ?
         AND deliveries.status = 'pending'
+        ${identityFilter}
       ORDER BY
         deliveries.last_attempt_at IS NOT NULL,
         deliveries.last_attempt_at,
         batches.created_at,
         batches.batch_id
       LIMIT ?
-    `).all(destinationId, safeBatchLimit) as BatchRow[];
+    `).all(...parameters) as BatchRow[];
     if (!rows.length) return [];
 
     const selected: IngestBatch[] = [];
     let rawRecords = 0;
     let events = 0;
     let bytes = 0;
-    let identity: string | undefined;
+    let groupIdentity: string | undefined;
     for (const row of rows) {
       const batch = this.buildBatch(row);
       const batchIdentity = this.identityKey(batch);
-      if (identity && batchIdentity !== identity) continue;
+      if (groupIdentity && batchIdentity !== groupIdentity) continue;
       const batchBytes = Buffer.byteLength(JSON.stringify(batch));
       const exceedsLimit = selected.length > 0 && (
         rawRecords + batch.rawRecords.length > limits.maxRawRecords
@@ -175,7 +183,7 @@ export class CollectorSpool implements NetflowTemplateStore {
         || bytes + batchBytes > limits.maxBytes
       );
       if (exceedsLimit) break;
-      identity = batchIdentity;
+      groupIdentity = batchIdentity;
       selected.push(batch);
       rawRecords += batch.rawRecords.length;
       events += batch.events.length;
@@ -184,8 +192,18 @@ export class CollectorSpool implements NetflowTemplateStore {
     return selected;
   }
 
-  nextBatch(limit: number, destinationId = DEFAULT_DESTINATION_ID): IngestBatch | undefined {
+  nextBatch(
+    limit: number,
+    destinationId = DEFAULT_DESTINATION_ID,
+    identity?: SpoolIdentity
+  ): IngestBatch | undefined {
     this.ensureDestination(destinationId);
+    const identityFilter = identity
+      ? 'AND batches.tenant_id = ? AND batches.collector_id = ?'
+      : '';
+    const deliveryParameters = identity
+      ? [destinationId, identity.tenantId, identity.collectorId]
+      : [destinationId];
     const fresh = this.db.prepare(`
       SELECT batches.batch_id, batches.checksum, batches.created_at
       FROM sync_batches batches
@@ -194,24 +212,36 @@ export class CollectorSpool implements NetflowTemplateStore {
         AND deliveries.destination_id = ?
         AND deliveries.status = 'pending'
         AND deliveries.last_attempt_at IS NULL
+        ${identityFilter}
       ORDER BY batches.created_at
       LIMIT 1
-    `).get(destinationId) as BatchRow | undefined;
+    `).get(...deliveryParameters) as BatchRow | undefined;
     if (fresh) return this.buildBatch(fresh);
 
     const transaction = this.db.transaction(() => {
       // Uma entrega pendente em outro destino não pode impedir a formação de
       // novos lotes para os destinos que continuam disponíveis.
-      const identity = this.db.prepare(`
-        SELECT
-          COALESCE(tenant_id, json_extract(raw_json, '$.tenantId')) AS tenant_id,
-          COALESCE(collector_id, json_extract(raw_json, '$.collectorId')) AS collector_id
-        FROM raw_spool
-        WHERE state = 'pending'
-        ORDER BY sequence
-        LIMIT 1
-      `).get() as { tenant_id: string; collector_id: string } | undefined;
-      if (identity) {
+      const selectedIdentity = identity
+        ? this.db.prepare(`
+            SELECT ? AS tenant_id, ? AS collector_id
+            WHERE EXISTS (
+              SELECT 1 FROM raw_spool
+              WHERE state = 'pending'
+                AND COALESCE(tenant_id, json_extract(raw_json, '$.tenantId')) = ?
+                AND COALESCE(collector_id, json_extract(raw_json, '$.collectorId')) = ?
+            )
+          `).get(identity.tenantId, identity.collectorId, identity.tenantId, identity.collectorId)
+        : this.db.prepare(`
+            SELECT
+              COALESCE(tenant_id, json_extract(raw_json, '$.tenantId')) AS tenant_id,
+              COALESCE(collector_id, json_extract(raw_json, '$.collectorId')) AS collector_id
+            FROM raw_spool
+            WHERE state = 'pending'
+            ORDER BY sequence
+            LIMIT 1
+          `).get();
+      const pendingIdentity = selectedIdentity as { tenant_id: string; collector_id: string } | undefined;
+      if (pendingIdentity) {
         const rows = this.db.prepare(`
           SELECT sequence, raw_id, raw_json, events_json
           FROM raw_spool
@@ -220,7 +250,7 @@ export class CollectorSpool implements NetflowTemplateStore {
             AND COALESCE(collector_id, json_extract(raw_json, '$.collectorId')) = ?
           ORDER BY sequence
           LIMIT ?
-        `).all(identity.tenant_id, identity.collector_id, limit) as SpoolRow[];
+        `).all(pendingIdentity.tenant_id, pendingIdentity.collector_id, limit) as SpoolRow[];
         if (rows.length) {
           const batchId = newId();
           const rawRecords = rows.map((row) => JSON.parse(row.raw_json) as RawRecord);
@@ -231,7 +261,7 @@ export class CollectorSpool implements NetflowTemplateStore {
             INSERT INTO sync_batches
               (batch_id, checksum, status, attempts, created_at, tenant_id, collector_id)
             VALUES (?, ?, 'pending', 0, ?, ?, ?)
-          `).run(batchId, checksum, createdAt, identity.tenant_id, identity.collector_id);
+          `).run(batchId, checksum, createdAt, pendingIdentity.tenant_id, pendingIdentity.collector_id);
           this.db.prepare(`
             INSERT INTO sync_batch_deliveries (batch_id, destination_id, status, attempts)
             SELECT ?, destination_id, 'pending', 0 FROM sync_destinations WHERE active = 1
@@ -251,9 +281,10 @@ export class CollectorSpool implements NetflowTemplateStore {
         WHERE batches.status = 'pending'
           AND deliveries.destination_id = ?
           AND deliveries.status = 'pending'
+          ${identityFilter}
         ORDER BY deliveries.last_attempt_at, batches.created_at
         LIMIT 1
-      `).get(destinationId) as BatchRow | undefined;
+      `).get(...deliveryParameters) as BatchRow | undefined;
       return retry ? this.buildBatch(retry) : undefined;
     });
     return transaction();
