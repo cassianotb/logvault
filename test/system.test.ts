@@ -180,3 +180,43 @@ describe('alertas globais da plataforma', () => {
     await app.close();
   });
 });
+
+describe('limpeza de alertas operacionais', () => {
+  it('permite ao administrador reconhecer uma ocorrência ativa sem apagar a telemetria', async () => {
+    const tenantId = '20000000-0000-4000-8000-000000000031';
+    const actorId = '10000000-0000-4000-8000-000000000031';
+    const collectorId = '30000000-0000-4000-8000-000000000031';
+    const dismissed: Array<{ tenantId: string; alertId: string; actorUserId: string }> = [];
+    const adminSession = {
+      sessionId: '10000000-0000-4000-8000-000000000030', id: actorId,
+      tenantId, tenantName: 'ISP Cliente', tenantTimezone: 'America/Sao_Paulo',
+      homeTenantId: tenantId, homeTenantName: 'ISP Cliente', homeTenantTimezone: 'America/Sao_Paulo',
+      name: 'Administrador', email: 'admin@cliente.example', role: 'admin', platformAdmin: false,
+      context: 'tenant', expiresAt: '2026-12-01T00:00:00.000Z'
+    } satisfies AuthSession;
+    const postgres = {
+      findActiveSession: async () => adminSession,
+      listCollectors: async () => [{
+        id: collectorId, name: 'Coletor 01', configuredStatus: 'active', lastSeenAt: null,
+        pendingRecords: 0, pendingEvents: 0, oldestPendingAt: null, lastSyncError: '', hostMetrics: null
+      }],
+      listDevices: async () => [],
+      dismissOperationalAlert: async (input: { tenantId: string; alertId: string; actorUserId: string }) => { dismissed.push(input); }
+    } as unknown as PostgresRepository;
+    const clickhouse = { getDeviceActivity: async () => [] } as unknown as ClickHouseRepository;
+    const app = Fastify();
+    registerSystemRoutes(app, {
+      postgres, clickhouse, backupRoot: '/tmp/argus-system-dismiss-no-backups',
+      backupExpectedHours: 24, backupRetentionDays: 15, backupRemoteEnabled: false
+    });
+
+    const response = await app.inject({
+      method: 'DELETE', url: `/v1/system/alerts/${encodeURIComponent(`collector:${collectorId}:never`)}`,
+      headers: { cookie: `argus_session=${'x'.repeat(32)}` }
+    });
+
+    expect(response.statusCode).toBe(204);
+    expect(dismissed).toEqual([{ tenantId, alertId: `collector:${collectorId}:never`, actorUserId: actorId }]);
+    await app.close();
+  });
+});

@@ -49,6 +49,17 @@ export interface OperationalAlert {
 const alertIdParamsSchema = z.object({ alertId: z.string().min(1).max(500) });
 const alertInvestigationQuerySchema = z.object({ tenantId: z.string().uuid().optional() });
 
+async function hideDismissedAlerts(
+  postgres: PostgresRepository,
+  tenantId: string,
+  alerts: OperationalAlert[]
+): Promise<OperationalAlert[]> {
+  if (typeof postgres.reconcileAlertDismissals !== 'function' || typeof postgres.listActiveAlertDismissals !== 'function') return alerts;
+  await postgres.reconcileAlertDismissals(tenantId, alerts.map((alert) => alert.id));
+  const dismissed = new Set(await postgres.listActiveAlertDismissals(tenantId));
+  return alerts.filter((alert) => !dismissed.has(alert.id));
+}
+
 function isPlatformGlobalAlert(alert: OperationalAlert): boolean {
   return alert.source === 'backup' || alert.source === 'continuity' || alert.id.startsWith('server:cloud-primary:');
 }
@@ -393,13 +404,17 @@ export function registerSystemRoutes(
         dependencies.backupExpectedHours,
         nowMs
       );
+      const visiblePlatformAlerts = await hideDismissedAlerts(dependencies.postgres, CLOUD_METRICS_TENANT_ID, platformAlerts);
+      const visibleTenantAlertGroups = await Promise.all(tenantAlertGroups.map(async ({ tenant, alerts }) => ({
+        tenant, alerts: await hideDismissedAlerts(dependencies.postgres, tenant.id, alerts)
+      })));
       const alerts = [
-        ...platformAlerts.filter(isPlatformGlobalAlert).map((alert) => ({
+        ...visiblePlatformAlerts.filter(isPlatformGlobalAlert).map((alert) => ({
           ...alert,
           tenantId: CLOUD_METRICS_TENANT_ID,
           tenantName: 'Plataforma'
         })),
-        ...tenantAlertGroups.flatMap(({ tenant, alerts: tenantAlerts }) => tenantAlerts
+        ...visibleTenantAlertGroups.flatMap(({ tenant, alerts: tenantAlerts }) => tenantAlerts
           .filter((alert) => !isPlatformGlobalAlert(alert))
           .map((alert) => ({ ...alert, tenantId: tenant.id, tenantName: tenant.name })))
       ].sort((left, right) => left.severity === right.severity
@@ -430,11 +445,12 @@ export function registerSystemRoutes(
         alerts
       });
     }
+    const canViewTenantBackups = hasPlatformAccess(session, 'system', 'view');
     const [collectors, devices, activityRows, tenantBackups] = await Promise.all([
       dependencies.postgres.listCollectors(session.tenantId),
       dependencies.postgres.listDevices(session.tenantId),
       dependencies.clickhouse.getDeviceActivity(session.tenantId),
-      dependencies.postgres.listTenantBackupJobs(session.tenantId, 10)
+      canViewTenantBackups ? dependencies.postgres.listTenantBackupJobs(session.tenantId, 10) : Promise.resolve([])
     ]);
     const alerts: OperationalAlert[] = [];
     const latestTenantBackup = tenantBackups.find((backup) => backup.status === 'ready') ?? null;
@@ -485,17 +501,18 @@ export function registerSystemRoutes(
       appendResourceAlerts(alerts, `collector:${collector.id}`, collector.name, collector.hostMetrics);
     }
 
-    alerts.sort((left, right) => left.severity === right.severity ? left.title.localeCompare(right.title) : left.severity === 'critical' ? -1 : 1);
+    const visibleAlerts = await hideDismissedAlerts(dependencies.postgres, session.tenantId, alerts);
+    visibleAlerts.sort((left, right) => left.severity === right.severity ? left.title.localeCompare(right.title) : left.severity === 'critical' ? -1 : 1);
     return reply.send({
       generatedAt: new Date(nowMs).toISOString(),
-      status: alerts.some((alert) => alert.severity === 'critical') ? 'critical' : alerts.length ? 'warning' : 'ok',
+      status: visibleAlerts.some((alert) => alert.severity === 'critical') ? 'critical' : visibleAlerts.length ? 'warning' : 'ok',
       summary: {
-        critical: alerts.filter((alert) => alert.severity === 'critical').length,
-        warning: alerts.filter((alert) => alert.severity === 'warning').length,
+        critical: visibleAlerts.filter((alert) => alert.severity === 'critical').length,
+        warning: visibleAlerts.filter((alert) => alert.severity === 'warning').length,
         collectors: collectors.length,
         devices: devices.length
       },
-      backup: {
+      backup: canViewTenantBackups ? {
         scope: 'tenant', status: latestTenantBackup ? 'ok' : 'never', expectedEveryHours: null,
         retentionDays: 7, latest: latestTenantBackup ? {
           id: latestTenantBackup.id, createdAt: latestTenantBackup.completedAt,
@@ -505,9 +522,37 @@ export function registerSystemRoutes(
         lastFailureAt: tenantBackups.find((backup) => backup.status === 'failed')?.completedAt ?? null,
         recent: [], downloadAllowed: false,
         remote: { enabled: false, status: 'disabled', lastBackupId: null, copiedAt: null, failedAt: null }
-      },
-      alerts
+      } : null,
+      alerts: visibleAlerts
     });
+  });
+
+  app.delete<{ Params: { alertId: string } }>('/v1/system/alerts/:alertId', async (request, reply) => {
+    const session = await authenticateRequest(request, reply, dependencies.postgres, { allowPlatformContext: true });
+    if (!session) return;
+    const params = alertIdParamsSchema.safeParse(request.params);
+    const query = alertInvestigationQuerySchema.safeParse(request.query);
+    if (!params.success || !query.success) return reply.code(400).send({ error: 'invalid_alert_id' });
+    let tenantId = session.tenantId;
+    if (session.context === 'platform') {
+      if (!hasPlatformAccess(session, 'alerts', 'manage')) return reply.code(403).send({ error: 'platform_permission_required' });
+      if (!query.data.tenantId) return reply.code(400).send({ error: 'alert_tenant_required' });
+      if (query.data.tenantId === CLOUD_METRICS_TENANT_ID) tenantId = CLOUD_METRICS_TENANT_ID;
+      else {
+        const tenant = (await dependencies.postgres.listPlatformTenants())
+          .find((candidate) => candidate.active && candidate.id === query.data.tenantId);
+        if (!tenant) return reply.code(404).send({ error: 'tenant_not_found' });
+        tenantId = tenant.id;
+      }
+    } else if (session.role !== 'admin') {
+      return reply.code(403).send({ error: 'tenant_administrator_required' });
+    }
+    const alerts = await collectOperationalAlerts(tenantId, dependencies);
+    const alert = alerts.find((candidate) => candidate.id === params.data.alertId
+      && (session.platformAdmin || candidate.source !== 'backup'));
+    if (!alert) return reply.code(404).send({ error: 'alert_no_longer_active' });
+    await dependencies.postgres.dismissOperationalAlert({ tenantId, alertId: alert.id, actorUserId: session.id });
+    return reply.code(204).send();
   });
 
   app.get<{ Params: { alertId: string } }>('/v1/system/alerts/:alertId/investigation', async (request, reply) => {

@@ -27,22 +27,15 @@ import { registerFirewallRoutes } from './firewall.js';
 import { createSubscriberResolver } from './subscribers.js';
 import { ContinuityMonitor, registerContinuityRoutes, startContinuityActivationProcessor, type ContinuityConnectionSettings, type ContinuityMonitorOptions } from './continuity.js';
 import { hostname } from 'node:os';
-import { readFileSync } from 'node:fs';
 import { preparePrimaryContinuity } from '../core/continuity-host-control.js';
+import { installedApplicationVersion } from '../core/application-version.js';
 import { registerBackupRoutes, startBackupProcessor } from './backups.js';
 import { configureAdministrativeReadOnly } from './access-control.js';
 import { registerRedundancyRoutes, startRedundancyConfigurationSync } from './redundancy.js';
 import type { RedundancyMode } from './postgres.js';
 
 const config = loadApiConfig();
-const applicationVersion = (() => {
-  try {
-    const packageMetadata = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version?: unknown };
-    return typeof packageMetadata.version === 'string' ? packageMetadata.version : 'unknown';
-  } catch {
-    return 'unknown';
-  }
-})();
+const applicationVersion = installedApplicationVersion();
 const alertEncryptionKey = config.ARGUS_ALERT_ENCRYPTION_KEY || config.ARGUS_SYNC_TOKEN;
 const drProvisioningKeys = [
   'ARGUS_POSTGRES_PASSWORD', 'ARGUS_DR_POSTGRES_REPLICATION_PASSWORD', 'ARGUS_CLICKHOUSE_PASSWORD',
@@ -66,7 +59,7 @@ if (config.ARGUS_REDUNDANCY_ROLE !== 'standalone') {
   await postgres.initializeRedundancyRuntime({
     mode: config.ARGUS_REDUNDANCY_ROLE,
     siteId: config.ARGUS_REDUNDANCY_SITE_ID,
-    siteName: config.ARGUS_REDUNDANCY_SITE_NAME,
+    siteName: config.ARGUS_FIREWALL_SERVER_NAME,
     publicUrl: config.ARGUS_PUBLIC_URL,
     primaryUrl: config.ARGUS_REDUNDANCY_PRIMARY_URL,
     primarySiteId: config.ARGUS_REDUNDANCY_PRIMARY_SITE_ID
@@ -178,6 +171,9 @@ let latestCloudMetrics = cloudHostMetrics.sample();
 let latestCloudMetricSampledAt = new Date().toISOString();
 let latestStandbyMetrics: HostMetrics | null = null;
 let latestStandbyMetricSampledAt: string | null = null;
+let latestPrimaryPeerMetrics: HostMetrics | null = null;
+let latestPrimaryPeerMetricSampledAt: string | null = null;
+let latestPrimaryPeerServerName: string | null = null;
 let cloudMetricRecording = false;
 
 function validHostMetrics(value: unknown): value is HostMetrics {
@@ -196,7 +192,7 @@ function validHostMetrics(value: unknown): value is HostMetrics {
 }
 
 async function refreshStandbyMetric(): Promise<void> {
-  if (config.ARGUS_DR_LOCAL_SITE !== 'a' || !currentContinuitySettings.standbyApiUrl) return;
+  if (currentRedundancyMode !== 'standalone' || config.ARGUS_DR_LOCAL_SITE !== 'a' || !currentContinuitySettings.standbyApiUrl) return;
   try {
     const response = await fetch(new URL('/v1/internal/host-metrics', currentContinuitySettings.standbyApiUrl), {
       headers: { accept: 'application/json', authorization: `Bearer ${config.ARGUS_SYNC_TOKEN}` },
@@ -224,7 +220,7 @@ async function recordCloudMetric(): Promise<void> {
     latestCloudMetricSampledAt = new Date().toISOString();
     await clickhouse.insertServerMetric({
       tenantId: CLOUD_METRICS_TENANT_ID,
-      serverId: config.ARGUS_DR_LOCAL_SITE === 'b' ? 'cloud-standby' : 'cloud-primary',
+      serverId: config.ARGUS_REDUNDANCY_ROLE === 'secondary' ? 'cloud-standby' : 'cloud-primary',
       sampledAt: latestCloudMetricSampledAt,
       metrics: latestCloudMetrics
     });
@@ -332,8 +328,7 @@ registerSystemRoutes(app, {
   backupExpectedHours: config.ARGUS_BACKUP_INTERVAL_HOURS,
   backupRetentionDays: config.ARGUS_BACKUP_RETENTION_DAYS,
   backupRemoteEnabled: config.ARGUS_BACKUP_REMOTE_TARGET.length > 0,
-  cloudMetricsProvider: () => latestCloudMetrics,
-  continuityProvider: () => continuityMonitor.snapshot()
+  cloudMetricsProvider: () => latestCloudMetrics
 });
 const triggerBackup = await startBackupProcessor(app, {
   postgres, clickhouse, backupRoot: config.ARGUS_BACKUP_ROOT,
@@ -355,6 +350,17 @@ registerCapacityRoutes(app, {
 registerDashboardRoutes(app, { postgres, clickhouse });
 registerServerRoutes(app, {
   postgres, clickhouse, cloudMetricsProvider: () => latestCloudMetrics,
+  localServerName: config.ARGUS_FIREWALL_SERVER_NAME,
+  localRedundancyRole: config.ARGUS_REDUNDANCY_ROLE,
+  primaryPeerMetricsProvider: async () => {
+    const fresh = latestPrimaryPeerMetricSampledAt !== null
+      && Date.now() - new Date(latestPrimaryPeerMetricSampledAt).getTime() <= 30_000;
+    return {
+      metrics: fresh ? latestPrimaryPeerMetrics : null,
+      sampledAt: latestPrimaryPeerMetricSampledAt,
+      serverName: latestPrimaryPeerServerName
+    };
+  },
   standbyMetricsProvider: async () => {
     if (config.ARGUS_DR_LOCAL_SITE === 'b') return { metrics: latestCloudMetrics, sampledAt: latestCloudMetricSampledAt };
     const fresh = latestStandbyMetricSampledAt !== null
@@ -391,9 +397,14 @@ registerRedundancyRoutes(app, {
   postgres,
   applicationVersion,
   publicUrl: config.ARGUS_PUBLIC_URL,
-  legacyConfigured: async () => {
-    const settings = await postgres.getPlatformContinuitySettings();
-    return Boolean(settings && (settings.enabled || settings.standbyApiUrl || settings.postgresStandbyUrlSecret));
+  serverName: config.ARGUS_FIREWALL_SERVER_NAME,
+  localTelemetryProvider: () => ({ metrics: latestCloudMetrics, sampledAt: latestCloudMetricSampledAt }),
+  onSiteHeartbeat: async ({ metrics, sampledAt }) => {
+    latestStandbyMetrics = metrics;
+    latestStandbyMetricSampledAt = sampledAt;
+    await clickhouse.insertServerMetric({
+      tenantId: CLOUD_METRICS_TENANT_ID, serverId: 'cloud-standby', sampledAt, metrics
+    });
   },
   onModeChanged: (mode) => {
     currentRedundancyMode = mode;
@@ -426,6 +437,16 @@ stopRedundancyConfigurationSync = currentRedundancyMode === 'secondary'
       siteId: config.ARGUS_REDUNDANCY_SITE_ID,
       siteToken: config.ARGUS_REDUNDANCY_SITE_TOKEN,
       applicationVersion,
+      serverName: config.ARGUS_FIREWALL_SERVER_NAME,
+      metricsProvider: () => ({ metrics: latestCloudMetrics, sampledAt: latestCloudMetricSampledAt }),
+      onPrimaryTelemetry: async ({ serverName, metrics, sampledAt }) => {
+        latestPrimaryPeerServerName = serverName;
+        latestPrimaryPeerMetrics = metrics;
+        latestPrimaryPeerMetricSampledAt = sampledAt;
+        await clickhouse.insertServerMetric({
+          tenantId: CLOUD_METRICS_TENANT_ID, serverId: 'cloud-primary', sampledAt, metrics
+        });
+      },
       intervalMs: config.ARGUS_REDUNDANCY_SYNC_INTERVAL_MS,
       onError: (error) => app.log.warn({ error }, 'Sincronização da configuração redundante adiada')
     })
@@ -448,8 +469,7 @@ const stopAlertProcessor = startAlertProcessor(app, {
     backupRoot: config.ARGUS_BACKUP_ROOT,
     backupExpectedHours: config.ARGUS_BACKUP_INTERVAL_HOURS,
     backupRemoteEnabled: config.ARGUS_BACKUP_REMOTE_TARGET.length > 0,
-    cloudMetricsProvider: () => latestCloudMetrics,
-    continuityProvider: () => continuityMonitor.snapshot()
+    cloudMetricsProvider: () => latestCloudMetrics
   })
 });
 void recordCloudMetric();

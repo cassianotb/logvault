@@ -66,6 +66,7 @@ const clientsView = document.querySelector('#clients-view');
 const plansView = document.querySelector('#plans-view');
 const platformSettingsView = document.querySelector('#platform-settings-view');
 const platformManualView = document.querySelector('#platform-manual-view');
+const tenantManualView = document.querySelector('#tenant-manual-view');
 const usersView = document.querySelector('#users-view');
 const auditView = document.querySelector('#audit-view');
 const integrationsView = document.querySelector('#integrations-view');
@@ -74,7 +75,6 @@ const pageTitle = document.querySelector('#page-title');
 const tenantContext = document.querySelector('#tenant-context');
 const tenantContextName = document.querySelector('#tenant-context-name');
 const returnPlatformButton = document.querySelector('#return-platform');
-const environmentLabel = document.querySelector('#environment-label');
 const refreshPlatformDashboardButton = document.querySelector('#refresh-platform-dashboard');
 const platformDashboardPeriod = document.querySelector('#platform-dashboard-period');
 const platformDashboardActiveClients = document.querySelector('#platform-dashboard-active-clients');
@@ -202,6 +202,8 @@ const refreshSystemButton = document.querySelector('#refresh-system');
 const systemServiceTotal = document.querySelector('#system-service-total');
 const systemServiceRunning = document.querySelector('#system-service-running');
 const systemServiceAttention = document.querySelector('#system-service-attention');
+const systemIntroCopy = document.querySelector('#system-intro-copy');
+const systemBackupSummary = document.querySelector('#system-backup-summary');
 const systemLastBackup = document.querySelector('#system-last-backup');
 const systemBackupDetail = document.querySelector('#system-backup-detail');
 const systemGeneratedAt = document.querySelector('#system-generated-at');
@@ -267,6 +269,7 @@ const alertReviewRecovery = document.querySelector('#alert-review-recovery');
 const alertReviewSources = document.querySelector('#alert-review-sources');
 const backupPolicy = document.querySelector('#backup-policy');
 const backupRemote = document.querySelector('#backup-remote');
+const backupHistoryPanel = document.querySelector('#backup-history-panel');
 const backupTableWrap = document.querySelector('#backup-table-wrap');
 const backupBody = document.querySelector('#backup-body');
 const backupEmpty = document.querySelector('#backup-empty');
@@ -289,6 +292,7 @@ const tenantBackupFeedback = document.querySelector('#tenant-backup-feedback');
 const tenantBackupTableWrap = document.querySelector('#tenant-backup-table-wrap');
 const tenantBackupBody = document.querySelector('#tenant-backup-body');
 const tenantBackupEmpty = document.querySelector('#tenant-backup-empty');
+const backupAlertSource = document.querySelector('#backup-alert-source');
 const refreshServersButton = document.querySelector('#refresh-servers');
 const serverTotal = document.querySelector('#server-total');
 const serverHealthy = document.querySelector('#server-healthy');
@@ -304,12 +308,9 @@ const redundancyRole = document.querySelector('#redundancy-role');
 const redundancyLocalRole = document.querySelector('#redundancy-local-role');
 const redundancyReadOnly = document.querySelector('#redundancy-read-only');
 const redundancySiteCount = document.querySelector('#redundancy-site-count');
-const redundancyMigration = document.querySelector('#redundancy-migration');
-const redundancyMigrationDetail = document.querySelector('#redundancy-migration-detail');
 const redundancySites = document.querySelector('#redundancy-sites');
 const configureRedundancyPrimaryButton = document.querySelector('#configure-redundancy-primary');
 const createRedundancyEnrollmentButton = document.querySelector('#create-redundancy-enrollment');
-const advanceRedundancyMigrationButton = document.querySelector('#advance-redundancy-migration');
 const promoteRedundancySecondaryButton = document.querySelector('#promote-redundancy-secondary');
 const redundancyEnrollmentCommand = document.querySelector('#redundancy-enrollment-command');
 const redundancyToken = document.querySelector('#redundancy-token');
@@ -1092,7 +1093,7 @@ function viewFromLocation(user = currentUser) {
     const module = platformViewModules[requested];
     return module && hasPlatformPermission(module, 'view', user) ? requested : firstAllowedPlatformView(user);
   }
-  if (['clients', 'plans', 'platform-settings', 'manual'].includes(requested)) return 'dashboard';
+  if (['clients', 'plans', 'platform-settings'].includes(requested)) return 'dashboard';
   if (requested === 'capacity' && !['admin', 'auditor'].includes(user?.role)) return 'dashboard';
   if (requested === 'firewall' && !['admin', 'auditor'].includes(user?.role)) return 'dashboard';
   if (['users', 'company', 'integrations'].includes(requested) && user?.role !== 'admin') return 'dashboard';
@@ -1163,11 +1164,11 @@ function showApplication(user) {
   capacityTechnicalNote.hidden = !platformContext || !hasPlatformPermission('capacity', 'manage', user);
   alertsIntroCopy.textContent = platformContext
     ? 'Acompanhe, em uma única visão, as ocorrências de infraestrutura de todos os clientes ativos.'
-    : 'Acompanhe ocorrências de equipamentos, coletores, servidores, processamento e backups.';
+    : 'Acompanhe ocorrências de equipamentos, coletores, servidores e processamento.';
   alertsTenantHeading.hidden = !platformContext;
   serversIntroCopy.textContent = platformContext
-    ? 'Monitore o servidor principal e os coletores locais de todos os clientes ativos.'
-    : 'Monitore os recursos do servidor principal e dos servidores locais que executam coletores.';
+    ? 'Monitore os servidores principal e secundário e os coletores locais de todos os clientes ativos.'
+    : 'Monitore os recursos dos servidores principal e secundário e dos servidores locais que executam coletores.';
   firewallIntroCopy.textContent = platformContext
     ? 'Cadastre manualmente os IPs permitidos para Acesso WEB e SSH, e gerencie separadamente a ingestão dos coletores.'
     : 'Valide as origens que chegam às portas do seu coletor Cloud e controle quais redes podem enviar logs.';
@@ -1187,8 +1188,6 @@ function showApplication(user) {
   devicePlanLabel.textContent = platformContext ? 'CLIENTES' : 'PLANO';
   tenantContext.hidden = !(user.platformAdmin && user.context === 'tenant');
   tenantContextName.textContent = user.tenant?.name || '';
-  environmentLabel.hidden = platformContext;
-  if (!platformContext) environmentLabel.lastChild.textContent = ` ${user.tenant?.name || 'Cliente'}`;
   selectCapacityTab('live');
   deviceManagementPanel.hidden = platformContext || user.role !== 'admin';
   discoverDevicesButton.hidden = platformContext || user.role !== 'admin';
@@ -1203,6 +1202,11 @@ function showApplication(user) {
   platformEmailForm.querySelectorAll('input, select, button').forEach((field) => { field.disabled = !settingsCanManage; });
   platformEmailTestPanel.hidden = platformContext && !settingsCanManage;
   exportPlatformAuditButton.hidden = platformContext && !hasPlatformPermission('audit', 'manage', user);
+  const canViewBackups = Boolean(user.platformAdmin && hasPlatformPermission('system', 'view', user));
+  const backupAlertInput = backupAlertSource.querySelector('input');
+  backupAlertSource.hidden = !canViewBackups;
+  backupAlertInput.disabled = !canViewBackups;
+  if (!canViewBackups) backupAlertInput.checked = false;
   if (!platformContext) void loadIntegrationProviderAvailability();
   navigateTo(viewFromLocation(user));
 }
@@ -1212,7 +1216,7 @@ function navigateTo(view) {
   if (platformContext && view !== 'manual' && (!platformViewModules[view] || !hasPlatformPermission(platformViewModules[view], 'view'))) {
     view = firstAllowedPlatformView();
   }
-  if (!platformContext && ['clients', 'plans', 'platform-settings', 'continuity', 'manual'].includes(view)) view = 'dashboard';
+  if (!platformContext && ['clients', 'plans', 'platform-settings', 'continuity'].includes(view)) view = 'dashboard';
   if (!platformContext && view === 'integrations' && integrationProviderAvailability === false) view = 'dashboard';
   if (!platformContext && view === 'firewall' && !['admin', 'auditor'].includes(currentUser?.role)) view = 'dashboard';
   platformDashboardView.hidden = view !== 'dashboard' || !platformContext;
@@ -1231,7 +1235,8 @@ function navigateTo(view) {
   companyView.hidden = view !== 'company';
   plansView.hidden = view !== 'plans';
   platformSettingsView.hidden = view !== 'platform-settings';
-  platformManualView.hidden = view !== 'manual';
+  platformManualView.hidden = view !== 'manual' || !platformContext;
+  tenantManualView.hidden = view !== 'manual' || platformContext;
   usersView.hidden = view !== 'users';
   auditView.hidden = view !== 'audit' || platformContext;
   integrationsView.hidden = view !== 'integrations';
@@ -1239,10 +1244,10 @@ function navigateTo(view) {
     ? platformContext ? 'Plataforma' : 'Visão geral'
     : view === 'query'
       ? 'Investigação'
-      : ['clients', 'plans', 'platform-settings', 'manual'].includes(view) || (['users', 'integrations'].includes(view) && platformContext)
+      : ['clients', 'plans', 'platform-settings'].includes(view) || (view === 'manual' && platformContext) || (['users', 'integrations'].includes(view) && platformContext)
         ? 'Plataforma'
         : view === 'audit' ? platformContext ? 'Plataforma' : 'Administração'
-          : ['company', 'integrations', 'users'].includes(view) ? 'Administração' : ['system', 'servers', 'continuity', 'firewall', 'alerts', 'capacity'].includes(view) ? 'Infraestrutura' : 'Operação CGNAT';
+          : ['company', 'integrations', 'users', 'manual'].includes(view) ? 'Administração' : ['system', 'servers', 'continuity', 'firewall', 'alerts', 'capacity'].includes(view) ? 'Infraestrutura' : 'Operação CGNAT';
   pageTitle.textContent = view === 'devices'
     ? 'Equipamentos'
     : view === 'dashboard' ? 'Dashboard' : view === 'collectors' ? 'Coletores' : view === 'system' ? 'Sistema' : view === 'continuity' ? 'Redundância' : view === 'firewall' ? 'Firewall' : view === 'alerts' ? 'Alertas' : view === 'servers' ? 'Servidores' : view === 'capacity' ? 'Capacidade' : view === 'clients' ? 'Clientes' : view === 'plans' ? 'Planos' : view === 'platform-settings' ? 'Configurações' : view === 'manual' ? 'Manual' : view === 'users' ? 'Usuários' : view === 'company' ? 'Dados da empresa' : view === 'integrations' ? 'Integrações' : view === 'audit' ? 'Auditoria' : 'Consulta CGNAT';
@@ -1264,7 +1269,6 @@ function navigateTo(view) {
   }
   if (view === 'servers' && !serversLoaded) void loadServers();
   if (view === 'continuity' && !continuityLoaded) void loadContinuity();
-  if (view === 'continuity' && !continuityEnrollmentLoaded) void loadContinuityEnrollment();
   if (view === 'capacity' && ['admin', 'auditor'].includes(currentUser?.role)) {
     capacityLoaded = false;
     void loadCapacity();
@@ -2586,7 +2590,6 @@ function showCollectorCredentials(credentials) {
     'ARGUS_SYSLOG_HOST=0.0.0.0',
     'ARGUS_SYSLOG_PORT=5140',
     'ARGUS_A10_IGNORED_PROTOCOLS=GRE,ESP',
-    'ARGUS_COLLECTOR_VERSION=0.1.0',
     'ARGUS_HEARTBEAT_INTERVAL_MS=10000',
     'ARGUS_SYNC_BATCH_SIZE=5000',
     'ARGUS_SYNC_INTERVAL_MS=1000',
@@ -3510,9 +3513,6 @@ function serviceIssueStatus(alerts, sources) {
 }
 
 function renderSystemServices(payload) {
-  const backupStatus = payload.backup.status === 'ok'
-    ? 'ok'
-    : payload.backup.status === 'delayed' ? 'warning' : 'critical';
   const processingStatus = serviceIssueStatus(payload.alerts, ['collector', 'spool', 'parser']);
   const processingIssues = payload.alerts.filter((alert) => ['collector', 'spool', 'parser'].includes(alert.source)).length;
   const services = [
@@ -3526,15 +3526,20 @@ function renderSystemServices(payload) {
         ? `${formatNumber(processingIssues)} ocorrência(s) relacionada(s) à coleta, fila ou parsing.`
         : `${formatNumber(payload.summary.collectors)} coletor(es) monitorado(s), sem ocorrências de processamento.`,
       status: processingStatus
-    },
-    {
+    }
+  ];
+  if (payload.backup) {
+    const backupStatus = payload.backup.status === 'ok'
+      ? 'ok'
+      : payload.backup.status === 'delayed' ? 'warning' : 'critical';
+    services.push({
       name: 'Rotina de backup',
       detail: payload.backup.latest
         ? `Última execução em ${formatDeviceMoment(payload.backup.latest.createdAt)}.`
         : 'Nenhuma execução concluída até o momento.',
       status: backupStatus
-    }
-  ];
+    });
+  }
   systemServiceList.replaceChildren();
   for (const service of services) {
     const card = document.createElement('article');
@@ -3559,6 +3564,7 @@ function renderSystemServices(payload) {
 function renderSystemAlerts(alerts) {
   alertsBody.replaceChildren();
   const platformContext = isPlatformContext();
+  const canClear = platformContext ? hasPlatformPermission('alerts', 'manage') : currentUser?.role === 'admin';
   for (const alert of alerts) {
     const row = document.createElement('tr');
     const severityCell = document.createElement('td');
@@ -3582,12 +3588,38 @@ function renderSystemAlerts(alerts) {
     investigate.textContent = 'Investigar';
     investigate.addEventListener('click', () => void openAlertInvestigation(alert));
     actionCell.append(investigate);
+    if (canClear) {
+      const clear = document.createElement('button');
+      clear.type = 'button';
+      clear.className = 'table-action alert-clear-action';
+      clear.textContent = 'Limpar alerta';
+      clear.addEventListener('click', () => void clearOperationalAlert(alert, clear));
+      actionCell.append(clear);
+    }
     const titleCell = td(alert.title, 'Alerta', 'system-alert-title');
     const cells = [severityCell];
     if (platformContext) cells.push(td(alert.tenantName || 'Plataforma', 'Cliente', 'system-alert-client'));
     cells.push(sourceCell, titleCell, td(alert.detail, 'Detalhes', 'system-alert-detail'), actionCell);
     row.append(...cells);
     alertsBody.append(row);
+  }
+}
+
+async function clearOperationalAlert(alert, button) {
+  if (!window.confirm('Limpar esta ocorrência? Os logs serão preservados e ela poderá voltar se o problema acontecer novamente.')) return;
+  button.disabled = true;
+  try {
+    const query = alert.tenantId ? `?tenantId=${encodeURIComponent(alert.tenantId)}` : '';
+    const response = await authenticatedFetch(`${API_BASE}/v1/system/alerts/${encodeURIComponent(alert.id)}${query}`, {
+      method: 'DELETE', headers: { Accept: 'application/json' }
+    });
+    if (!response.ok) throw new Error(response.status === 404
+      ? 'O alerta já foi normalizado. Atualize a lista.' : 'Não foi possível limpar o alerta.');
+    alertsLoaded = false;
+    await loadAlerts();
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : 'Falha inesperada.');
+    button.disabled = false;
   }
 }
 
@@ -3993,7 +4025,8 @@ function renderAlertSettings(settings) {
         : 'canal ainda não testado'),
       alertSummaryArticle('POLÍTICA', `${setting.minimumSeverity === 'warning' ? 'Avisos e críticos' : 'Somente críticos'} · ${alertReminderLabel(setting.reminderMinutes)}`,
         setting.recoveryEnabled ? 'avisa quando voltar ao normal' : 'não avisa quando voltar ao normal'),
-      alertSummaryArticle('ORIGENS', alertSourceNames(setting.enabledSources).join(', ') || 'Nenhuma origem selecionada',
+      alertSummaryArticle('ORIGENS', alertSourceNames(setting.enabledSources
+        .filter((source) => currentUser?.platformAdmin || source !== 'backup')).join(', ') || 'Nenhuma origem selecionada',
         'ocorrências enviadas por este canal')
     );
     overview.append(head, summary);
@@ -4026,7 +4059,7 @@ function fillAlertSettingsForm(settings) {
   alertSettingsForm.elements.reminderMinutes.value = String(settings.reminderMinutes);
   alertSettingsForm.elements.recoveryEnabled.checked = settings.recoveryEnabled;
   for (const checkbox of alertSettingsForm.querySelectorAll('input[name="source"]')) {
-    checkbox.checked = settings.enabledSources.includes(checkbox.value);
+    checkbox.checked = !checkbox.disabled && settings.enabledSources.includes(checkbox.value);
   }
   setAlertChannelAvailability(settings.destinationType, true);
   updateAlertMasterState();
@@ -4045,7 +4078,7 @@ function prepareNewAlertSettings() {
   alertSettingsForm.elements.minimumSeverity.value = 'warning';
   alertSettingsForm.elements.reminderMinutes.value = '60';
   alertSettingsForm.elements.recoveryEnabled.checked = true;
-  for (const checkbox of alertSettingsForm.querySelectorAll('input[name="source"]')) checkbox.checked = true;
+  for (const checkbox of alertSettingsForm.querySelectorAll('input[name="source"]')) checkbox.checked = !checkbox.disabled;
   setAlertChannelAvailability(destinationType, false);
   displayAlertChannel(destinationType, false);
   updateAlertMasterState();
@@ -4080,7 +4113,7 @@ function renderAlertWizardReview() {
   storeActiveAlertChannelDraft();
   const type = alertSettingsForm.elements.destinationType.value;
   const minimumSeverity = alertSettingsForm.elements.minimumSeverity.value;
-  const enabledSources = [...alertSettingsForm.querySelectorAll('input[name="source"]:checked')].map((item) => item.value);
+  const enabledSources = [...alertSettingsForm.querySelectorAll('input[name="source"]:checked:not(:disabled)')].map((item) => item.value);
   alertReviewChannel.textContent = alertChannelName(type);
   alertReviewDestination.textContent = alertDestinationDescription(
     type, alertSettingsForm.elements.credential.value.trim(), alertSettingsForm.elements.telegramChatId.value.trim()
@@ -4182,7 +4215,7 @@ alertSettingsForm.addEventListener('submit', async (event) => {
     if (validateAlertWizardStep()) setAlertWizardStep(alertWizardStep + 1);
     return;
   }
-  const enabledSources = [...alertSettingsForm.querySelectorAll('input[name="source"]:checked')].map((item) => item.value);
+  const enabledSources = [...alertSettingsForm.querySelectorAll('input[name="source"]:checked:not(:disabled)')].map((item) => item.value);
   if (!enabledSources.length) {
     setFormFeedback(alertSettingsFeedback, 'Selecione pelo menos um tipo de ocorrência.', true);
     return;
@@ -4273,16 +4306,22 @@ async function loadSystem() {
   if (tenantBackupPollTimer) window.clearTimeout(tenantBackupPollTimer);
   tenantBackupPollTimer = null;
   const platformContext = isPlatformContext();
-  platformBackupDestinationPanel.hidden = !platformContext;
-  tenantBackupPanel.hidden = platformContext;
-  if (platformContext) {
-    const canManageBackups = hasPlatformPermission('system', 'manage');
+  const canViewBackups = Boolean(currentUser?.platformAdmin && hasPlatformPermission('system', 'view'));
+  const canManageBackups = Boolean(currentUser?.platformAdmin && hasPlatformPermission('system', 'manage'));
+  systemIntroCopy.textContent = canViewBackups
+    ? 'Acompanhe os componentes da plataforma e a execução dos backups de configuração, logs e spool.'
+    : 'Acompanhe os componentes e a disponibilidade dos serviços da plataforma.';
+  systemBackupSummary.hidden = !canViewBackups;
+  backupHistoryPanel.hidden = !canViewBackups;
+  platformBackupDestinationPanel.hidden = !platformContext || !canViewBackups;
+  tenantBackupPanel.hidden = platformContext || !canViewBackups;
+  if (platformContext && canViewBackups) {
     [...platformBackupDestinationForm.elements].forEach((element) => { element.disabled = !canManageBackups; });
     testPlatformBackupDestinationButton.disabled = !canManageBackups;
     savePlatformBackupDestinationButton.disabled = !canManageBackups;
-  } else {
-    createTenantBackupButton.hidden = currentUser?.role !== 'admin';
-    tenantBackupGoogleDrive.closest('label').hidden = currentUser?.role !== 'admin';
+  } else if (canViewBackups) {
+    createTenantBackupButton.hidden = !canManageBackups;
+    tenantBackupGoogleDrive.closest('label').hidden = !canManageBackups;
   }
   systemLoading.hidden = false;
   systemError.hidden = true;
@@ -4296,31 +4335,33 @@ async function loadSystem() {
     if (!response.ok) throw new Error('O serviço de monitoramento não respondeu corretamente.');
     renderSystemServices(payload);
     systemGeneratedAt.textContent = `Atualizado em ${formatDeviceMoment(payload.generatedAt)}`;
-    if (payload.backup.latest) {
-      systemLastBackup.textContent = formatDeviceMoment(payload.backup.latest.createdAt);
-      systemBackupDetail.textContent = `PostgreSQL, ClickHouse${payload.backup.latest.collectorIncluded ? ' e spool local' : ''}`;
-    } else {
-      systemLastBackup.textContent = 'Pendente';
-      systemBackupDetail.textContent = 'nenhuma execução concluída';
+    if (canViewBackups && payload.backup) {
+      if (payload.backup.latest) {
+        systemLastBackup.textContent = formatDeviceMoment(payload.backup.latest.createdAt);
+        systemBackupDetail.textContent = `PostgreSQL, ClickHouse${payload.backup.latest.collectorIncluded ? ' e spool local' : ''}`;
+      } else {
+        systemLastBackup.textContent = 'Pendente';
+        systemBackupDetail.textContent = 'nenhuma execução concluída';
+      }
+      backupPolicy.textContent = payload.backup.scope === 'tenant'
+        ? 'Snapshot lógico sob demanda · download disponível por 7 dias'
+        : `A cada ${payload.backup.expectedEveryHours}h · retenção ${payload.backup.retentionDays} dias`;
+      backupRemote.textContent = payload.backup.scope === 'tenant'
+        ? 'Somente dados deste cliente; segredos e credenciais são excluídos'
+        : !payload.backup.remote.enabled
+          ? 'Cópia externa não configurada'
+          : payload.backup.remote.status === 'ok'
+            ? `Cópia externa atualizada · ${payload.backup.remote.lastBackupId}`
+            : payload.backup.remote.status === 'failed' ? 'Falha na cópia externa' : 'Cópia externa pendente';
+      renderBackups(payload.backup.recent, payload.backup.downloadAllowed);
+      backupEmpty.hidden = payload.backup.recent.length !== 0;
+      backupTableWrap.hidden = payload.backup.recent.length === 0;
     }
-    backupPolicy.textContent = payload.backup.scope === 'tenant'
-      ? 'Snapshot lógico sob demanda · download disponível por 7 dias'
-      : `A cada ${payload.backup.expectedEveryHours}h · retenção ${payload.backup.retentionDays} dias`;
-    backupRemote.textContent = payload.backup.scope === 'tenant'
-      ? 'Somente dados deste cliente; segredos e credenciais são excluídos'
-      : !payload.backup.remote.enabled
-        ? 'Cópia externa não configurada'
-        : payload.backup.remote.status === 'ok'
-          ? `Cópia externa atualizada · ${payload.backup.remote.lastBackupId}`
-          : payload.backup.remote.status === 'failed' ? 'Falha na cópia externa' : 'Cópia externa pendente';
-    renderBackups(payload.backup.recent, payload.backup.downloadAllowed);
-    backupEmpty.hidden = payload.backup.recent.length !== 0;
-    backupTableWrap.hidden = payload.backup.recent.length === 0;
     systemLoaded = true;
     systemLoading.hidden = true;
     systemServiceList.hidden = false;
-    if (platformContext) await loadPlatformBackupDestination();
-    else await loadTenantBackups();
+    if (canViewBackups && platformContext) await loadPlatformBackupDestination();
+    else if (canViewBackups) await loadTenantBackups();
   } catch (error) {
     systemLoading.hidden = true;
     if (!appShell.hidden) {
@@ -4441,7 +4482,7 @@ function renderServers(servers, thresholds) {
     const location = document.createElement('span');
     location.textContent = server.collectorId
       ? server.location === 'edge' ? 'Coletor local' : 'Coletor cloud'
-      : `Infraestrutura · ${server.siteName || (server.infrastructureRole === 'standby' ? 'Data Center B' : 'Data Center A')}`;
+      : `Infraestrutura · ${server.siteName || 'Servidor sem nome'}`;
     const name = document.createElement('strong');
     name.textContent = server.name;
     const platform = document.createElement('small');
@@ -4864,7 +4905,7 @@ function syncServerHistoryOptions(servers) {
     option.value = server.id;
     option.textContent = server.collectorId
       ? `${server.name}${server.tenantName ? ` · ${server.tenantName}` : ''} · ${server.location === 'edge' ? 'local' : 'nuvem'}`
-      : `${server.name} · ${server.siteName || (server.infrastructureRole === 'standby' ? 'Data Center B' : 'Data Center A')}`;
+      : `${server.name} · ${server.siteName || 'Servidor sem nome'}`;
     serverHistoryServer.append(option);
   }
   const selected = availableServers.some((server) => server.id === previous) ? previous : availableServers[0]?.id || '';
@@ -4972,10 +5013,6 @@ const continuityPhaseLabels = {
 };
 let latestRedundancyStatus = null;
 const redundancyModeLabels = { standalone: 'Não configurado', primary: 'Principal', secondary: 'Secundário' };
-const redundancyMigrationLabels = {
-  not_started: 'Não iniciada', ready: 'Preparada', migrated: 'Migrada', validated: 'Validada'
-};
-
 function renderRedundancyStatus(payload) {
   latestRedundancyStatus = payload;
   const canManage = hasPlatformPermission('continuity', 'manage');
@@ -4985,10 +5022,6 @@ function renderRedundancyStatus(payload) {
     ? 'administração somente leitura · ingestão ativa'
     : payload.mode === 'primary' ? 'autoridade de configuração · ingestão ativa' : 'ative antes de parear outra VM';
   redundancySiteCount.textContent = String((payload.sites?.length || 0) + (payload.mode === 'standalone' ? 0 : 1));
-  redundancyMigration.textContent = redundancyMigrationLabels[payload.migrationStatus] || payload.migrationStatus;
-  redundancyMigrationDetail.textContent = payload.legacy?.configured
-    ? payload.legacy.message : 'nenhuma continuidade antiga ativa';
-
   redundancySites.replaceChildren();
   const local = document.createElement('article');
   local.className = 'redundancy-site';
@@ -4996,7 +5029,7 @@ function renderRedundancyStatus(payload) {
   const localName = document.createElement('strong');
   const localUrl = document.createElement('small');
   const localState = document.createElement('em');
-  localName.textContent = payload.siteName || 'Esta VM';
+  localName.textContent = payload.serverName || payload.siteName || 'Esta VM';
   localUrl.textContent = payload.publicUrl || window.location.origin;
   localState.textContent = payload.mode === 'standalone' ? 'local' : (redundancyModeLabels[payload.mode] || payload.mode);
   localCopy.append(localName, localUrl);
@@ -5011,7 +5044,7 @@ function renderRedundancyStatus(payload) {
     const stateBox = document.createElement('div');
     const state = document.createElement('em');
     name.textContent = site.name;
-    detail.textContent = `${site.publicUrl} · ${site.lastSeenAt ? `visto ${formatDeviceMoment(site.lastSeenAt)}` : 'aguardando sincronização'}`;
+    detail.textContent = `${site.publicUrl} · versão ${site.version || 'não informada'} · ${site.lastSeenAt ? `visto ${formatDeviceMoment(site.lastSeenAt)}` : 'aguardando sincronização'}`;
     state.textContent = site.status;
     copy.append(name, detail);
     stateBox.append(state);
@@ -5029,7 +5062,6 @@ function renderRedundancyStatus(payload) {
 
   configureRedundancyPrimaryButton.hidden = !canManage || payload.mode !== 'standalone';
   createRedundancyEnrollmentButton.hidden = !canManage || payload.mode !== 'primary';
-  advanceRedundancyMigrationButton.hidden = !canManage || payload.mode !== 'primary' || payload.migrationStatus === 'validated';
   promoteRedundancySecondaryButton.hidden = !canManage || payload.mode !== 'secondary';
 }
 
@@ -5059,7 +5091,7 @@ async function loadRedundancyStatus() {
 }
 
 configureRedundancyPrimaryButton.addEventListener('click', async () => {
-  const siteName = window.prompt('Nome deste ambiente principal:', 'Servidor principal');
+  const siteName = window.prompt('Nome deste ambiente principal:', latestRedundancyStatus?.serverName || 'Servidor principal');
   if (!siteName) return;
   const publicUrl = window.prompt('URL pública deste ambiente:', window.location.origin);
   if (!publicUrl) return;
@@ -5098,22 +5130,6 @@ copyRedundancyTokenButton.addEventListener('click', async () => {
   catch { redundancyToken.select(); document.execCommand('copy'); }
   copyRedundancyTokenButton.textContent = 'Copiado';
   window.setTimeout(() => { copyRedundancyTokenButton.textContent = 'Copiar código'; }, 1800);
-});
-
-advanceRedundancyMigrationButton.addEventListener('click', async () => {
-  const next = { not_started: 'ready', ready: 'migrated', migrated: 'validated' }[latestRedundancyStatus?.migrationStatus];
-  if (!next || !window.confirm(`Avançar a migração para “${redundancyMigrationLabels[next]}”?`)) return;
-  advanceRedundancyMigrationButton.disabled = true;
-  try {
-    const response = await authenticatedFetch(`${API_BASE}/v1/redundancy/migration`, {
-      method: 'PUT', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: next })
-    });
-    if (!response.ok) throw new Error('A etapa não pode ser avançada antes da anterior.');
-    await loadRedundancyStatus();
-  } catch (error) {
-    setFormFeedback(redundancyFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
-  } finally { advanceRedundancyMigrationButton.disabled = false; }
 });
 
 promoteRedundancySecondaryButton.addEventListener('click', async () => {
@@ -5270,40 +5286,13 @@ function renderContinuityComponents(components) {
 async function loadContinuity() {
   if (continuityPollTimer) window.clearTimeout(continuityPollTimer);
   continuityPollTimer = null;
-  continuityLoading.hidden = false;
-  continuityError.hidden = true;
   refreshContinuityButton.disabled = true;
   try {
-    try {
-      await loadRedundancyStatus();
-    } catch (error) {
-      setFormFeedback(redundancyFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
-    }
-    const response = await authenticatedFetch(`${API_BASE}/v1/continuity/status`, {
-      headers: { Accept: 'application/json' }, cache: 'no-store'
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(response.status === 403 ? 'Seu perfil não possui acesso à continuidade.' : 'O monitor de continuidade não respondeu corretamente.');
-    continuityStatus.textContent = continuityPhaseLabels[payload.phase] || continuityLabels[payload.status] || payload.status;
-    continuityStatus.className = `continuity-value ${payload.phase === 'protected' ? payload.status : 'disabled'}`;
-    continuityStatusDetail.textContent = payload.phase === 'protected'
-      ? `limites: ${payload.thresholds.warningSeconds}/${payload.thresholds.criticalSeconds} s`
-      : payload.phase === 'preparing' ? 'DC-B cadastrado; validação e ativação automáticas em andamento' : 'aguardando instalação e validação do DC-B';
-    continuityRpo.textContent = payload.estimatedRpoSeconds === null ? '—' : `${formatRate(payload.estimatedRpoSeconds)} s`;
-    continuityReady.textContent = payload.failoverReady ? 'Pronto' : payload.configured ? 'Não pronto' : 'Pendente';
-    continuityReady.className = `continuity-value ${payload.failoverReady ? 'healthy' : payload.configured ? 'critical' : 'disabled'}`;
-    continuitySites.textContent = `${payload.sites.active} → ${payload.sites.standby}`;
-    continuityGeneratedAt.textContent = `Atualizado em ${formatDeviceMoment(payload.generatedAt)}`;
-    latestContinuitySnapshot = payload;
-    renderContinuityTopology(payload);
-    renderContinuityComponents(payload.components);
-    continuityLoading.hidden = true;
+    await loadRedundancyStatus();
     continuityLoaded = true;
     if (!continuityView.hidden) continuityPollTimer = window.setTimeout(() => { continuityLoaded = false; void loadContinuity(); }, 15000);
   } catch (error) {
-    continuityLoading.hidden = true;
-    continuityError.hidden = false;
-    continuityErrorMessage.textContent = error instanceof Error ? error.message : 'Falha inesperada.';
+    setFormFeedback(redundancyFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
   } finally {
     refreshContinuityButton.disabled = false;
   }

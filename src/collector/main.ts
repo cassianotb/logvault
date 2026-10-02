@@ -4,6 +4,7 @@ import { dirname } from 'node:path';
 import { loadCollectorConfig } from '../config.js';
 import { newId, sha256 } from '../core/crypto.js';
 import { HostMetricsSampler } from '../core/host-metrics.js';
+import { installedApplicationVersion } from '../core/application-version.js';
 import type { ParseContext, RawRecord } from '../domain/models.js';
 import type { CollectorDeviceConfiguration } from '../domain/models.js';
 import {
@@ -19,6 +20,8 @@ import { BatchSynchronizer } from './sync.js';
 import { ManagedCloudCollectorManager } from './managed-cloud.js';
 
 const config = loadCollectorConfig();
+const detectedVersion = installedApplicationVersion();
+const collectorVersion = detectedVersion === 'unknown' ? config.ARGUS_COLLECTOR_VERSION : detectedVersion;
 mkdirSync(dirname(config.ARGUS_SPOOL_PATH), { recursive: true });
 const spool = new CollectorSpool(config.ARGUS_SPOOL_PATH);
 const hostMetrics = new HostMetricsSampler(dirname(config.ARGUS_SPOOL_PATH));
@@ -167,7 +170,7 @@ const primarySynchronizer = new BatchSynchronizer(spool, {
   heartbeatIntervalMs: config.ARGUS_HEARTBEAT_INTERVAL_MS,
   tenantId: config.ARGUS_TENANT_ID,
   collectorId: config.ARGUS_COLLECTOR_ID,
-  version: config.ARGUS_COLLECTOR_VERSION,
+  version: collectorVersion,
   netflowPort: config.ARGUS_NETFLOW_PORT,
   syslogPort: config.ARGUS_SYSLOG_PORT
 }, undefined, undefined, (devices) => applyDeviceRegistry(devices, true), () => hostMetrics.sample());
@@ -187,7 +190,7 @@ if (config.ARGUS_SECONDARY_SYNC_URL) {
     heartbeatIntervalMs: config.ARGUS_HEARTBEAT_INTERVAL_MS,
     tenantId: config.ARGUS_TENANT_ID,
     collectorId: config.ARGUS_COLLECTOR_ID,
-    version: config.ARGUS_COLLECTOR_VERSION,
+    version: collectorVersion,
     netflowPort: config.ARGUS_NETFLOW_PORT,
     syslogPort: config.ARGUS_SYSLOG_PORT
   }, undefined, undefined, undefined, () => hostMetrics.sample()));
@@ -198,7 +201,7 @@ const managedCloud = config.ARGUS_MANAGED_CLOUD_ENABLED
   ? new ManagedCloudCollectorManager(spool, {
       registryUrl: config.ARGUS_MANAGED_CLOUD_REGISTRY_URL,
       token: config.ARGUS_SYNC_TOKEN,
-      version: config.ARGUS_COLLECTOR_VERSION,
+      version: collectorVersion,
       host: config.ARGUS_NETFLOW_HOST,
       heartbeatIntervalMs: config.ARGUS_HEARTBEAT_INTERVAL_MS,
       ignoredA10Protocols: config.ARGUS_A10_IGNORED_PROTOCOLS,

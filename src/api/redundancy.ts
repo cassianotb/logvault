@@ -2,13 +2,13 @@ import { randomBytes } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { sha256 } from '../core/crypto.js';
+import type { HostMetrics } from '../core/host-metrics.js';
 import { authenticateRequest } from './auth.js';
 import { requirePlatformAccess } from './access-control.js';
 import type {
   AuthSession,
   PostgresRepository,
   RedundancyConfigurationSnapshot,
-  RedundancyMigrationStatus,
   RedundancyMode
 } from './postgres.js';
 
@@ -24,15 +24,24 @@ const enrollSchema = z.object({ ...siteFields, enrollmentToken: z.string().min(3
   .refine((value) => !new URL(value.publicUrl).username && !new URL(value.publicUrl).password, {
     message: 'A URL pública não pode conter credenciais', path: ['publicUrl']
   });
+const hostMetricsSchema = z.object({
+  hostname: z.string().max(255), platform: z.string().max(255),
+  uptimeSeconds: z.number().nonnegative(), cpuUsagePercent: z.number().min(0).max(100).nullable(),
+  memoryTotalBytes: z.number().nonnegative(), memoryUsedBytes: z.number().nonnegative(),
+  diskTotalBytes: z.number().nonnegative().nullable(), diskUsedBytes: z.number().nonnegative().nullable(),
+  networkReceivedBytesPerSecond: z.number().nonnegative().nullable().optional(),
+  networkTransmittedBytesPerSecond: z.number().nonnegative().nullable().optional()
+});
 const heartbeatSchema = z.object({
-  siteId: z.string().uuid(), version: z.string().trim().min(1).max(100)
+  siteId: z.string().uuid(),
+  version: z.string().trim().min(1).max(100),
+  serverName: z.string().trim().min(1).max(120),
+  sampledAt: z.string().datetime({ offset: true }),
+  metrics: hostMetricsSchema
 });
 const promotionSchema = z.object({
   confirmation: z.literal('PROMOVER SECUNDARIO'),
   primaryIsolated: z.literal(true)
-});
-const migrationSchema = z.object({
-  status: z.enum(['ready', 'migrated', 'validated'])
 });
 const siteIdSchema = z.object({ siteId: z.string().uuid() });
 const timestampSchema = z.string().datetime({ offset: true });
@@ -41,6 +50,10 @@ const redundancySnapshotSchema = z.object({
   generatedAt: timestampSchema,
   authorityEpoch: z.number().int().positive(),
   configurationRevision: z.number().int().positive(),
+  peerTelemetry: z.object({
+    serverName: z.string().trim().min(1).max(120), version: z.string().trim().min(1).max(100),
+    sampledAt: timestampSchema, metrics: hostMetricsSchema
+  }).optional(),
   tenants: z.array(z.object({
     id: z.string().uuid(), name: z.string(), timezone: z.string(), active: z.boolean(),
     tenantKind: z.string(), createdAt: timestampSchema
@@ -114,30 +127,27 @@ export function registerRedundancyRoutes(app: FastifyInstance, dependencies: {
   postgres: PostgresRepository;
   applicationVersion: string;
   publicUrl: string;
-  legacyConfigured: () => Promise<boolean>;
+  serverName: string;
+  localTelemetryProvider: () => { metrics: HostMetrics; sampledAt: string };
+  onSiteHeartbeat?: (input: { siteId: string; serverName: string; metrics: HostMetrics; sampledAt: string }) => Promise<void>;
   onModeChanged?: (mode: RedundancyMode) => void;
 }): void {
   app.get('/v1/redundancy/status', async (request, reply) => {
     if (!await platformAdmin(request, reply, dependencies.postgres, 'view')) return;
-    const [settings, sites, legacyConfigured] = await Promise.all([
+    const [settings, sites] = await Promise.all([
       dependencies.postgres.getRedundancySettings(),
-      dependencies.postgres.listRedundancySites(),
-      dependencies.legacyConfigured()
+      dependencies.postgres.listRedundancySites()
     ]);
     return reply.send({
       ...settings,
+      serverName: dependencies.serverName,
       sites: sites.filter((site) => site.status !== 'revoked').map((site) => ({
         ...site,
         status: site.status === 'active' && (!site.lastSeenAt || Date.now() - new Date(site.lastSeenAt).getTime() > 120_000)
           ? 'offline' : site.status
       })),
       administrationReadOnly: settings.mode === 'secondary',
-      ingestionActive: true,
-      legacy: {
-        label: 'Legado', configured: legacyConfigured,
-        removable: settings.migrationStatus === 'validated',
-        message: 'A replicação direta antiga permanece disponível somente para migração controlada.'
-      }
+      ingestionActive: true
     });
   });
 
@@ -215,7 +225,15 @@ export function registerRedundancyRoutes(app: FastifyInstance, dependencies: {
     const site = await authenticateSite(request, reply);
     if (!site) return;
     await dependencies.postgres.touchRedundancySite(site.id, site.version || 'sync');
-    return reply.send(await dependencies.postgres.exportRedundancyConfiguration());
+    const snapshot = await dependencies.postgres.exportRedundancyConfiguration();
+    const telemetry = dependencies.localTelemetryProvider();
+    return reply.send({
+      ...snapshot,
+      peerTelemetry: {
+        serverName: dependencies.serverName, version: dependencies.applicationVersion,
+        sampledAt: telemetry.sampledAt, metrics: telemetry.metrics
+      }
+    });
   });
 
   app.post('/v1/redundancy/heartbeat', async (request, reply) => {
@@ -225,7 +243,11 @@ export function registerRedundancyRoutes(app: FastifyInstance, dependencies: {
     if (!parsed.success || parsed.data.siteId !== site.id) {
       return reply.code(403).send({ error: 'redundancy_site_identity_mismatch' });
     }
-    await dependencies.postgres.touchRedundancySite(site.id, parsed.data.version);
+    await dependencies.postgres.touchRedundancySite(site.id, parsed.data.version, parsed.data.serverName);
+    await dependencies.onSiteHeartbeat?.({
+      siteId: site.id, serverName: parsed.data.serverName,
+      metrics: parsed.data.metrics, sampledAt: parsed.data.sampledAt
+    });
     return reply.send({ status: 'recorded', receivedAt: new Date().toISOString() });
   });
 
@@ -258,28 +280,6 @@ export function registerRedundancyRoutes(app: FastifyInstance, dependencies: {
     return reply.send({ status: 'revoked' });
   });
 
-  app.put('/v1/redundancy/migration', async (request, reply) => {
-    const session = await platformAdmin(request, reply, dependencies.postgres, 'manage');
-    if (!session) return;
-    const parsed = migrationSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: 'invalid_migration_status' });
-    const current = await dependencies.postgres.getRedundancySettings();
-    const order: RedundancyMigrationStatus[] = ['not_started', 'ready', 'migrated', 'validated'];
-    if (order.indexOf(parsed.data.status) !== order.indexOf(current.migrationStatus) + 1) {
-      return reply.code(409).send({ error: 'migration_transition_not_allowed', current: current.migrationStatus });
-    }
-    if (current.mode !== 'primary') {
-      return reply.code(409).send({ error: 'redundancy_primary_required' });
-    }
-    if (parsed.data.status === 'migrated' || parsed.data.status === 'validated') {
-      const sites = await dependencies.postgres.listRedundancySites();
-      const healthySecondary = sites.some((site) => site.role === 'secondary' && site.status === 'active'
-        && site.lastSeenAt && Date.now() - new Date(site.lastSeenAt).getTime() <= 120_000);
-      if (!healthySecondary) return reply.code(409).send({ error: 'healthy_secondary_required' });
-    }
-    const settings = await dependencies.postgres.updateRedundancyMigrationStatus(session.id, parsed.data.status);
-    return reply.send({ settings, legacyRemovalAllowed: settings.migrationStatus === 'validated' });
-  });
 }
 
 export function startRedundancyConfigurationSync(dependencies: {
@@ -288,6 +288,9 @@ export function startRedundancyConfigurationSync(dependencies: {
   siteId: string;
   siteToken: string;
   applicationVersion: string;
+  serverName: string;
+  metricsProvider: () => { metrics: HostMetrics; sampledAt: string };
+  onPrimaryTelemetry?: (input: { serverName: string; version: string; metrics: HostMetrics; sampledAt: string }) => Promise<void>;
   intervalMs: number;
   onError?: (error: unknown) => void;
   fetchImpl?: typeof fetch;
@@ -306,10 +309,15 @@ export function startRedundancyConfigurationSync(dependencies: {
       if (!response.ok) throw new Error(`Sincronização de configuração recusada: HTTP ${response.status}`);
       const snapshot = redundancySnapshotSchema.parse(await response.json()) as RedundancyConfigurationSnapshot;
       await dependencies.postgres.applyRedundancyConfiguration(snapshot);
+      if (snapshot.peerTelemetry) await dependencies.onPrimaryTelemetry?.(snapshot.peerTelemetry);
+      const telemetry = dependencies.metricsProvider();
       const heartbeat = await request(new URL('/api/v1/redundancy/heartbeat', dependencies.primaryUrl), {
         method: 'POST',
         headers: { authorization: `Bearer ${dependencies.siteToken}`, 'content-type': 'application/json' },
-        body: JSON.stringify({ siteId: dependencies.siteId, version: dependencies.applicationVersion }),
+        body: JSON.stringify({
+          siteId: dependencies.siteId, version: dependencies.applicationVersion,
+          serverName: dependencies.serverName, sampledAt: telemetry.sampledAt, metrics: telemetry.metrics
+        }),
         redirect: 'error', signal: AbortSignal.timeout(5_000)
       });
       if (!heartbeat.ok) throw new Error(`Heartbeat de redundância recusado: HTTP ${heartbeat.status}`);

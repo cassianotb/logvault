@@ -58,21 +58,32 @@ export function registerServerRoutes(app: FastifyInstance, dependencies: {
   postgres: PostgresRepository;
   clickhouse: ClickHouseRepository;
   cloudMetricsProvider: () => HostMetrics;
+  localServerName: string;
+  localRedundancyRole: 'standalone' | 'primary' | 'secondary';
+  primaryPeerMetricsProvider?: () => Promise<{ metrics: HostMetrics | null; sampledAt: string | null; serverName: string | null }>;
   standbyMetricsProvider?: () => Promise<{ metrics: HostMetrics | null; sampledAt: string | null }>;
 }): void {
   app.get('/v1/servers/status', async (request, reply) => {
     const session = await authenticateRequest(request, reply, dependencies.postgres, { allowPlatformContext: true });
     if (!session) return;
     const generatedAt = new Date();
-    const cloudMetrics = dependencies.cloudMetricsProvider();
-    const [continuitySettings, continuityEnrollment] = await Promise.all([
-      dependencies.postgres.getPlatformContinuitySettings(),
-      dependencies.postgres.getCurrentContinuityEnrollment()
+    const localMetrics = dependencies.cloudMetricsProvider();
+    const [redundancySettings, redundancySites] = await Promise.all([
+      dependencies.postgres.getRedundancySettings(),
+      dependencies.postgres.listRedundancySites()
     ]);
-    const standbyRegistered = continuityEnrollment?.status === 'enrolled' && Boolean(continuitySettings);
-    const standbySnapshot = standbyRegistered && dependencies.standbyMetricsProvider
-      ? await dependencies.standbyMetricsProvider().catch(() => ({ metrics: null, sampledAt: null }))
-      : { metrics: null, sampledAt: null };
+    const standbySite = redundancySites.find((site) => site.role === 'secondary' && site.status !== 'revoked');
+    const standbyRegistered = Boolean(standbySite) || redundancySettings.mode === 'secondary';
+    const primaryPeerSnapshot = redundancySettings.mode === 'secondary' && dependencies.primaryPeerMetricsProvider
+      ? await dependencies.primaryPeerMetricsProvider().catch(() => ({ metrics: null, sampledAt: null, serverName: null }))
+      : { metrics: null, sampledAt: null, serverName: null };
+    const primaryMetrics = redundancySettings.mode === 'secondary' ? primaryPeerSnapshot.metrics : localMetrics;
+    const primarySampledAt = redundancySettings.mode === 'secondary' ? primaryPeerSnapshot.sampledAt : generatedAt.toISOString();
+    const standbySnapshot = redundancySettings.mode === 'secondary'
+      ? { metrics: localMetrics, sampledAt: generatedAt.toISOString() }
+      : standbyRegistered && dependencies.standbyMetricsProvider
+        ? await dependencies.standbyMetricsProvider().catch(() => ({ metrics: null, sampledAt: null }))
+        : { metrics: null, sampledAt: null };
     const allCollectors = session.context === 'platform'
       ? (await Promise.all((await dependencies.postgres.listPlatformTenants())
         .filter((tenant) => tenant.active)
@@ -98,34 +109,22 @@ export function registerServerRoutes(app: FastifyInstance, dependencies: {
       id: 'cloud-primary',
       collectorId: null,
       name: 'Servidor principal',
-      siteName: continuitySettings?.siteAName ?? 'Data Center A',
+      siteName: redundancySettings.mode === 'secondary'
+        ? primaryPeerSnapshot.serverName ?? 'Servidor principal' : dependencies.localServerName,
       infrastructureRole: 'primary' as const,
       tenantId: null,
       tenantName: session.context === 'platform' ? 'Plataforma' : null,
       location: 'cloud' as const,
-      status: resourceHealthStatus(cloudMetrics),
-      connectionStatus: 'connected',
-      lastSeenAt: generatedAt.toISOString(),
+      status: primaryMetrics ? resourceHealthStatus(primaryMetrics) : 'offline' as const,
+      connectionStatus: primaryMetrics ? 'connected' : 'offline',
+      lastSeenAt: primarySampledAt,
       hostedCollectors: cloudCollectorServices.map((collector) => ({ ...collector, placement: 'active' as const })),
-      ...publicMetrics(cloudMetrics)
+      ...publicMetrics(primaryMetrics)
     }, ...(standbyRegistered ? (() => {
-      const inventory = continuityEnrollment.inventory ?? {};
-      const inventoryDisks = typeof inventory.disksGiB === 'object' && inventory.disksGiB !== null
-        ? inventory.disksGiB as Record<string, unknown> : {};
-      const inventoryMemoryGiB = typeof inventory.memoryGiB === 'number' ? inventory.memoryGiB : null;
-      const inventoryStorageGiB = Object.values(inventoryDisks)
-        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
-        .reduce((total, value) => total + value, 0);
       const publicStandby = publicMetrics(standbySnapshot.metrics);
-      if (!standbySnapshot.metrics) {
-        publicStandby.hostname = typeof inventory.hostname === 'string' ? inventory.hostname : null;
-        publicStandby.platform = typeof inventory.operatingSystem === 'string' ? inventory.operatingSystem : null;
-        publicStandby.memory.totalBytes = inventoryMemoryGiB === null ? null : inventoryMemoryGiB * 1024 ** 3;
-        publicStandby.storage.totalBytes = inventoryStorageGiB > 0 ? inventoryStorageGiB * 1024 ** 3 : null;
-      }
       return [{
         id: 'cloud-standby', collectorId: null, name: 'Servidor de backup',
-        siteName: continuitySettings!.siteBName, infrastructureRole: 'standby' as const,
+        siteName: standbySite?.name ?? dependencies.localServerName, infrastructureRole: 'standby' as const,
         tenantId: null, tenantName: session.context === 'platform' ? 'Plataforma' : null,
         location: 'cloud' as const,
         status: standbySnapshot.metrics ? resourceHealthStatus(standbySnapshot.metrics) : 'offline' as const,
@@ -134,18 +133,7 @@ export function registerServerRoutes(app: FastifyInstance, dependencies: {
         hostedCollectors: cloudCollectorServices.map((collector) => ({ ...collector, placement: 'standby' as const })),
         ...publicStandby
       }];
-    })() : [{
-      id: 'cloud-standby', collectorId: null, name: 'Servidor de backup',
-      siteName: continuitySettings?.siteBName ?? 'Data Center B', infrastructureRole: 'standby' as const,
-      tenantId: null, tenantName: session.context === 'platform' ? 'Plataforma' : null,
-      location: 'cloud' as const,
-      status: continuityEnrollment?.status === 'pending' ? 'collecting' as const : 'not_implemented' as const,
-      connectionStatus: continuityEnrollment?.status === 'pending' ? 'pending' as const : 'not_configured' as const,
-      historyAvailable: false,
-      lastSeenAt: null,
-      hostedCollectors: cloudCollectorServices.map((collector) => ({ ...collector, placement: 'not_implemented' as const })),
-      ...publicMetrics(null)
-    }]), ...collectors.map((collector) => {
+    })() : []), ...collectors.map((collector) => {
       const connection = collector.configuredStatus === 'disabled'
         ? 'disabled' as const
         : collectorConnectionStatus(collector.lastSeenAt, generatedAt.getTime());
@@ -202,10 +190,11 @@ export function registerServerRoutes(app: FastifyInstance, dependencies: {
     let tenantName: string | null = session.context === 'platform' ? 'Plataforma' : null;
     let location: 'cloud' | 'edge' = 'cloud';
     if (serverId === 'cloud-standby') {
-      const [settings, enrollment] = await Promise.all([
-        dependencies.postgres.getPlatformContinuitySettings(), dependencies.postgres.getCurrentContinuityEnrollment()
+      const [settings, sites] = await Promise.all([
+        dependencies.postgres.getRedundancySettings(), dependencies.postgres.listRedundancySites()
       ]);
-      if (!settings || enrollment?.status !== 'enrolled') return reply.code(404).send({ error: 'server_not_found' });
+      const site = sites.find((candidate) => candidate.role === 'secondary' && candidate.status !== 'revoked');
+      if (!site && settings.mode !== 'secondary') return reply.code(404).send({ error: 'server_not_found' });
       name = 'Servidor de backup';
       tenantName = session.context === 'platform' ? 'Plataforma' : null;
     } else if (serverId !== 'cloud-primary') {

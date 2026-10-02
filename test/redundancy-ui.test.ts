@@ -14,5 +14,12 @@ describe('pareamento de redundância no painel', () => {
     expect(script).not.toContain('redundancyToken.value = `sudo ./install.sh');
     expect(script).toContain("metric('NetFlow redundante'");
     expect(script).toContain("metric('Syslog redundante'");
+    expect(html).not.toContain('MIGRAÇÃO DO LEGADO');
+    expect(html).not.toContain('id="advance-redundancy-migration"');
+    expect(html).toContain('id="tenant-manual-nav"');
+    expect(html).toContain('Manual de uso do LogVault');
+    expect(html).toContain('Enviar NetFlow v9 ao LogVault');
+    expect(html).toContain('Enviar Syslog CGNAT ao LogVault');
+    expect(script).not.toContain('ARGUS_COLLECTOR_VERSION=0.1.0');
   });
 });

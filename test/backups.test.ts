@@ -24,6 +24,11 @@ const session: AuthSession = {
   homeTenantTimezone: 'America/Sao_Paulo', name: 'Administrador', email: 'admin@example.com',
   role: 'admin', platformAdmin: false, context: 'tenant', expiresAt: '2026-12-01T00:00:00.000Z'
 };
+const platformSession: AuthSession = {
+  ...session,
+  platformAdmin: true,
+  platformOwner: true
+};
 
 function job(overrides: Partial<TenantBackupJob> = {}): TenantBackupJob {
   return {
@@ -169,11 +174,11 @@ describe('Google Drive para backup', () => {
   });
 });
 
-describe('isolamento dos backups por cliente', () => {
-  it('obtém e cria jobs usando exclusivamente o tenant da sessão', async () => {
+describe('backups de cliente administrados pela plataforma', () => {
+  it('permite ao administrador da plataforma operar exclusivamente o tenant ativo', async () => {
     const tenantIds: string[] = [];
     const repository = {
-      findActiveSession: async () => session,
+      findActiveSession: async () => platformSession,
       listTenantBackupJobs: async (requestedTenantId: string) => { tenantIds.push(requestedTenantId); return [job()]; },
       getPlatformBackupDestination: async () => null,
       createTenantBackupJob: async (input: { tenantId: string }) => { tenantIds.push(input.tenantId); return job(); }
@@ -191,9 +196,9 @@ describe('isolamento dos backups por cliente', () => {
     await app.close();
   });
 
-  it('não permite gerar ou baixar backup de outro cliente', async () => {
+  it('não expõe listagem, geração ou download ao administrador do cliente', async () => {
     const repository = {
-      findActiveSession: async () => ({ ...session, role: 'operator' as const }),
+      findActiveSession: async () => session,
       getTenantBackupJob: async (requestedTenantId: string) => {
         expect(requestedTenantId).toBe(tenantId);
         return null;
@@ -201,10 +206,12 @@ describe('isolamento dos backups por cliente', () => {
     } as unknown as PostgresRepository;
     const app = Fastify();
     registerBackupRoutes(app, { postgres: repository, encryptionKey: 'a'.repeat(64), tenantBackupRoot: '/tmp', trigger: () => undefined });
+    const listResponse = await app.inject({ method: 'GET', url: '/v1/backups', headers: { cookie } });
     const createResponse = await app.inject({ method: 'POST', url: '/v1/backups', headers: { cookie }, payload: {} });
     const downloadResponse = await app.inject({
       method: 'GET', url: '/v1/backups/30000000-0000-4000-8000-000000000099/download', headers: { cookie }
     });
+    expect(listResponse.statusCode).toBe(403);
     expect(createResponse.statusCode).toBe(403);
     expect(downloadResponse.statusCode).toBe(403);
     await app.close();
@@ -213,7 +220,7 @@ describe('isolamento dos backups por cliente', () => {
   it('consulta o job de download sempre dentro do tenant autenticado', async () => {
     let requestedTenantId = '';
     const repository = {
-      findActiveSession: async () => session,
+      findActiveSession: async () => platformSession,
       getTenantBackupJob: async (candidateTenantId: string) => { requestedTenantId = candidateTenantId; return null; }
     } as unknown as PostgresRepository;
     const app = Fastify();

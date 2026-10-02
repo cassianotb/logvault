@@ -179,6 +179,7 @@
             <a class="nav-item" href="#empresa" data-view="company" id="company-nav"><svg aria-hidden="true"><use href="#icon-building"/></svg> Dados da empresa</a>
             <a class="nav-item" href="#auditoria" data-view="audit" id="audit-nav"><svg aria-hidden="true"><use href="#icon-file-search"/></svg> Auditoria</a>
             <a class="nav-item" href="#integracoes" data-view="integrations" id="integrations-nav"><svg aria-hidden="true"><use href="#icon-plug"/></svg> Integrações</a>
+            <a class="nav-item" href="#manual" data-view="manual" id="tenant-manual-nav"><svg aria-hidden="true"><use href="#icon-book"/></svg> Manual</a>
           </section>
 
           <section class="nav-group" id="platform-nav-group" aria-labelledby="nav-platform-title" hidden>
@@ -213,7 +214,6 @@
             <div><span>Ambiente do cliente</span><strong id="tenant-context-name">—</strong></div>
             <button type="button" id="return-platform">Voltar para a plataforma</button>
           </div>
-          <div class="environment" id="environment-label"><span></span> Plataforma</div>
         </header>
 
         <section class="content" id="platform-dashboard-view" hidden>
@@ -615,7 +615,7 @@
           <div class="intro devices-intro">
             <div>
               <h2>Serviços e continuidade</h2>
-              <p>Acompanhe os componentes da plataforma e a execução dos backups de configuração, logs e spool.</p>
+              <p id="system-intro-copy">Acompanhe os componentes da plataforma.</p>
             </div>
             <button class="secondary-button refresh-button" id="refresh-system" type="button">Atualizar agora</button>
           </div>
@@ -624,7 +624,7 @@
             <article><span>SERVIÇOS</span><strong id="system-service-total">—</strong><small>componentes monitorados</small></article>
             <article><span>OPERACIONAIS</span><strong class="summary-good" id="system-service-running">—</strong><small>funcionando normalmente</small></article>
             <article><span>ATENÇÃO</span><strong class="summary-warning" id="system-service-attention">—</strong><small>componentes com ocorrência</small></article>
-            <article><span>ÚLTIMO BACKUP</span><strong id="system-last-backup">—</strong><small id="system-backup-detail">aguardando rotina</small></article>
+            <article id="system-backup-summary"><span>ÚLTIMO BACKUP</span><strong id="system-last-backup">—</strong><small id="system-backup-detail">aguardando rotina</small></article>
           </div>
 
           <section class="devices-panel system-services-panel" aria-live="polite">
@@ -634,7 +634,7 @@
             <div class="system-service-list" id="system-service-list" hidden></div>
           </section>
 
-          <section class="devices-panel backup-panel">
+          <section class="devices-panel backup-panel" id="backup-history-panel">
             <div class="devices-panel-head"><div><p class="eyebrow">Continuidade</p><h2>Backups recentes</h2></div><small class="backup-policy-copy"><span id="backup-policy">A cada 24h · retenção 35 dias</span><span id="backup-remote">Cópia externa não configurada</span></small></div>
             <div class="table-wrap" id="backup-table-wrap" hidden>
               <table class="audit-table"><thead><tr><th>Concluído em</th><th>PostgreSQL</th><th>ClickHouse</th><th>Spool local</th><th>ID</th><th>Proteção manual</th></tr></thead><tbody id="backup-body"></tbody></table>
@@ -750,7 +750,7 @@
                     <label><input type="checkbox" name="source" value="collector"><span><strong>Coletores</strong><small>Conexão e heartbeat</small></span></label>
                     <label><input type="checkbox" name="source" value="spool"><span><strong>Fila local</strong><small>Dados aguardando envio</small></span></label>
                     <label><input type="checkbox" name="source" value="parser"><span><strong>Parsing</strong><small>Falhas de normalização</small></span></label>
-                    <label><input type="checkbox" name="source" value="backup"><span><strong>Backups</strong><small>Rotina e cópia externa</small></span></label>
+                    <label id="backup-alert-source"><input type="checkbox" name="source" value="backup"><span><strong>Backups</strong><small>Rotina e cópia externa</small></span></label>
                     <label><input type="checkbox" name="source" value="server"><span><strong>Servidores</strong><small>CPU, RAM e disco</small></span></label>
                     <label><input type="checkbox" name="source" value="continuity"><span><strong>Continuidade</strong><small>Replicação e DC-B</small></span></label>
                   </div>
@@ -802,13 +802,11 @@
             <div class="redundancy-summary">
               <article><span>PAPEL DESTA VM</span><strong id="redundancy-local-role">—</strong><small id="redundancy-read-only">aguardando configuração</small></article>
               <article><span>AMBIENTES PAREADOS</span><strong id="redundancy-site-count">—</strong><small>servidores independentes</small></article>
-              <article><span>MIGRAÇÃO DO LEGADO</span><strong id="redundancy-migration">—</strong><small id="redundancy-migration-detail">sem alteração automática</small></article>
             </div>
             <div class="redundancy-sites" id="redundancy-sites"></div>
             <div class="device-page-actions redundancy-actions">
               <button class="secondary-button" id="configure-redundancy-primary" type="button">Ativar como principal</button>
               <button class="primary-button" id="create-redundancy-enrollment" type="button" hidden>Adicionar servidor secundário</button>
-              <button class="secondary-button" id="advance-redundancy-migration" type="button" hidden>Avançar migração</button>
               <button class="primary-button" id="promote-redundancy-secondary" type="button" hidden>Promover esta VM</button>
             </div>
             <div class="continuity-enrollment-command" id="redundancy-enrollment-command" hidden>
@@ -819,9 +817,7 @@
             <p class="form-feedback" id="redundancy-feedback" hidden></p>
           </section>
 
-          <div class="legacy-section-heading"><div><span>LEGADO</span><strong>Replicação direta de bancos</strong></div><p>Mantida temporariamente para migração controlada. Não será removida antes da validação completa.</p></div>
-
-          <section class="continuity-command-center" aria-live="polite">
+          <section class="continuity-command-center" aria-live="polite" hidden>
             <div class="continuity-command-primary">
               <span class="continuity-command-icon" aria-hidden="true"><svg><use href="#icon-datacenters"/></svg></span>
               <div><p class="eyebrow">Estado geral</p><strong class="continuity-value" id="continuity-status">—</strong><p id="continuity-status-detail">Aguardando leitura do ambiente</p></div>
@@ -834,7 +830,7 @@
             <small class="continuity-command-updated" id="continuity-generated-at">Aguardando atualização</small>
           </section>
 
-          <section class="devices-panel continuity-topology-panel">
+          <section class="devices-panel continuity-topology-panel" hidden>
             <div class="devices-panel-head"><div><p class="eyebrow">Mapa operacional</p><h2>Onde cada serviço está rodando</h2></div><span class="continuity-observer" id="continuity-observer">Observador indisponível</span></div>
             <div class="state" id="continuity-loading"><div class="device-loading-dot" aria-hidden="true"></div><strong>Consultando os dois datacenters…</strong></div>
             <div class="state error-state" id="continuity-error" hidden><div class="state-icon" aria-hidden="true">!</div><strong>Não foi possível consultar a continuidade</strong><p id="continuity-error-message">Tente novamente.</p></div>
@@ -872,7 +868,7 @@
             </details>
           </section>
 
-          <section class="devices-panel continuity-settings-panel" id="continuity-settings-panel">
+          <section class="devices-panel continuity-settings-panel" id="continuity-settings-panel" hidden>
             <div class="devices-panel-head continuity-settings-head"><div><p class="eyebrow">Cadastro automático</p><h2>Data Center B</h2></div><button class="primary-button" id="configure-continuity" type="button" hidden>Adicionar DC-B</button></div>
             <div class="continuity-settings-overview">
               <article><span>CADASTRO</span><strong id="continuity-settings-origin">—</strong><small id="continuity-settings-source">Consultando o cadastro</small></article>
@@ -886,7 +882,7 @@
             </div>
           </section>
 
-          <dialog class="alert-wizard-dialog continuity-wizard-dialog" id="continuity-settings-dialog">
+          <dialog class="alert-wizard-dialog continuity-wizard-dialog" id="continuity-settings-dialog" hidden>
             <form class="alert-wizard-form" id="continuity-settings-form">
               <div class="alert-wizard-head"><div><p class="eyebrow">Cadastro seguro</p><h2>Adicionar Data Center B</h2></div><button type="button" id="close-continuity-settings" aria-label="Fechar">×</button></div>
               <div class="alert-wizard-body">
@@ -913,7 +909,7 @@
             </form>
           </dialog>
 
-          <div class="notice server-health-note"><span aria-hidden="true">i</span><div><strong>Monitoramento sem ação automática</strong><p>Esta tela não promove bancos nem altera o tráfego. A troca de datacenter continuará seguindo o runbook e a etapa obrigatória de fencing do site ativo.</p></div></div>
+          <div class="notice server-health-note" hidden><span aria-hidden="true">i</span><div><strong>Monitoramento sem ação automática</strong></div></div>
         </section>
 
         <section class="content" id="servers-view" hidden>
@@ -1285,11 +1281,11 @@
               <p class="eyebrow">Central de conhecimento</p>
               <h2>Manual operacional do LogVault</h2>
               <p>Entenda como a plataforma recebe, protege, organiza e disponibiliza evidências CGNAT — da implantação à continuidade entre datacenters.</p>
-              <div class="manual-hero-meta"><span>Versão operacional 1.0</span><span>Atualizado em 25/09/2026</span><span>Leitura estimada: 20 minutos</span></div>
+              <div class="manual-hero-meta"><span>Versão operacional 1.1</span><span>Atualizado em 02/10/2026</span><span>Leitura estimada: 20 minutos</span></div>
             </div>
             <div class="manual-hero-actions">
               <label for="manual-search">Pesquisar no manual</label>
-              <div><input id="manual-search" type="search" placeholder="Ex.: coletor, firewall, failover…" autocomplete="off"><button class="secondary-button" id="print-manual" type="button">Imprimir / salvar PDF</button></div>
+              <div><input id="manual-search" type="search" placeholder="Ex.: coletor, firewall, redundância…" autocomplete="off"><button class="secondary-button" id="print-manual" type="button">Imprimir / salvar PDF</button></div>
             </div>
           </header>
 
@@ -1304,7 +1300,7 @@
               <button type="button" data-manual-target="manual-investigation"><span>06</span>Consulta CGNAT</button>
               <button type="button" data-manual-target="manual-operation"><span>07</span>Operação e capacidade</button>
               <button type="button" data-manual-target="manual-security"><span>08</span>Segurança e firewall</button>
-              <button type="button" data-manual-target="manual-continuity"><span>09</span>Continuidade e DC-B</button>
+              <button type="button" data-manual-target="manual-continuity"><span>09</span>Redundância por dupla ingestão</button>
               <button type="button" data-manual-target="manual-administration"><span>10</span>Administração</button>
               <button type="button" data-manual-target="manual-routines"><span>11</span>Rotinas recomendadas</button>
               <button type="button" data-manual-target="manual-glossary"><span>12</span>Estados e glossário</button>
@@ -1343,9 +1339,9 @@
                   <div class="manual-table-wrap"><table class="manual-table"><thead><tr><th>Componente</th><th>Função</th><th>Comportamento em falha</th></tr></thead><tbody>
                     <tr><td><strong>Coletor Edge</strong><small>Servidor no cliente</small></td><td>Escuta os equipamentos na rede local e envia lotes autenticados.</td><td>Guarda a fila localmente e retoma o sincronismo quando a comunicação volta.</td></tr>
                     <tr><td><strong>Coletor Cloud</strong><small>Gerenciado pelo LogVault</small></td><td>Recebe tráfego encaminhado pela Internet em portas exclusivas.</td><td>É monitorado pela infraestrutura central e pelo firewall de ingestão.</td></tr>
-                    <tr><td><strong>PostgreSQL</strong><small>Controle</small></td><td>Cadastros, usuários, sessões, planos, configurações e auditoria.</td><td>Replica continuamente para o DC-B por streaming assíncrono.</td></tr>
-                    <tr><td><strong>ClickHouse</strong><small>Evidências</small></td><td>Registros brutos, eventos CGNAT, métricas e consultas analíticas.</td><td>Replica tabelas para o DC-B e mantém as cópias consultáveis.</td></tr>
-                    <tr><td><strong>API + Painel WEB</strong><small>Aplicação</small></td><td>Autenticação, regras de negócio, consultas e interface administrativa.</td><td>No DC-B permanece pronto para ativação controlada durante o failover.</td></tr>
+                    <tr><td><strong>PostgreSQL</strong><small>Controle</small></td><td>Cadastros, usuários, sessões, planos, configurações e auditoria.</td><td>Cada servidor mantém sua própria instância; a configuração autorizada é sincronizada entre os ambientes.</td></tr>
+                    <tr><td><strong>ClickHouse</strong><small>Evidências</small></td><td>Registros brutos, eventos CGNAT, métricas e consultas analíticas.</td><td>Cada servidor recebe e grava os logs diretamente, sem depender de uma réplica do outro.</td></tr>
+                    <tr><td><strong>API + Painel WEB</strong><small>Aplicação</small></td><td>Autenticação, regras de negócio, consultas e interface administrativa.</td><td>As duas instalações permanecem disponíveis em endereços próprios.</td></tr>
                   </tbody></table></div>
                   <div class="manual-callout"><strong>Confirmação ponta a ponta</strong><p>O coletor remove um lote da fila pendente somente após a confirmação da API. Essa regra reduz o risco de perda durante indisponibilidades temporárias.</p></div>
                 </div>
@@ -1361,9 +1357,9 @@
                     <li><span>4</span><div><strong>Implantar a coleta</strong><p>Escolha Edge ou Cloud, gere a credencial individual e cadastre os equipamentos de origem.</p></div></li>
                     <li><span>5</span><div><strong>Validar uma evidência</strong><p>Confirme recebimento, processamento e uma consulta real antes de considerar o cliente operacional.</p></div></li>
                     <li><span>6</span><div><strong>Ativar segurança e alertas</strong><p>Restrinja os IPs, configure destinatários e valide cada canal de notificação.</p></div></li>
-                    <li><span>7</span><div><strong>Implantar o DC-B</strong><p>Cadastre o standby pelo instalador, aguarde sincronismo e execute o ensaio de failover.</p></div></li>
+                    <li><span>7</span><div><strong>Implantar o servidor secundário</strong><p>Pareie a segunda instalação e valide o envio direto dos equipamentos ou coletores para os dois IPs.</p></div></li>
                   </ol>
-                  <div class="manual-checklist"><strong>Critério de aceite</strong><span>✓ Serviços saudáveis</span><span>✓ Logs chegando</span><span>✓ Consulta validada</span><span>✓ Alertas testados</span><span>✓ Backup recente</span><span>✓ DC-B sincronizado</span></div>
+                  <div class="manual-checklist"><strong>Critério de aceite</strong><span>✓ Serviços saudáveis</span><span>✓ Logs nos dois destinos</span><span>✓ Consulta validada</span><span>✓ Alertas testados</span><span>✓ Backup recente</span><span>✓ Ambientes pareados</span></div>
                 </div></article>
 
               <article class="manual-section" id="manual-clients" data-manual-section>
@@ -1415,14 +1411,12 @@
 
               <article class="manual-section" id="manual-continuity" data-manual-section>
                 <div class="manual-section-number">09</div><div class="manual-section-body">
-                  <p class="eyebrow">Continuidade e DC-B</p><h3>Replicação assíncrona, standby e failover</h3>
-                  <p>O DC-A é o site ativo. O DC-B mantém bancos replicados e a aplicação preparada. A replicação é assíncrona: as alterações são enviadas continuamente, mas pode existir um pequeno atraso, exibido como RPO observado.</p>
-                  <div class="manual-flow continuity"><div><strong>DC-A · Ativo</strong><small>Recebe gravações e atende usuários</small></div><i>⇢</i><div><strong>PostgreSQL + ClickHouse</strong><small>Replicação contínua assíncrona</small></div><i>⇢</i><div><strong>DC-B · Standby</strong><small>Cópias atualizadas, aplicação pronta</small></div></div>
-                  <h4>Implantação do standby</h4>
-                  <ol class="manual-steps compact"><li><span>1</span><div><strong>Prepare a VM do DC-B</strong><p>Linux suportado, CPU, memória, disco, DNS, relógio sincronizado e conectividade segura com o DC-A.</p></div></li><li><span>2</span><div><strong>Gere o cadastro em Continuidade</strong><p>Informe os nomes dos sites e execute o comando temporário na VM de destino.</p></div></li><li><span>3</span><div><strong>Aguarde a cópia inicial</strong><p>O painel muda de “Em preparação” para “Standby pronto” quando serviços e réplicas respondem.</p></div></li><li><span>4</span><div><strong>Realize o ensaio</strong><p>Valide DNS, aplicação, bancos e retorno ao site primário sem afetar a produção.</p></div></li></ol>
-                  <h4>Falha real do DC-A</h4>
-                  <div class="manual-runbook"><div><span>1</span><strong>Confirmar a falha</strong><p>Evite promover o DC-B por uma oscilação curta.</p></div><div><span>2</span><strong>Aplicar fencing</strong><p>Garanta que o DC-A não aceite gravações para evitar split-brain.</p></div><div><span>3</span><strong>Promover o DC-B</strong><p>Ative os bancos e a aplicação pela automação de failover.</p></div><div><span>4</span><strong>Alterar o tráfego</strong><p>Atualize DNS/VIP para que painel e ingestão apontem ao site promovido.</p></div><div><span>5</span><strong>Validar e comunicar</strong><p>Confira login, consulta, coleta, filas e perda dentro do RPO.</p></div></div>
-                  <div class="manual-callout danger"><strong>Fencing é obrigatório</strong><p>Nunca mantenha dois sites aceitando gravações independentes. O failover automatiza a promoção, mas a decisão operacional deve confirmar o isolamento do site anterior.</p></div>
+                  <p class="eyebrow">Redundância</p><h3>Duas instalações independentes com dupla ingestão</h3>
+                  <p>O servidor principal e o servidor secundário recebem os mesmos logs diretamente. Cada ambiente mantém seus próprios bancos, sua fila, seus backups e seu endereço de acesso.</p>
+                  <div class="manual-flow continuity"><div><strong>Equipamentos</strong><small>Enviam para dois IPs</small></div><i>⇢</i><div><strong>Servidor principal</strong><small>Recebe e grava localmente</small></div><i>+</i><div><strong>Servidor secundário</strong><small>Recebe e grava localmente</small></div></div>
+                  <h4>Implantação do servidor secundário</h4>
+                  <ol class="manual-steps compact"><li><span>1</span><div><strong>Prepare a segunda VM</strong><p>Instale uma segunda instância completa com armazenamento e endereço próprios.</p></div></li><li><span>2</span><div><strong>Gere o pareamento</strong><p>Na tela Redundância, gere o código temporário e informe-o ao instalador do secundário.</p></div></li><li><span>3</span><div><strong>Configure os dois destinos</strong><p>Aponte equipamentos e coletores para os IPs e portas apresentados por cada servidor.</p></div></li><li><span>4</span><div><strong>Valide de ponta a ponta</strong><p>Confirme recebimento, consultas e crescimento independente dos dois ambientes.</p></div></li></ol>
+                  <div class="manual-callout info"><strong>Sem replicação direta de bancos</strong><p>A proteção depende do envio dos logs aos dois destinos. Uma falha em um servidor não impede que o outro continue recebendo sua própria cópia.</p></div>
                 </div></article>
 
               <article class="manual-section" id="manual-administration" data-manual-section>
@@ -1435,16 +1429,88 @@
               <article class="manual-section" id="manual-routines" data-manual-section>
                 <div class="manual-section-number">11</div><div class="manual-section-body">
                   <p class="eyebrow">Rotinas recomendadas</p><h3>Checklist para manter o ambiente confiável</h3>
-                  <div class="manual-routine-grid"><article><span>DIARIAMENTE</span><ul><li>Revisar alertas críticos e de atenção</li><li>Confirmar coletores online e filas estáveis</li><li>Verificar último backup bem-sucedido</li><li>Observar espaço em disco e falhas de parser</li></ul></article><article><span>SEMANALMENTE</span><ul><li>Analisar tendência de CPU, RAM, disco e rede</li><li>Revisar origens observadas no firewall</li><li>Confirmar RPO e saúde da replicação</li><li>Investigar equipamentos sem recebimento</li></ul></article><article><span>MENSALMENTE</span><ul><li>Testar restauração de backup</li><li>Revisar usuários e perfis de acesso</li><li>Comparar capacidade com crescimento</li><li>Atualizar contatos e canais de alerta</li></ul></article><article><span>TRIMESTRALMENTE</span><ul><li>Executar ensaio de failover e failback</li><li>Revisar runbooks, DNS e responsáveis</li><li>Auditar regras de firewall e chaves SSH</li><li>Registrar resultados e ações corretivas</li></ul></article></div>
-                  <div class="manual-callout"><strong>Regra operacional</strong><p>Uma cópia só é considerada backup depois de uma restauração validada. Um standby só é considerado pronto depois de um ensaio documentado.</p></div>
+                  <div class="manual-routine-grid"><article><span>DIARIAMENTE</span><ul><li>Revisar alertas críticos e de atenção</li><li>Confirmar coletores online e filas estáveis</li><li>Verificar último backup bem-sucedido</li><li>Observar espaço em disco e falhas de parser</li></ul></article><article><span>SEMANALMENTE</span><ul><li>Analisar tendência de CPU, RAM, disco e rede</li><li>Revisar origens observadas no firewall</li><li>Confirmar recebimento nos dois servidores</li><li>Investigar equipamentos sem recebimento</li></ul></article><article><span>MENSALMENTE</span><ul><li>Testar restauração de backup</li><li>Revisar usuários e perfis de acesso</li><li>Comparar capacidade com crescimento</li><li>Atualizar contatos e canais de alerta</li></ul></article><article><span>TRIMESTRALMENTE</span><ul><li>Simular indisponibilidade de um destino</li><li>Revisar runbooks, DNS e responsáveis</li><li>Auditar regras de firewall e chaves SSH</li><li>Registrar resultados e ações corretivas</li></ul></article></div>
+                  <div class="manual-callout"><strong>Regra operacional</strong><p>Uma cópia só é considerada backup depois de uma restauração validada. A redundância só está pronta quando os dois servidores recebem e consultam os logs de forma independente.</p></div>
                 </div></article>
 
               <article class="manual-section" id="manual-glossary" data-manual-section>
                 <div class="manual-section-number">12</div><div class="manual-section-body">
                   <p class="eyebrow">Estados e glossário</p><h3>Termos usados na plataforma</h3>
-                  <div class="manual-glossary"><div><strong>CGNAT</strong><p>Compartilhamento de um IP público por múltiplos assinantes.</p></div><div><strong>RPO observado</strong><p>Maior atraso medido entre o dado ativo e sua réplica.</p></div><div><strong>RTO</strong><p>Tempo esperado para restabelecer o serviço após uma falha.</p></div><div><strong>Standby</strong><p>Ambiente sincronizado e preparado, sem receber gravações normais.</p></div><div><strong>Failover</strong><p>Promoção controlada do site secundário para assumir a operação.</p></div><div><strong>Failback</strong><p>Retorno planejado ao site original depois de sua recuperação.</p></div><div><strong>Fencing</strong><p>Isolamento do site antigo para impedir duas origens de gravação.</p></div><div><strong>Spool</strong><p>Fila persistente usada pelo coletor enquanto aguarda confirmação.</p></div><div><strong>Heartbeat</strong><p>Mensagem periódica que comprova vida e envia telemetria.</p></div><div><strong>Retenção</strong><p>Período durante o qual evidências permanecem armazenadas.</p></div><div><strong>Não implementado</strong><p>Recurso previsto, mas ainda não instalado ou cadastrado.</p></div><div><strong>Sem telemetria</strong><p>Recurso cadastrado, porém sem leitura recente suficiente.</p></div></div>
+                  <div class="manual-glossary"><div><strong>CGNAT</strong><p>Compartilhamento de um IP público por múltiplos assinantes.</p></div><div><strong>Dupla ingestão</strong><p>Envio do mesmo fluxo de logs diretamente para duas instalações independentes.</p></div><div><strong>Servidor principal</strong><p>Ambiente que mantém a autoridade das configurações administrativas.</p></div><div><strong>Servidor secundário</strong><p>Segunda instalação completa que recebe e armazena sua própria cópia dos logs.</p></div><div><strong>Spool</strong><p>Fila persistente usada pelo coletor enquanto aguarda confirmação.</p></div><div><strong>Heartbeat</strong><p>Mensagem periódica que comprova vida e envia telemetria.</p></div><div><strong>Retenção</strong><p>Período durante o qual evidências permanecem armazenadas.</p></div><div><strong>Sem telemetria</strong><p>Recurso cadastrado, porém sem leitura recente suficiente.</p></div></div>
                   <div class="manual-footer-note"><svg><use href="#icon-book"/></svg><div><strong>Este manual acompanha a plataforma</strong><p>Procedimentos específicos do ambiente — endereços, responsáveis, credenciais de emergência e contatos de operadoras — devem permanecer no runbook interno da organização.</p></div></div>
                 </div></article>
+            </div>
+          </div>
+        </section>
+
+        <section class="content manual-view" id="tenant-manual-view" hidden>
+          <header class="manual-hero">
+            <div class="manual-hero-copy">
+              <p class="eyebrow">Central de ajuda</p>
+              <h2>Manual de uso do LogVault</h2>
+              <p>Orientações para cadastrar equipamentos, enviar logs, acompanhar a coleta e realizar consultas CGNAT.</p>
+              <div class="manual-hero-meta"><span>Manual do cliente</span><span>Sem procedimentos de instalação</span><span>Atualizado com a plataforma</span></div>
+            </div>
+          </header>
+          <div class="manual-shell tenant-manual-shell">
+            <div class="manual-document">
+              <article class="manual-section">
+                <div class="manual-section-number">01</div><div class="manual-section-body">
+                  <p class="eyebrow">Primeiros passos</p><h3>Preparar a coleta de logs</h3>
+                  <ol class="manual-steps">
+                    <li><span>1</span><div><strong>Cadastre o equipamento</strong><p>Em Equipamentos, informe um nome claro, o fabricante e o IP de origem usado pelo roteador ou appliance.</p></div></li>
+                    <li><span>2</span><div><strong>Escolha o coletor</strong><p>Use as portas exibidas em Coletores. Um coletor Cloud recebe pela Internet; um coletor Edge recebe na rede local.</p></div></li>
+                    <li><span>3</span><div><strong>Configure o equipamento</strong><p>Envie NetFlow v9 para a porta NetFlow ou Syslog para a porta Syslog informada pelo LogVault.</p></div></li>
+                    <li><span>4</span><div><strong>Valide o recebimento</strong><p>Confira o último pacote, os contadores e possíveis falhas de interpretação nas telas Equipamentos e Alertas.</p></div></li>
+                  </ol>
+                  <div class="manual-callout info"><strong>IP de origem</strong><p>O IP cadastrado precisa ser o mesmo observado pelo coletor. NAT, túnel ou interface de gerenciamento podem alterar esse endereço.</p></div>
+                </div>
+              </article>
+
+              <article class="manual-section">
+                <div class="manual-section-number">02</div><div class="manual-section-body">
+                  <p class="eyebrow">Cisco</p><h3>Enviar NetFlow v9 ao LogVault</h3>
+                  <p>Use o IP e a porta NetFlow apresentados no coletor. O exemplo abaixo é uma referência para IOS/IOS-XE; os comandos podem variar conforme plataforma e versão.</p>
+                  <div class="manual-config-example"><code>flow exporter LOGVAULT<br> destination &lt;IP_DO_COLETOR&gt;<br> transport udp 2055<br> export-protocol netflow-v9<br>!<br>flow monitor LOGVAULT<br> exporter LOGVAULT<br> record netflow ipv4 original-output<br>!<br>interface &lt;INTERFACE&gt;<br> ip flow monitor LOGVAULT input<br> ip flow monitor LOGVAULT output</code></div>
+                  <div class="manual-checklist"><strong>Validação</strong><span>✓ NetFlow v9</span><span>✓ IP correto</span><span>✓ Porta do coletor</span><span>✓ Templates exportados</span><span>✓ Relógio/NTP correto</span></div>
+                </div>
+              </article>
+
+              <article class="manual-section">
+                <div class="manual-section-number">03</div><div class="manual-section-body">
+                  <p class="eyebrow">A10 Networks</p><h3>Enviar Syslog CGNAT ao LogVault</h3>
+                  <p>Configure o destino Syslog com o IP e a porta exibidos no coletor. Habilite os eventos de NAT/CGNAT necessários à correlação de endereço e porta.</p>
+                  <div class="manual-config-example"><code>logging host &lt;IP_DO_COLETOR&gt; port 5140 protocol udp<br>logging facility local0<br>logging level informational</code></div>
+                  <p>Em ambientes HA, confirme qual nó envia os eventos e evite duplicidade. Preserve data, hora, IP privado, IP público, portas e protocolo no formato enviado.</p>
+                  <div class="manual-callout"><strong>Versões do ACOS</strong><p>A nomenclatura dos comandos pode variar. Use o exemplo como referência e confirme a sintaxe da versão instalada antes de aplicar.</p></div>
+                </div>
+              </article>
+
+              <article class="manual-section">
+                <div class="manual-section-number">04</div><div class="manual-section-body">
+                  <p class="eyebrow">Consulta CGNAT</p><h3>Localizar o assinante de uma conexão</h3>
+                  <ol class="manual-steps">
+                    <li><span>1</span><div><strong>Abra Consulta</strong><p>Informe o IP público observado no registro externo.</p></div></li>
+                    <li><span>2</span><div><strong>Informe data e hora</strong><p>Use o instante do evento e confira o fuso horário mostrado pela plataforma.</p></div></li>
+                    <li><span>3</span><div><strong>Refine os filtros</strong><p>Quando disponíveis, adicione porta pública e protocolo para reduzir resultados ambíguos.</p></div></li>
+                    <li><span>4</span><div><strong>Analise o resultado</strong><p>Confira IP privado, intervalo da alocação, equipamento de origem e consistência temporal.</p></div></li>
+                    <li><span>5</span><div><strong>Exporte quando necessário</strong><p>Gere o relatório pelo próprio resultado; a consulta e a exportação permanecem registradas na auditoria.</p></div></li>
+                  </ol>
+                </div>
+              </article>
+
+              <article class="manual-section">
+                <div class="manual-section-number">05</div><div class="manual-section-body">
+                  <p class="eyebrow">Acompanhamento</p><h3>Entender estados e alertas</h3>
+                  <div class="manual-table-wrap"><table class="manual-table"><thead><tr><th>Indicação</th><th>O que verificar</th></tr></thead><tbody>
+                    <tr><td><strong>Equipamento sem recebimento</strong></td><td>Processo de exportação, rota, ACL, firewall, IP de origem e porta do coletor.</td></tr>
+                    <tr><td><strong>Falha de interpretação</strong></td><td>Fabricante cadastrado, formato do Syslog ou disponibilidade dos templates NetFlow v9.</td></tr>
+                    <tr><td><strong>Coletor desconectado</strong></td><td>Conectividade, serviço do coletor e acesso HTTPS aos destinos configurados.</td></tr>
+                    <tr><td><strong>Fila pendente</strong></td><td>Comunicação com os destinos. A fila é persistida e volta a andar quando a conexão é restabelecida.</td></tr>
+                  </tbody></table></div>
+                  <div class="manual-footer-note"><svg><use href="#icon-book"/></svg><div><strong>Precisa de ajuda?</strong><p>Ao abrir um chamado, informe equipamento, IP de origem, coletor, horário aproximado e uma amostra sanitizada do registro.</p></div></div>
+                </div>
+              </article>
             </div>
           </div>
         </section>

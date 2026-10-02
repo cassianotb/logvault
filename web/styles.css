@@ -105,8 +105,6 @@ main { min-width: 0; }
 .topbar { min-height: 82px; display: flex; align-items: center; gap: 14px; padding: 0 34px; background: var(--panel); border-bottom: 1px solid var(--line); }
 .topbar h1 { margin: 2px 0 0; font-size: 21px; letter-spacing: -.02em; }
 .eyebrow { margin: 0; color: #78859a; font-size: 9px; font-weight: 700; letter-spacing: .11em; text-transform: uppercase; }
-.environment { display: flex; align-items: center; gap: 7px; margin-left: auto; padding: 7px 10px; border: 1px solid #d5e3dc; border-radius: 18px; color: #2a6f5d; background: #f6fbf9; font-size: 10px; font-weight: 600; }
-.environment span { width: 6px; height: 6px; border-radius: 50%; background: #2fa27f; }
 .tenant-context { display: flex; align-items: center; gap: 13px; margin-left: auto; padding: 7px 8px 7px 12px; border: 1px solid #cddcf0; border-radius: 9px; background: #f5f9ff; }
 .tenant-context > div { min-width: 0; }
 .tenant-context span, .tenant-context strong { display: block; }
@@ -114,7 +112,6 @@ main { min-width: 0; }
 .tenant-context strong { max-width: 240px; margin-top: 2px; overflow: hidden; color: #223752; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .tenant-context button { height: 28px; padding: 0 10px; border: 1px solid #b9cbe3; border-radius: 6px; color: #2d65a8; background: #fff; font-size: 9px; font-weight: 700; }
 .tenant-context button:hover { border-color: #78a2d7; background: #eef5ff; }
-.tenant-context + .environment { margin-left: 0; }
 .menu-button { display: none; border: 0; background: transparent; color: var(--ink); font-size: 20px; }
 
 .content { width: min(1460px, 100%); margin: 0 auto; padding: 31px 34px 48px; }
@@ -226,7 +223,7 @@ tbody tr:hover { background: #fafcff; }
 .continuity-summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .redundancy-panel { margin-bottom: 22px; overflow: hidden; }
 .redundancy-role { padding: 6px 10px; border-radius: 999px; color: #16684f; background: #ddf3eb; font-size: 8px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
-.redundancy-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 18px; background: #f8fafc; }
+.redundancy-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 18px; background: #f8fafc; }
 .redundancy-summary article { padding: 16px; border: 1px solid #dfe6ef; border-radius: 10px; background: #fff; }
 .redundancy-summary span, .redundancy-summary strong, .redundancy-summary small { display: block; }
 .redundancy-summary span { color: #8490a1; font-size: 8px; font-weight: 800; letter-spacing: .08em; }
@@ -1054,7 +1051,8 @@ dialog.password-dialog.client-users-dialog { width: min(1120px, calc(100% - 28px
 .system-source { color: #315b91; background: #edf4fd; }
 .system-alert-title { min-width: 210px; font-weight: 700; }
 .system-alert-detail { min-width: 300px; color: #657186; white-space: normal; }
-.system-alert-action { white-space: nowrap; }
+.system-alert-action { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.alert-clear-action { color: #a43a42; }
 .alert-investigation-dialog { width: min(960px, calc(100% - 28px)); max-width: none; max-height: calc(100vh - 28px); overflow: hidden; }
 .alert-investigation-shell { display: grid; gap: 24px; max-height: calc(100vh - 28px); overflow-y: auto; padding: 28px; }
 .alert-investigation-shell .dialog-head h2 { font-size: 22px; line-height: 1.2; }
@@ -1678,7 +1676,6 @@ button.integration-catalog-option:hover:not(:disabled) { border-color: #76a8e5; 
   .tenant-context { margin-left: auto; padding: 6px; }
   .tenant-context > div { display: none; }
   .tenant-context button { padding: 0 8px; }
-  .environment { display: none; }
   .content { padding: 23px 16px 36px; }
   .retention-card { display: none; }
   .device-summary { grid-template-columns: 1fr; }
@@ -2156,6 +2153,10 @@ button.integration-catalog-option:hover:not(:disabled) { border-color: #76a8e5; 
   .manual-section-body > h3 { font-size: 17px; }
   .manual-purpose-grid, .manual-card-grid, .manual-comparison, .manual-definition-list, .manual-routine-grid, .manual-glossary, .manual-steps.compact, .manual-runbook { grid-template-columns: 1fr; }
 }
+
+.tenant-manual-shell { grid-template-columns: minmax(0, 1fr); }
+.manual-config-example { overflow-x: auto; margin: 14px 0; padding: 16px 18px; border: 1px solid #d9e2ef; border-radius: 10px; color: #dce9ff; background: #101d32; }
+.manual-config-example code { font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; }
 
 @media print {
   body { overflow: visible; background: #fff; }

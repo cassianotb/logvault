@@ -270,6 +270,7 @@ export function registerBackupRoutes(app: FastifyInstance, dependencies: {
   app.get('/v1/backups', async (request, reply) => {
     const session = await authenticateRequest(request, reply, dependencies.postgres);
     if (!session) return;
+    if (!requirePlatformAccess(session, reply, 'system', 'view')) return;
     const jobs = await dependencies.postgres.listTenantBackupJobs(session.tenantId);
     const destination = await dependencies.postgres.getPlatformBackupDestination();
     return reply.send({ backups: jobs, googleDriveAvailable: Boolean(destination?.enabled && destination.lastTestStatus === 'success') });
@@ -278,7 +279,7 @@ export function registerBackupRoutes(app: FastifyInstance, dependencies: {
   app.post('/v1/backups', async (request, reply) => {
     const session = await authenticateRequest(request, reply, dependencies.postgres);
     if (!session) return;
-    if (session.role !== 'admin') return reply.code(403).send({ error: 'tenant_administrator_required' });
+    if (!requirePlatformAccess(session, reply, 'system', 'manage')) return;
     const parsed = createJobSchema.safeParse(request.body ?? {});
     if (!parsed.success) return reply.code(400).send({ error: 'invalid_tenant_backup_request' });
     if (parsed.data.sendToGoogleDrive) {
@@ -296,7 +297,7 @@ export function registerBackupRoutes(app: FastifyInstance, dependencies: {
   app.get('/v1/backups/:jobId/download', async (request, reply) => {
     const session = await authenticateRequest(request, reply, dependencies.postgres);
     if (!session) return;
-    if (session.role !== 'admin') return reply.code(403).send({ error: 'tenant_administrator_required' });
+    if (!requirePlatformAccess(session, reply, 'system', 'manage')) return;
     const params = jobParamsSchema.safeParse(request.params);
     if (!params.success) return reply.code(400).send({ error: 'invalid_tenant_backup_id' });
     const job = await dependencies.postgres.getTenantBackupJob(session.tenantId, params.data.jobId);

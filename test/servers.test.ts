@@ -57,8 +57,8 @@ describe('saúde dos servidores', () => {
     const calls: string[] = [];
     const postgres = {
       findActiveSession: async () => session,
-      getPlatformContinuitySettings: async () => null,
-      getCurrentContinuityEnrollment: async () => null,
+      getRedundancySettings: async () => ({ mode: 'standalone' }),
+      listRedundancySites: async () => [],
       listCollectors: async (tenantId: string) => {
         calls.push(tenantId);
         return [{
@@ -72,15 +72,18 @@ describe('saúde dos servidores', () => {
     } as unknown as PostgresRepository;
     const clickhouse = { getServerMetricHistory: async () => [] } as unknown as ClickHouseRepository;
     const app = Fastify();
-    registerServerRoutes(app, { postgres, clickhouse, cloudMetricsProvider: () => metrics });
+    registerServerRoutes(app, {
+      postgres, clickhouse, cloudMetricsProvider: () => metrics,
+      localServerName: 'LOGVAULT-PRIMARIO', localRedundancyRole: 'standalone'
+    });
     const response = await app.inject({ method: 'GET', url: '/v1/servers/status', headers: { cookie } });
     expect(response.statusCode).toBe(200);
     expect(calls).toEqual([session.tenantId]);
-    expect(response.json().servers).toHaveLength(3);
+    expect(response.json().servers).toHaveLength(2);
     expect(response.json().summary.total).toBe(2);
-    expect(response.json().servers[1]).toMatchObject({ id: 'cloud-standby', status: 'not_implemented', historyAvailable: false });
-    expect(response.json().servers[2]).toMatchObject({ location: 'edge', status: 'healthy' });
-    expect(response.json().servers[2].memory.usagePercent).toBe(50);
+    expect(response.json().servers[0]).toMatchObject({ id: 'cloud-primary', siteName: 'LOGVAULT-PRIMARIO' });
+    expect(response.json().servers[1]).toMatchObject({ location: 'edge', status: 'healthy' });
+    expect(response.json().servers[1].memory.usagePercent).toBe(50);
     await app.close();
   });
 
@@ -96,8 +99,8 @@ describe('saúde dos servidores', () => {
     const secondTenantId = '20000000-0000-4000-8000-000000000012';
     const postgres = {
       findActiveSession: async () => platformSession,
-      getPlatformContinuitySettings: async () => null,
-      getCurrentContinuityEnrollment: async () => null,
+      getRedundancySettings: async () => ({ mode: 'standalone' }),
+      listRedundancySites: async () => [],
       listPlatformTenants: async () => [
         { id: firstTenantId, name: 'ISP Norte', active: true },
         { id: secondTenantId, name: 'ISP Sul', active: true }
@@ -116,12 +119,15 @@ describe('saúde dos servidores', () => {
     } as unknown as PostgresRepository;
     const clickhouse = { getServerMetricHistory: async () => [] } as unknown as ClickHouseRepository;
     const app = Fastify();
-    registerServerRoutes(app, { postgres, clickhouse, cloudMetricsProvider: () => metrics });
+    registerServerRoutes(app, {
+      postgres, clickhouse, cloudMetricsProvider: () => metrics,
+      localServerName: 'LOGVAULT-PRIMARIO', localRedundancyRole: 'standalone'
+    });
     const response = await app.inject({ method: 'GET', url: '/v1/servers/status', headers: { cookie } });
 
     expect(response.statusCode).toBe(200);
-    expect(response.json().servers).toHaveLength(4);
-    expect(response.json().servers.slice(2)).toEqual(expect.arrayContaining([
+    expect(response.json().servers).toHaveLength(3);
+    expect(response.json().servers.slice(1)).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'POP Norte', tenantName: 'ISP Norte', tenantId: firstTenantId }),
       expect.objectContaining({ name: 'POP Sul', tenantName: 'ISP Sul', tenantId: secondTenantId })
     ]));
@@ -132,11 +138,12 @@ describe('saúde dos servidores', () => {
     const collectorId = '30000000-0000-4000-8000-000000000021';
     const postgres = {
       findActiveSession: async () => session,
-      getPlatformContinuitySettings: async () => ({ siteAName: 'Matriz São Paulo', siteBName: 'DR Curitiba' }),
-      getCurrentContinuityEnrollment: async () => ({ status: 'enrolled', inventory: {
-        hostname: 'argus-dc-b', operatingSystem: 'Debian 13', memoryGiB: 16,
-        disksGiB: { system: 50, postgres: 100, clickhouse: 200 }
-      } }),
+      getRedundancySettings: async () => ({ mode: 'primary' }),
+      listRedundancySites: async () => [{
+        id: '10000000-0000-4000-8000-000000000022', name: 'LOGVAULT-BACKUP', role: 'secondary',
+        publicUrl: 'https://backup.example.com', status: 'active', version: '1.1.10',
+        lastSeenAt: new Date().toISOString(), pairedAt: new Date().toISOString()
+      }],
       listCollectors: async () => [{
         id: collectorId, name: 'POP Curitiba', mode: 'edge', configuredStatus: 'active', version: '1', deviceCount: 1,
         lastSeenAt: new Date().toISOString(), telemetrySentAt: new Date().toISOString(), pendingRecords: 0,
@@ -157,6 +164,7 @@ describe('saúde dos servidores', () => {
     const app = Fastify();
     registerServerRoutes(app, {
       postgres, clickhouse, cloudMetricsProvider: () => metrics,
+      localServerName: 'LOGVAULT-PRIMARIO', localRedundancyRole: 'primary',
       standbyMetricsProvider: async () => ({ metrics: { ...metrics, hostname: 'argus-dc-b' }, sampledAt: new Date().toISOString() })
     });
     const status = await app.inject({ method: 'GET', url: '/v1/servers/status', headers: { cookie } });
@@ -165,7 +173,7 @@ describe('saúde dos servidores', () => {
       'cloud-primary', 'cloud-standby', `collector:${collectorId}`
     ]);
     expect(status.json().servers[1]).toMatchObject({
-      name: 'Servidor de backup', siteName: 'DR Curitiba', infrastructureRole: 'standby', status: 'healthy'
+      name: 'Servidor de backup', siteName: 'LOGVAULT-BACKUP', infrastructureRole: 'standby', status: 'healthy'
     });
     expect(status.json().servers[0].hostedCollectors).toEqual([
       expect.objectContaining({ name: 'Cloud ISP', placement: 'active', netflowPort: 30000, syslogPort: 30001 })
@@ -208,7 +216,10 @@ describe('saúde dos servidores', () => {
       }
     } as unknown as ClickHouseRepository;
     const app = Fastify();
-    registerServerRoutes(app, { postgres, clickhouse, cloudMetricsProvider: () => metrics });
+    registerServerRoutes(app, {
+      postgres, clickhouse, cloudMetricsProvider: () => metrics,
+      localServerName: 'LOGVAULT-PRIMARIO', localRedundancyRole: 'standalone'
+    });
     const response = await app.inject({
       method: 'GET',
       url: `/v1/servers/history?serverId=collector:${collectorId}&period=30m`,

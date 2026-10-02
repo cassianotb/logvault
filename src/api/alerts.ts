@@ -256,10 +256,15 @@ export function startAlertProcessor(app: FastifyInstance, dependencies: {
           const observedAt = now.toISOString();
           const allAlerts = await dependencies.evaluate(settings.tenantId);
           const currentById = new Map(allAlerts.map((alert) => [alert.id, alert]));
+          const dismissalSupported = typeof dependencies.postgres.reconcileAlertDismissals === 'function'
+            && typeof dependencies.postgres.listActiveAlertDismissals === 'function';
+          if (dismissalSupported) await dependencies.postgres.reconcileAlertDismissals(settings.tenantId, [...currentById.keys()]);
+          const dismissed = new Set(dismissalSupported
+            ? await dependencies.postgres.listActiveAlertDismissals(settings.tenantId) : []);
           const states = await dependencies.postgres.listAlertDeliveryStates(settings.tenantId, settings.id);
           const statesById = new Map(states.map((state) => [state.alertId, state]));
 
-          for (const alert of allAlerts.filter((candidate) => acceptsAlert(settings, candidate))) {
+          for (const alert of allAlerts.filter((candidate) => acceptsAlert(settings, candidate) && !dismissed.has(candidate.id))) {
             const state = statesById.get(alert.id);
             const event = alertNotificationEvent(settings, state, now.getTime());
             let notifiedAt: string | null = null;

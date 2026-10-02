@@ -53,7 +53,7 @@ export const collectorConfigSchema = commonSchema.extend({
   ARGUS_SECONDARY_SYNC_URL: z.string().url().or(z.literal('')).default(''),
   ARGUS_SECONDARY_HEARTBEAT_URL: z.string().url().or(z.literal('')).default(''),
   ARGUS_SECONDARY_SYNC_TOKEN: z.string().default(''),
-  ARGUS_COLLECTOR_VERSION: z.string().min(1).max(100).default('0.1.0'),
+  ARGUS_COLLECTOR_VERSION: z.string().min(1).max(100).default('unknown'),
   ARGUS_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(5000).max(300000).default(10000),
   ARGUS_SYNC_BATCH_SIZE: z.coerce.number().int().positive().max(100000).default(5000),
   ARGUS_SYNC_INTERVAL_MS: z.coerce.number().int().min(100).default(1000),

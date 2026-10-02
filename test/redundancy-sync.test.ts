@@ -7,31 +7,51 @@ const snapshot: RedundancyConfigurationSnapshot = {
   tenants: [], users: [], servicePlans: [], tenantPlanAssignments: [], companyProfiles: [],
   collectors: [], devices: [], firewallPolicies: [], firewallAuthorizations: []
 };
+const metrics = {
+  hostname: 'logvault-backup', platform: 'linux', uptimeSeconds: 3600, cpuUsagePercent: 10,
+  memoryTotalBytes: 1000, memoryUsedBytes: 500, diskTotalBytes: 2000, diskUsedBytes: 1000
+};
 
 describe('sincronização da redundância', () => {
   it('aplica a configuração e confirma a presença do secundário', async () => {
     const applied: RedundancyConfigurationSnapshot[] = [];
+    const receivedPrimaryTelemetry: unknown[] = [];
+    const telemetrySnapshot = {
+      ...snapshot,
+      peerTelemetry: {
+        serverName: 'LOGVAULT-PRIMARIO', version: '1.1.10',
+        sampledAt: '2026-09-30T12:00:00.000Z', metrics: { ...metrics, hostname: 'logvault-primary' }
+      }
+    };
     const repository = {
       applyRedundancyConfiguration: async (value: RedundancyConfigurationSnapshot) => { applied.push(value); }
     } as unknown as PostgresRepository;
     const fetchImpl = vi.fn(async (input: string | URL) => {
       const url = String(input);
       return url.endsWith('/configuration')
-        ? new Response(JSON.stringify(snapshot), { status: 200, headers: { 'content-type': 'application/json' } })
+        ? new Response(JSON.stringify(telemetrySnapshot), { status: 200, headers: { 'content-type': 'application/json' } })
         : new Response(JSON.stringify({ status: 'recorded' }), { status: 200, headers: { 'content-type': 'application/json' } });
     });
     const stop = startRedundancyConfigurationSync({
       postgres: repository, primaryUrl: 'https://primary.example.com',
       siteId: '10000000-0000-4000-8000-000000000001', siteToken: 'secret',
-      applicationVersion: '1.1.0', intervalMs: 300000, fetchImpl
+      applicationVersion: '1.1.10', serverName: 'LOGVAULT-BACKUP',
+      metricsProvider: () => ({ metrics, sampledAt: '2026-09-30T12:00:00.000Z' }),
+      onPrimaryTelemetry: async (telemetry) => { receivedPrimaryTelemetry.push(telemetry); },
+      intervalMs: 300000, fetchImpl
     });
     await vi.waitFor(() => expect(applied).toHaveLength(1));
-    expect(applied[0]).toEqual(snapshot);
+    expect(applied[0]).toEqual(telemetrySnapshot);
+    expect(receivedPrimaryTelemetry).toEqual([telemetrySnapshot.peerTelemetry]);
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     const configurationCall = fetchImpl.mock.calls[0];
     const heartbeatCall = fetchImpl.mock.calls[1];
     expect(String(configurationCall?.[0])).toBe('https://primary.example.com/api/v1/redundancy/configuration');
     expect(String(heartbeatCall?.[0])).toBe('https://primary.example.com/api/v1/redundancy/heartbeat');
+    const heartbeatOptions = heartbeatCall?.[1] as RequestInit;
+    expect(JSON.parse(String(heartbeatOptions.body))).toMatchObject({
+      version: '1.1.10', serverName: 'LOGVAULT-BACKUP', metrics
+    });
     stop();
   });
 
@@ -42,7 +62,8 @@ describe('sincronização da redundância', () => {
       postgres: { applyRedundancyConfiguration: apply } as unknown as PostgresRepository,
       primaryUrl: 'https://primary.example.com',
       siteId: '10000000-0000-4000-8000-000000000001', siteToken: 'secret',
-      applicationVersion: '1.1.0', intervalMs: 300000,
+      applicationVersion: '1.1.10', serverName: 'LOGVAULT-BACKUP',
+      metricsProvider: () => ({ metrics, sampledAt: '2026-09-30T12:00:00.000Z' }), intervalMs: 300000,
       fetchImpl: async () => new Response('', { status: 503 }), onError
     });
     await vi.waitFor(() => expect(onError).toHaveBeenCalledOnce());

@@ -465,6 +465,7 @@ export interface RedundancyConfigurationSnapshot {
   generatedAt: string;
   authorityEpoch: number;
   configurationRevision: number;
+  peerTelemetry?: { serverName: string; version: string; sampledAt: string; metrics: HostMetrics };
   tenants: Array<{ id: string; name: string; timezone: string; active: boolean; tenantKind: string; createdAt: string }>;
   users: Array<{
     id: string; tenantId: string; name: string; email: string; passwordHash: string;
@@ -5282,6 +5283,30 @@ export class PostgresRepository {
     }));
   }
 
+  async listActiveAlertDismissals(tenantId: string): Promise<string[]> {
+    const result = await this.pool.query<{ alert_id: string }>(`
+      SELECT alert_id FROM alert_dismissals WHERE tenant_id = $1 AND active = true
+    `, [tenantId]);
+    return result.rows.map((row) => row.alert_id);
+  }
+
+  async dismissOperationalAlert(input: { tenantId: string; alertId: string; actorUserId: string }): Promise<void> {
+    await this.pool.query(`
+      INSERT INTO alert_dismissals (tenant_id, alert_id, actor_user_id, active, dismissed_at, resolved_at)
+      VALUES ($1, $2, $3, true, now(), NULL)
+      ON CONFLICT (tenant_id, alert_id) DO UPDATE SET
+        actor_user_id = EXCLUDED.actor_user_id, active = true, dismissed_at = now(), resolved_at = NULL
+    `, [input.tenantId, input.alertId, input.actorUserId]);
+  }
+
+  async reconcileAlertDismissals(tenantId: string, activeAlertIds: string[]): Promise<void> {
+    await this.pool.query(`
+      UPDATE alert_dismissals
+      SET active = false, resolved_at = now()
+      WHERE tenant_id = $1 AND active = true AND NOT (alert_id = ANY($2::text[]))
+    `, [tenantId, activeAlertIds]);
+  }
+
   async saveActiveAlertState(input: {
     tenantId: string; settingId: string; alert: { id: string; source: AlertSource; severity: 'warning' | 'critical'; title: string; detail: string };
     observedAt: string; notifiedAt: string | null;
@@ -5908,11 +5933,11 @@ export class PostgresRepository {
     } : undefined;
   }
 
-  async touchRedundancySite(siteId: string, version: string): Promise<void> {
+  async touchRedundancySite(siteId: string, version: string, serverName?: string): Promise<void> {
     await this.pool.query(`
-      UPDATE redundancy_sites SET version = $2, status = 'active', last_seen_at = now(), updated_at = now()
+      UPDATE redundancy_sites SET version = $2, name = COALESCE($3, name), status = 'active', last_seen_at = now(), updated_at = now()
       WHERE id = $1 AND status <> 'revoked'
-    `, [siteId, version]);
+    `, [siteId, version, serverName ?? null]);
   }
 
   async revokeRedundancySite(actorUserId: string, siteId: string): Promise<boolean> {
