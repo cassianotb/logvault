@@ -71,6 +71,32 @@ describe('CollectorSpool', () => {
     spool.close();
   });
 
+  it('limita novos lotes por tamanho além da quantidade de registros', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'argus-spool-byte-limit-'));
+    directories.push(directory);
+    const spool = new CollectorSpool(join(directory, 'spool.sqlite'));
+    const payload = Buffer.from('registro grande');
+    const base: RawRecord = {
+      rawId: '30500000-0000-4000-8000-000000000001', batchId: null,
+      tenantId: '30500000-0000-4000-8000-000000000002',
+      collectorId: '30500000-0000-4000-8000-000000000003',
+      deviceId: '30500000-0000-4000-8000-000000000004', vendor: 'a10', sourceType: 'syslog',
+      exporterIp: '10.0.0.1', exporterPort: 514, localSequence: 0,
+      receivedAt: '2026-10-02T12:00:00.000Z', exporterTime: null,
+      observationDomainId: null, exportSequence: null, templateId: null,
+      payloadFormat: 'base64', rawPayload: payload.toString('base64'), rawSha256: sha256(payload),
+      decodedJson: 'x'.repeat(1500), parseStatus: 'unrecognized', parserVersion: 'test/1', parseError: ''
+    };
+    spool.append(base, []);
+    spool.append({ ...base, rawId: '30500000-0000-4000-8000-000000000005' }, []);
+
+    const first = spool.nextBatch(100, 'primary', undefined, 4096)!;
+
+    expect(first.rawRecords).toHaveLength(1);
+    expect(spool.statistics()).toMatchObject({ pendingRecords: 2, pendingBatches: 1 });
+    spool.close();
+  });
+
   it('confirma cada destino de forma independente e retém o lote até ambos concluírem', () => {
     const directory = mkdtempSync(join(tmpdir(), 'argus-redundant-spool-'));
     directories.push(directory);

@@ -26,6 +26,9 @@ interface BatchRow {
 }
 
 const DEFAULT_DESTINATION_ID = 'primary';
+const DEFAULT_BATCH_MAX_BYTES = 32 * 1024 * 1024;
+const MAX_BATCH_RAW_RECORDS = 5000;
+const MAX_BATCH_EVENTS = 100000;
 
 export interface SpoolIdentity {
   tenantId: string;
@@ -195,9 +198,12 @@ export class CollectorSpool implements NetflowTemplateStore {
   nextBatch(
     limit: number,
     destinationId = DEFAULT_DESTINATION_ID,
-    identity?: SpoolIdentity
+    identity?: SpoolIdentity,
+    maxBytes = DEFAULT_BATCH_MAX_BYTES
   ): IngestBatch | undefined {
     this.ensureDestination(destinationId);
+    const safeLimit = Math.max(1, Math.min(MAX_BATCH_RAW_RECORDS, Math.trunc(limit)));
+    const safeMaxBytes = Math.max(1024, Math.trunc(maxBytes));
     const identityFilter = identity
       ? 'AND batches.tenant_id = ? AND batches.collector_id = ?'
       : '';
@@ -250,11 +256,25 @@ export class CollectorSpool implements NetflowTemplateStore {
             AND COALESCE(collector_id, json_extract(raw_json, '$.collectorId')) = ?
           ORDER BY sequence
           LIMIT ?
-        `).all(pendingIdentity.tenant_id, pendingIdentity.collector_id, limit) as SpoolRow[];
-        if (rows.length) {
+        `).all(pendingIdentity.tenant_id, pendingIdentity.collector_id, safeLimit) as SpoolRow[];
+        const selectedRows: SpoolRow[] = [];
+        let selectedEvents = 0;
+        let selectedBytes = 4096;
+        for (const row of rows) {
+          const rowEvents = JSON.parse(row.events_json) as CgnatEvent[];
+          const rowBytes = Buffer.byteLength(row.raw_json) + Buffer.byteLength(row.events_json) + 1024;
+          if (selectedRows.length > 0 && (
+            selectedEvents + rowEvents.length > MAX_BATCH_EVENTS
+            || selectedBytes + rowBytes > safeMaxBytes
+          )) break;
+          selectedRows.push(row);
+          selectedEvents += rowEvents.length;
+          selectedBytes += rowBytes;
+        }
+        if (selectedRows.length) {
           const batchId = newId();
-          const rawRecords = rows.map((row) => JSON.parse(row.raw_json) as RawRecord);
-          const events = rows.flatMap((row) => JSON.parse(row.events_json) as CgnatEvent[]);
+          const rawRecords = selectedRows.map((row) => JSON.parse(row.raw_json) as RawRecord);
+          const events = selectedRows.flatMap((row) => JSON.parse(row.events_json) as CgnatEvent[]);
           const checksum = batchChecksum(rawRecords, events);
           const createdAt = new Date().toISOString();
           this.db.prepare(`
@@ -269,7 +289,7 @@ export class CollectorSpool implements NetflowTemplateStore {
           const assign = this.db.prepare(`
             UPDATE raw_spool SET state = 'batched', batch_id = ? WHERE sequence = ?
           `);
-          for (const row of rows) assign.run(batchId, row.sequence);
+          for (const row of selectedRows) assign.run(batchId, row.sequence);
           return this.buildBatch({ batch_id: batchId, checksum, created_at: createdAt });
         }
       }

@@ -258,6 +258,7 @@ if [[ "$role" == "dc-a" ]]; then
   "$repo_root/scripts/install-continuity-agent.sh" "$repo_root" "$env_file" "$control_root"
   docker compose --env-file "$env_file" config --quiet
   docker compose --env-file "$env_file" up -d --build
+  docker compose --env-file "$env_file" restart web
   if [[ "$(sed -n 's/^ARGUS_DR_PREPARED=//p' "$env_file" | tail -n1)" == "true" ]]; then
     ARGUS_ENV_FILE="$env_file" ARGUS_SKIP_CONTINUITY_AGENT_INSTALL=true "$repo_root/scripts/prepare-dc-a.sh"
   fi
@@ -268,6 +269,7 @@ else
   ARGUS_DR_ENV_FILE="$env_file" docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" up -d postgres-b clickhouse-b clickhouse-mirror standby-agent
   if [[ "$dc_b_was_active" == "true" ]]; then
     ARGUS_DR_ENV_FILE="$env_file" docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" --profile failover up -d --build api-b web-b proxy-b collector-b backup-b
+    ARGUS_DR_ENV_FILE="$env_file" docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" --profile failover restart web-b
   fi
   ARGUS_DR_ENV_FILE="$env_file" docker compose --project-name logvault-dc-b --file compose.dc-b.yaml --env-file "$env_file" --profile failover ps
 fi
