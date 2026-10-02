@@ -87,9 +87,16 @@ acompanhe a ocupação e a fila pendente pela tela **Servidores** e por
 O coletor somente marca uma entrega como confirmada quando a API devolve um
 comprovante com o mesmo `batchId`, checksum e contagens. Um `HTTP 200` vazio,
 uma página de proxy ou um comprovante divergente mantém o lote pendente. Após
-uma indisponibilidade, até quatro lotes por destino são drenados sequencialmente
-em cada ciclo por padrão; ajuste `ARGUS_SYNC_MAX_BATCHES_PER_TICK` somente após
-medir a capacidade da API.
+uma indisponibilidade, o Edge reúne por padrão até 100 lotes originais em uma
+requisição de recuperação, respeitando também os limites de registros, eventos
+e tamanho. A API devolve um comprovante separado para cada lote: sucessos são
+retirados da fila daquele destino e falhas continuam pendentes. Ajuste
+`ARGUS_SYNC_RECOVERY_BATCH_SIZE` somente após medir a capacidade da API.
+
+O restabelecimento do heartbeat não reabre lotes já confirmados. Isso evita
+reenviar artificialmente toda a retenção local de 24 horas; somente entregas
+realmente pendentes são recuperadas. A revalidação do histórico continua sendo
+uma operação manual de manutenção.
 
 Para revalidar no destino secundário todos os lotes confirmados que ainda estão
 retidos no spool, sem afetar a confirmação do principal:

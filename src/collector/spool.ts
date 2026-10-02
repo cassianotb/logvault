@@ -57,6 +57,13 @@ export interface RequeuedDeliverySummary {
   events: number;
 }
 
+export interface DeliveryGroupLimits {
+  maxBatches: number;
+  maxRawRecords: number;
+  maxEvents: number;
+  maxBytes: number;
+}
+
 export class CollectorSpool implements NetflowTemplateStore {
   private readonly db: Database.Database;
 
@@ -123,6 +130,54 @@ export class CollectorSpool implements NetflowTemplateStore {
       }
       this.acknowledgeBatchesWithoutPendingDestinations(now);
     })();
+  }
+
+  pendingBatches(
+    destinationId = DEFAULT_DESTINATION_ID,
+    limits: DeliveryGroupLimits = {
+      maxBatches: 100,
+      maxRawRecords: 25000,
+      maxEvents: 250000,
+      maxBytes: 32 * 1024 * 1024
+    }
+  ): IngestBatch[] {
+    this.ensureDestination(destinationId);
+    const safeBatchLimit = Math.max(1, Math.min(100, Math.trunc(limits.maxBatches)));
+    const rows = this.db.prepare(`
+      SELECT batches.batch_id, batches.checksum, batches.created_at
+      FROM sync_batches batches
+      JOIN sync_batch_deliveries deliveries ON deliveries.batch_id = batches.batch_id
+      WHERE batches.status = 'pending'
+        AND deliveries.destination_id = ?
+        AND deliveries.status = 'pending'
+      ORDER BY batches.created_at, batches.batch_id
+      LIMIT ?
+    `).all(destinationId, safeBatchLimit) as BatchRow[];
+    if (!rows.length) return [];
+
+    const selected: IngestBatch[] = [];
+    let rawRecords = 0;
+    let events = 0;
+    let bytes = 0;
+    let identity: string | undefined;
+    for (const row of rows) {
+      const batch = this.buildBatch(row);
+      const batchIdentity = this.identityKey(batch);
+      if (identity && batchIdentity !== identity) continue;
+      const batchBytes = Buffer.byteLength(JSON.stringify(batch));
+      const exceedsLimit = selected.length > 0 && (
+        rawRecords + batch.rawRecords.length > limits.maxRawRecords
+        || events + batch.events.length > limits.maxEvents
+        || bytes + batchBytes > limits.maxBytes
+      );
+      if (exceedsLimit) break;
+      identity = batchIdentity;
+      selected.push(batch);
+      rawRecords += batch.rawRecords.length;
+      events += batch.events.length;
+      bytes += batchBytes;
+    }
+    return selected;
   }
 
   nextBatch(limit: number, destinationId = DEFAULT_DESTINATION_ID): IngestBatch | undefined {

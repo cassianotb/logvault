@@ -37,8 +37,15 @@ erros e confirmações são independentes. Um destino indisponível não impede 
 outro de avançar; o lote original permanece no SQLite até que todos os destinos
 ativos confirmem a gravação. Cada confirmação contém o checksum e as contagens
 do comprovante local do ClickHouse; uma resposta HTTP sem esse conteúdo não
-retira o lote da fila. Após a reconexão, o backlog é drenado sequencialmente e
-com concorrência limitada por destino.
+retira o lote da fila. O destino só confirma depois de gravar e verificar os
+IDs no ClickHouse e persistir o comprovante com sincronização em disco.
+
+Após a reconexão, até 100 lotes originais são reunidos por requisição, sem
+combinar seus IDs ou checksums. A resposta traz uma confirmação individual por
+lote, portanto uma falha parcial não repete os sucessos. O heartbeat não reabre
+o histórico já confirmado: somente a fila efetivamente pendente é recuperada.
+Quando a fila chega a zero, as duas VMs receberam o mesmo conjunto lógico de
+lotes; reenvios são idempotentes pelos IDs de registro/evento e pelo checksum.
 
 ## Promoção
 

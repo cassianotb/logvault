@@ -368,22 +368,37 @@ export class ClickHouseRepository {
   }
 
   async insertBatch(batch: IngestBatch, contents?: BatchContents, repair = false): Promise<void> {
-    const rawRecords = contents
-      ? batch.rawRecords.filter((record) => !contents.rawIds.has(record.rawId))
-      : batch.rawRecords;
-    const events = contents
-      ? batch.events.filter((event) => !contents.eventIds.has(event.eventId))
-      : batch.events;
+    await this.insertBatchGroup(
+      [batch],
+      contents ? new Map([[batch.batchId, contents]]) : undefined,
+      repair
+    );
+  }
+
+  async insertBatchGroup(
+    batches: IngestBatch[],
+    contentsByBatch?: Map<string, BatchContents>,
+    repair = false
+  ): Promise<void> {
+    const rawRecords = batches.flatMap((batch) => {
+      const contents = contentsByBatch?.get(batch.batchId);
+      return contents ? batch.rawRecords.filter((record) => !contents.rawIds.has(record.rawId)) : batch.rawRecords;
+    });
+    const events = batches.flatMap((batch) => {
+      const contents = contentsByBatch?.get(batch.batchId);
+      return contents ? batch.events.filter((event) => !contents.eventIds.has(event.eventId)) : batch.events;
+    });
     // A reparacao precisa de um token novo. O token da escrita original pode ter
     // sobrevivido no log de deduplicacao mesmo quando um desligamento abrupto
     // removeu a parte de dados que ele confirmava.
     const repairAttempt = repair ? newId() : '';
+    const groupIdentity = sha256(batches.map((batch) => `${batch.batchId}:${batch.checksum}`).sort().join('|'));
     const settingsFor = (kind: 'raw' | 'events', ids: string[]) => ({
       async_insert: 1,
       wait_for_async_insert: 1,
       async_insert_deduplicate: 1,
       insert_deduplication_token: [
-        batch.batchId,
+        groupIdentity,
         kind,
         sha256([...ids].sort().join(',')),
         ...(repairAttempt ? ['repair', repairAttempt] : [])
@@ -410,6 +425,11 @@ export class ClickHouseRepository {
   }
 
   async getBatchReceipt(batchId: string): Promise<BatchReceiptRecord | undefined> {
+    return (await this.getBatchReceipts([batchId])).get(batchId);
+  }
+
+  async getBatchReceipts(batchIds: string[]): Promise<Map<string, BatchReceiptRecord>> {
+    if (!batchIds.length) return new Map();
     const result = await this.client.query({
       query: `
         SELECT
@@ -420,60 +440,93 @@ export class ClickHouseRepository {
           raw_count,
           event_count
         FROM ingest_batch_receipts FINAL
-        WHERE batch_id = {batchId:UUID}
-        LIMIT 1
+        WHERE batch_id IN {batchIds:Array(UUID)}
       `,
-      query_params: { batchId },
+      query_params: { batchIds },
       format: 'JSONEachRow'
     });
-    const [row] = await result.json<{
+    const rows = await result.json<{
       batch_id_text: string; tenant_id_text: string; collector_id_text: string; checksum: string;
       raw_count: string | number; event_count: string | number;
     }>();
-    return row ? {
+    return new Map(rows.map((row) => [row.batch_id_text, {
       batchId: row.batch_id_text,
       tenantId: row.tenant_id_text,
       collectorId: row.collector_id_text,
       checksum: row.checksum,
       rawCount: Number(row.raw_count),
       eventCount: Number(row.event_count)
-    } : undefined;
+    }]));
   }
 
   async inspectBatch(batchId: string): Promise<BatchContents> {
-    const result = await this.client.query({
-      query: `
-        SELECT
-          (SELECT groupUniqArray(toString(raw_id)) FROM ingest_raw WHERE batch_id = {batchId:UUID}) AS raw_ids,
-          (SELECT groupUniqArray(toString(event_id)) FROM cgnat_events WHERE batch_id = {batchId:UUID}) AS event_ids
-      `,
-      query_params: { batchId },
-      format: 'JSONEachRow'
-    });
-    const [row] = await result.json<{ raw_ids: string[]; event_ids: string[] }>();
-    return {
-      rawIds: new Set(row?.raw_ids ?? []),
-      eventIds: new Set(row?.event_ids ?? [])
-    };
+    return (await this.inspectBatches([batchId])).get(batchId) ?? { rawIds: new Set(), eventIds: new Set() };
+  }
+
+  async inspectBatches(batchIds: string[]): Promise<Map<string, BatchContents>> {
+    const contents = new Map(batchIds.map((batchId) => [batchId, {
+      rawIds: new Set<string>(), eventIds: new Set<string>()
+    }]));
+    if (!batchIds.length) return contents;
+    const [rawResult, eventResult] = await Promise.all([
+      this.client.query({
+        query: `
+          SELECT toString(batch_id) AS batch_id_text, groupUniqArray(toString(raw_id)) AS ids
+          FROM ingest_raw
+          WHERE batch_id IN {batchIds:Array(UUID)}
+          GROUP BY batch_id
+        `,
+        query_params: { batchIds },
+        format: 'JSONEachRow'
+      }),
+      this.client.query({
+        query: `
+          SELECT toString(batch_id) AS batch_id_text, groupUniqArray(toString(event_id)) AS ids
+          FROM cgnat_events
+          WHERE batch_id IN {batchIds:Array(UUID)}
+          GROUP BY batch_id
+        `,
+        query_params: { batchIds },
+        format: 'JSONEachRow'
+      })
+    ]);
+    const [rawRows, eventRows] = await Promise.all([
+      rawResult.json<{ batch_id_text: string; ids: string[] }>(),
+      eventResult.json<{ batch_id_text: string; ids: string[] }>()
+    ]);
+    for (const row of rawRows) {
+      const batch = contents.get(row.batch_id_text);
+      if (batch) batch.rawIds = new Set(row.ids);
+    }
+    for (const row of eventRows) {
+      const batch = contents.get(row.batch_id_text);
+      if (batch) batch.eventIds = new Set(row.ids);
+    }
+    return contents;
   }
 
   async recordBatchReceipt(batch: IngestBatch): Promise<void> {
+    await this.recordBatchReceipts([batch]);
+  }
+
+  async recordBatchReceipts(batches: IngestBatch[]): Promise<void> {
+    if (!batches.length) return;
     await this.client.insert({
       table: 'ingest_batch_receipts',
-      values: [{
+      values: batches.map((batch) => ({
         batch_id: batch.batchId,
         tenant_id: batch.tenantId,
         collector_id: batch.collectorId,
         checksum: batch.checksum,
         raw_count: batch.rawRecords.length,
         event_count: batch.events.length
-      }],
+      })),
       format: 'JSONEachRow',
       clickhouse_settings: {
         async_insert: 1,
         wait_for_async_insert: 1,
         async_insert_deduplicate: 1,
-        insert_deduplication_token: `${batch.batchId}:receipt:${batch.checksum}`
+        insert_deduplication_token: `receipts:${sha256(batches.map((batch) => `${batch.batchId}:${batch.checksum}`).sort().join('|'))}`
       }
     });
   }

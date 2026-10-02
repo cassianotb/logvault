@@ -110,14 +110,16 @@ describe('ingestão do Cloud gerenciado', () => {
         activeCheck = [tenantId, collectorId];
         return true;
       },
-      registerBatch: async () => ({ status: 'new' }),
-      markBatchCommitted: async () => undefined
+      registerBatches: async () => new Map([[batchId, { status: 'new' }]]),
+      markBatchesCommitted: async () => undefined
     } as unknown as PostgresRepository;
     const clickhouse = {
-      getBatchReceipt: async () => undefined,
-      insertBatch: async () => undefined,
-      countBatch: async () => ({ rawCount: 1, eventCount: 0 }),
-      recordBatchReceipt: async () => undefined
+      getBatchReceipts: async () => new Map(),
+      insertBatchGroup: async () => undefined,
+      inspectBatches: async () => new Map([[batchId, {
+        rawIds: new Set([raw.rawId]), eventIds: new Set()
+      }]]),
+      recordBatchReceipts: async () => undefined
     } as unknown as ClickHouseRepository;
     const app = Fastify();
     registerIngestionRoutes(app, { postgres, clickhouse, managedCloudTokenHash: sha256(token) });

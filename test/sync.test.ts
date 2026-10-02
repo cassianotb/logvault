@@ -42,7 +42,7 @@ function rawRecord(rawId: string, receivedAt: string): RawRecord {
 }
 
 describe('BatchSynchronizer', () => {
-  it('reabre automaticamente os lotes retidos quando um destino volta', async () => {
+  it('não reabre lotes já confirmados quando um destino volta', async () => {
     const requeueAcknowledged = vi.fn(() => ({
       destinationId: 'secondary', batches: 2, records: 3, events: 72
     }));
@@ -67,9 +67,8 @@ describe('BatchSynchronizer', () => {
     expect(requeueAcknowledged).not.toHaveBeenCalled();
     await synchronizer.heartbeat();
 
-    expect(requeueAcknowledged).toHaveBeenCalledOnce();
-    expect(requeueAcknowledged).toHaveBeenCalledWith('secondary');
-    expect(info).toHaveBeenCalledWith(expect.stringContaining('revalidados'));
+    expect(requeueAcknowledged).not.toHaveBeenCalled();
+    expect(info).toHaveBeenCalledWith(expect.stringContaining('recuperadas em grupo'));
     warning.mockRestore();
     info.mockRestore();
   });
@@ -77,6 +76,7 @@ describe('BatchSynchronizer', () => {
   it('mantém o processo ativo quando o SQLite está temporariamente ocupado', async () => {
     let attempts = 0;
     const spool = {
+      pendingBatches: () => [],
       nextBatch: () => {
         attempts += 1;
         throw new Error('database is locked');
@@ -174,13 +174,13 @@ describe('BatchSynchronizer', () => {
       spool.append(rawRecord('13000000-0000-4000-8000-000000000002', '2026-10-01T06:00:01.000Z'), []);
       await primaryOffline.tick();
       await secondaryOffline.tick();
-      expect(spool.statistics()).toMatchObject({ pendingRecords: 2, pendingBatches: 2 });
+      expect(spool.statistics()).toMatchObject({ pendingRecords: 2, pendingBatches: 1 });
 
       spool.close();
       spool = new CollectorSpool(spoolPath);
       spool.configureDestinations(['primary', 'secondary']);
       expect(spool.cleanupAcknowledged(0)).toBe(0);
-      expect(spool.statistics()).toMatchObject({ pendingRecords: 2, pendingBatches: 2 });
+      expect(spool.statistics()).toMatchObject({ pendingRecords: 2, pendingBatches: 1 });
 
       const delivered: Record<'primary' | 'secondary', string[]> = { primary: [], secondary: [] };
       const primaryOnline = new BatchSynchronizer(spool, options('primary'), async (batch) => {
@@ -217,6 +217,7 @@ describe('BatchSynchronizer', () => {
       rawRecords: [{ ...raw, batchId: '12000000-0000-4000-8000-000000000001' }], events: []
     };
     const spool = {
+      pendingBatches: vi.fn().mockReturnValue([]),
       nextBatch: vi.fn()
         .mockReturnValueOnce(batch)
         .mockReturnValue(undefined),
@@ -249,6 +250,7 @@ describe('BatchSynchronizer', () => {
       createdAt: '2026-10-01T12:00:01.000Z', rawRecords: [preparedRaw], events: []
     };
     const spool = {
+      pendingBatches: vi.fn().mockReturnValue([]),
       nextBatch: vi.fn().mockReturnValue(batch), acknowledge: vi.fn(),
       cleanupAcknowledged: vi.fn(), recordFailure: vi.fn()
     } as unknown as CollectorSpool;
@@ -265,28 +267,112 @@ describe('BatchSynchronizer', () => {
     fetchMock.mockRestore();
   });
 
-  it('drena vários lotes por ciclo com limite de carga', async () => {
-    const directory = mkdtempSync(join(tmpdir(), 'argus-bounded-drain-'));
+  it('preserva a vazão normal drenando até quatro lotes novos por ciclo', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'argus-fresh-drain-'));
     const spool = new CollectorSpool(join(directory, 'spool.sqlite'));
     try {
       spool.configureDestinations(['primary']);
-      for (let index = 1; index <= 3; index += 1) {
+      for (let index = 1; index <= 5; index += 1) {
         spool.append(rawRecord(
-          `15000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
-          `2026-10-01T12:00:0${index}.000Z`
+          `14500000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+          new Date(Date.parse('2026-10-01T12:00:00.000Z') + index).toISOString()
         ), []);
       }
       const delivered: string[] = [];
-      const synchronizer = new BatchSynchronizer(spool, {
-        ...options('primary'), batchSize: 1, maxBatchesPerTick: 2
-      }, async (value) => { delivered.push(value.batchId); });
+      const synchronizer = new BatchSynchronizer(
+        spool, { ...options('primary'), batchSize: 1, maxBatchesPerTick: 4 },
+        async (value) => { delivered.push(value.batchId); }
+      );
 
       await synchronizer.tick();
-      expect(delivered).toHaveLength(2);
+
+      expect(delivered).toHaveLength(4);
       expect(spool.statistics().pendingRecords).toBe(1);
-      await synchronizer.tick();
-      expect(delivered).toHaveLength(3);
-      expect(spool.statistics().pendingRecords).toBe(0);
+    } finally {
+      spool.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('recupera vários lotes originais em uma única requisição agrupada', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'argus-bounded-drain-'));
+    const spool = new CollectorSpool(join(directory, 'spool.sqlite'));
+    try {
+      spool.configureDestinations(['primary', 'secondary']);
+      for (let index = 1; index <= 100; index += 1) {
+        spool.append(rawRecord(
+          `15000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+          new Date(Date.parse('2026-10-01T12:00:00.000Z') + index).toISOString()
+        ), []);
+      }
+      const primary = new BatchSynchronizer(spool, {
+        ...options('primary'), batchSize: 1
+      }, async () => undefined);
+      for (let index = 0; index < 100; index += 1) await primary.tick();
+
+      const groupSender = vi.fn(async (batches: IngestBatch[]) => ({
+        receipts: batches.map((batch) => ({
+          batchId: batch.batchId, status: 'committed' as const, checksum: batch.checksum,
+          rawCount: batch.rawRecords.length, eventCount: batch.events.length,
+          duplicate: false, repaired: false
+        })),
+        failures: []
+      }));
+      const secondary = new BatchSynchronizer(
+        spool, { ...options('secondary'), recoveryBatchSize: 100 },
+        undefined, undefined, undefined, undefined, groupSender
+      );
+      await secondary.tick();
+
+      expect(groupSender).toHaveBeenCalledOnce();
+      expect(groupSender.mock.calls[0]?.[0]).toHaveLength(100);
+      expect(spool.statistics()).toMatchObject({ pendingRecords: 0, pendingBatches: 0 });
+    } finally {
+      spool.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('confirma sucessos individuais e mantém somente a falha parcial na fila', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'argus-partial-bulk-'));
+    const spool = new CollectorSpool(join(directory, 'spool.sqlite'));
+    try {
+      spool.configureDestinations(['primary', 'secondary']);
+      const primary = new BatchSynchronizer(spool, { ...options('primary'), batchSize: 1 }, async () => undefined);
+      for (let index = 1; index <= 2; index += 1) {
+        spool.append(rawRecord(
+          `16000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+          `2026-10-01T12:01:0${index}.000Z`
+        ), []);
+        await primary.tick();
+      }
+
+      let request = 0;
+      const groupSizes: number[] = [];
+      const groupSender = vi.fn(async (batches: IngestBatch[]) => {
+        request += 1;
+        groupSizes.push(batches.length);
+        const committed = request === 1 ? batches.slice(0, 1) : batches;
+        const failed = request === 1 ? batches.slice(1) : [];
+        return {
+          receipts: committed.map((batch) => ({
+            batchId: batch.batchId, status: 'committed' as const, checksum: batch.checksum,
+            rawCount: batch.rawRecords.length, eventCount: batch.events.length,
+            duplicate: false, repaired: false
+          })),
+          failures: failed.map((batch) => ({ batchId: batch.batchId, error: 'temporary_failure' }))
+        };
+      });
+      const secondary = new BatchSynchronizer(
+        spool, options('secondary'), undefined, undefined, undefined, undefined, groupSender
+      );
+
+      await secondary.tick();
+      expect(spool.statistics()).toMatchObject({ pendingRecords: 1, pendingBatches: 1 });
+      await secondary.tick();
+
+      expect(groupSizes).toEqual([2, 1]);
+      expect(spool.statistics()).toMatchObject({ pendingRecords: 0, pendingBatches: 0 });
     } finally {
       spool.close();
       rmSync(directory, { recursive: true, force: true });

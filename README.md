@@ -245,7 +245,9 @@ configurações de clientes, coletores, equipamentos e firewall são copiadas da
 autoridade principal por HTTPS; logs não atravessam entre bancos.
 
 - Coletor local: o mesmo lote é enviado às duas APIs, com confirmação e fila
-  separadas por destino.
+  separadas por destino. Na recuperação, até 100 lotes originais seguem em uma
+  única requisição, mas cada lote recebe confirmação individual e permanece no
+  SQLite até os dois destinos confirmarem a gravação durável.
 - Coletor Cloud: o equipamento precisa aceitar múltiplos destinos e envia
   NetFlow/Syslog diretamente aos dois IPs. Cada servidor usa um par exclusivo,
   reservado automaticamente e exibido no painel — por exemplo, principal

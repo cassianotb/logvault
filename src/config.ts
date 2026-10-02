@@ -58,6 +58,7 @@ export const collectorConfigSchema = commonSchema.extend({
   ARGUS_SYNC_BATCH_SIZE: z.coerce.number().int().positive().max(100000).default(5000),
   ARGUS_SYNC_INTERVAL_MS: z.coerce.number().int().min(100).default(1000),
   ARGUS_SYNC_MAX_BATCHES_PER_TICK: z.coerce.number().int().min(1).max(100).default(4),
+  ARGUS_SYNC_RECOVERY_BATCH_SIZE: z.coerce.number().int().min(1).max(100).default(100),
   ARGUS_EDGE_ACK_RETENTION_HOURS: z.coerce.number().int().nonnegative().default(24),
   ARGUS_MANAGED_CLOUD_ENABLED: z.enum(['true', 'false']).default('false').transform((value) => value === 'true'),
   ARGUS_MANAGED_CLOUD_REGISTRY_URL: z.string().url().default('http://127.0.0.1:8080/v1/ingest/managed-cloud/registry')

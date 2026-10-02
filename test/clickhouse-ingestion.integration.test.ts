@@ -41,6 +41,37 @@ function fixture(): IngestBatch {
   };
 }
 
+function bulkFixtures(count: number): IngestBatch[] {
+  return Array.from({ length: count }, (_, index) => {
+    const suffix = String(index + 1).padStart(12, '0');
+    const currentBatchId = `72000000-0000-4000-8000-${suffix}`;
+    const currentRawId = `72100000-0000-4000-8000-${suffix}`;
+    const currentEventId = `72200000-0000-4000-8000-${suffix}`;
+    const payload = Buffer.from(`bulk-integration-${index}`);
+    const receivedAt = new Date(Date.parse('2026-10-01T14:00:00.000Z') + index).toISOString();
+    const raw: RawRecord = {
+      rawId: currentRawId, batchId: currentBatchId, tenantId, collectorId, deviceId,
+      vendor: 'cisco', sourceType: 'netflow_v9', exporterIp: '192.0.2.70', exporterPort: 2055,
+      localSequence: index + 1, receivedAt, exporterTime: null, observationDomainId: 70,
+      exportSequence: index, templateId: 256, payloadFormat: 'base64',
+      rawPayload: payload.toString('base64'), rawSha256: sha256(payload), decodedJson: '{}',
+      parseStatus: 'parsed', parserVersion: 'integration/1', parseError: ''
+    };
+    const event: CgnatEvent = {
+      eventId: currentEventId, rawId: currentRawId, batchId: currentBatchId, recordIndex: 0,
+      tenantId, collectorId, deviceId, vendor: 'cisco', sourceType: 'netflow_v9',
+      eventAt: receivedAt, receivedAt, publicIp: '198.51.100.70', privateIp: '100.64.0.1',
+      protocol: 6, protocolName: 'tcp', portStart: 1000, portEnd: 1000,
+      portMode: 'contiguous', portStep: null, portCount: 1, eventType: 'allocated',
+      eventTypeRaw: '1', vendorFields: {}, parserVersion: 'integration/1'
+    };
+    return {
+      batchId: currentBatchId, tenantId, collectorId, createdAt: receivedAt,
+      rawRecords: [raw], events: [event], checksum: batchChecksum([raw], [event])
+    };
+  });
+}
+
 describe.skipIf(!enabled)('persistência ClickHouse real', () => {
   const connection = {
     url: process.env.ARGUS_CLICKHOUSE_URL ?? 'http://127.0.0.1:8123',
@@ -69,8 +100,10 @@ describe.skipIf(!enabled)('persistência ClickHouse real', () => {
 
     const postgres = {
       findCollectorIdentityByTokenHash: async () => ({ id: collectorId, tenantId }),
-      registerBatch: async () => ({ status: 'committed' as const }),
-      markBatchCommitted: async () => undefined
+      registerBatches: async (batches: IngestBatch[]) => new Map(
+        batches.map((batch) => [batch.batchId, { status: 'committed' as const }])
+      ),
+      markBatchesCommitted: async () => undefined
     } as unknown as PostgresRepository;
     const app = Fastify();
     registerIngestionRoutes(app, {
@@ -115,6 +148,36 @@ describe.skipIf(!enabled)('persistência ClickHouse real', () => {
     expect(recovered.statusCode, recovered.body).toBe(200);
     expect(recovered.json()).toMatchObject({ batchId, duplicate: true, repaired: true });
     expect(await repository.countBatch(batchId)).toEqual({ rawCount: 2, eventCount: 2 });
+    await app.close();
+  });
+
+  it('persiste 100 lotes numa requisição com comprovantes e conteúdos individuais', async () => {
+    const batches = bulkFixtures(100);
+    let committed: string[] = [];
+    const postgres = {
+      findCollectorIdentityByTokenHash: async () => ({ id: collectorId, tenantId }),
+      registerBatches: async (values: IngestBatch[]) => new Map(
+        values.map((batch) => [batch.batchId, { status: 'new' as const }])
+      ),
+      markBatchesCommitted: async (ids: string[]) => { committed = ids; }
+    } as unknown as PostgresRepository;
+    const app = Fastify();
+    registerIngestionRoutes(app, {
+      postgres, clickhouse: repository, managedCloudTokenHash: sha256('managed-cloud')
+    });
+
+    const response = await app.inject({
+      method: 'POST', url: '/v1/ingest/batches/bulk',
+      headers: { authorization: 'Bearer integration-token' }, payload: { batches }
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json()).toMatchObject({ failures: [] });
+    expect(response.json().receipts).toHaveLength(100);
+    expect(committed).toEqual(batches.map((batch) => batch.batchId));
+    expect((await repository.getBatchReceipts(committed)).size).toBe(100);
+    const contents = await repository.inspectBatches(committed);
+    expect([...contents.values()].every((value) => value.rawIds.size === 1 && value.eventIds.size === 1)).toBe(true);
     await app.close();
   });
 });

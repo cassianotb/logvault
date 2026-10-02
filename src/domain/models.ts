@@ -79,6 +79,47 @@ export const ingestBatchReceiptSchema = z.object({
 });
 export type IngestBatchReceipt = z.infer<typeof ingestBatchReceiptSchema>;
 
+export const ingestBatchGroupSchema = z.object({
+  batches: z.array(ingestBatchSchema).min(1).max(100)
+}).superRefine(({ batches }, context) => {
+  const first = batches[0];
+  if (!first) return;
+  const seen = new Set<string>();
+  let rawCount = 0;
+  let eventCount = 0;
+  for (const [index, batch] of batches.entries()) {
+    if (seen.has(batch.batchId)) {
+      context.addIssue({ code: z.ZodIssueCode.custom, message: 'Lote repetido no grupo', path: ['batches', index, 'batchId'] });
+    }
+    seen.add(batch.batchId);
+    if (batch.tenantId !== first.tenantId || batch.collectorId !== first.collectorId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Todos os lotes do grupo devem pertencer ao mesmo coletor',
+        path: ['batches', index]
+      });
+    }
+    rawCount += batch.rawRecords.length;
+    eventCount += batch.events.length;
+  }
+  if (rawCount > 25000) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Grupo excede 25000 registros brutos', path: ['batches'] });
+  }
+  if (eventCount > 250000) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'Grupo excede 250000 eventos', path: ['batches'] });
+  }
+});
+export type IngestBatchGroup = z.infer<typeof ingestBatchGroupSchema>;
+
+export const ingestBatchGroupResponseSchema = z.object({
+  receipts: z.array(ingestBatchReceiptSchema).max(100),
+  failures: z.array(z.object({
+    batchId: z.string().uuid(),
+    error: z.string().min(1).max(200)
+  })).max(100)
+});
+export type IngestBatchGroupResponse = z.infer<typeof ingestBatchGroupResponseSchema>;
+
 export const collectorHeartbeatSchema = z.object({
   tenantId: z.string().uuid(),
   collectorId: z.string().uuid(),

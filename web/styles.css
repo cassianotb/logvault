@@ -676,7 +676,8 @@ tbody tr:hover { background: #fafcff; }
 .collector-metrics strong { margin-top: 4px; font-size: 10px; }
 .collector-queue-note { margin: 12px 0 0; padding: 9px 11px; border-radius: 7px; color: #6e552a; background: #fff8eb; font-size: 9px; }
 .collector-error-note { color: #923b3b; background: #fff3f3; }
-.collector-form { display: grid; grid-template-columns: minmax(240px, 1fr) 190px auto; gap: 14px; align-items: end; padding: 18px 20px 20px; }
+.collector-form { display: grid; grid-template-columns: minmax(240px, 1fr) 190px auto; gap: 14px; align-items: start; padding: 18px 20px 20px; }
+.collector-form > .user-create-button { align-self: start; margin-top: 19px; }
 .collector-admin-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 14px; }
 .credential-dialog { width: min(610px, calc(100% - 28px)); }
 .credential-dialog textarea { width: 100%; min-height: 205px; padding: 13px; resize: vertical; border: 1px solid #cfd7e3; border-radius: 7px; outline: none; color: #26354d; background: #f7f9fc; font: 10px/1.65 "SFMono-Regular", Consolas, monospace; }
@@ -1645,6 +1646,7 @@ button.integration-catalog-option:hover:not(:disabled) { border-color: #76a8e5; 
   .platform-audit-controls { width: 100%; margin-left: 0; flex-wrap: wrap; }
   .device-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .collector-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .collector-form > .user-create-button { margin-top: 0; }
   .alert-settings-grid { grid-template-columns: 1fr; }
   .alert-source-options { grid-template-columns: repeat(3, minmax(105px, 1fr)); }
   .user-create-button { width: 100%; }

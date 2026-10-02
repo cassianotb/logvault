@@ -4170,6 +4170,18 @@ export class PostgresRepository {
   }
 
   async registerBatch(batch: IngestBatch): Promise<BatchRegistration> {
+    const registrations = await this.registerBatches([batch]);
+    const registration = registrations.get(batch.batchId);
+    if (!registration) throw new Error(`Lote ${batch.batchId} não foi registrado`);
+    return registration;
+  }
+
+  async registerBatches(batches: IngestBatch[]): Promise<Map<string, BatchRegistration>> {
+    if (!batches.length) return new Map();
+    const first = batches[0]!;
+    if (batches.some((batch) => batch.tenantId !== first.tenantId || batch.collectorId !== first.collectorId)) {
+      throw new Error('Um grupo de lotes deve pertencer ao mesmo coletor');
+    }
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -4177,44 +4189,68 @@ export class PostgresRepository {
         UPDATE collectors SET last_seen_at = now()
         WHERE id = $1 AND tenant_id = $2 AND status <> 'disabled' AND deleted_at IS NULL
         RETURNING id
-      `, [batch.collectorId, batch.tenantId]);
-      if (collector.rowCount !== 1) throw new Error(`Coletor ${batch.collectorId} não pertence ao tenant informado`);
+      `, [first.collectorId, first.tenantId]);
+      if (collector.rowCount !== 1) throw new Error(`Coletor ${first.collectorId} não pertence ao tenant informado`);
+      const batchIds = batches.map((batch) => batch.batchId);
       const existing = await client.query<{
+        batch_id: string;
         checksum: string;
         raw_count: number;
         event_count: number;
         status: 'received' | 'committed' | 'rejected';
       }>(`
-        SELECT checksum, raw_count, event_count, status
+        SELECT batch_id, checksum, raw_count, event_count, status
         FROM sync_batches
-        WHERE batch_id = $1
+        WHERE batch_id = ANY($1::uuid[])
         FOR UPDATE
-      `, [batch.batchId]);
+      `, [batchIds]);
 
-      const row = existing.rows[0];
-      if (row) {
-        if (row.checksum !== batch.checksum || row.raw_count !== batch.rawRecords.length || row.event_count !== batch.events.length) {
-          throw new Error(`Lote ${batch.batchId} reenviado com conteúdo divergente`);
+      const existingById = new Map(existing.rows.map((row) => [row.batch_id, row]));
+      const registrations = new Map<string, BatchRegistration>();
+      const missing: Array<{
+        batchId: string; tenantId: string; collectorId: string; checksum: string; rawCount: number; eventCount: number;
+      }> = [];
+      for (const batch of batches) {
+        const row = existingById.get(batch.batchId);
+        if (row) {
+          if (row.checksum !== batch.checksum || row.raw_count !== batch.rawRecords.length || row.event_count !== batch.events.length) {
+            throw new Error(`Lote ${batch.batchId} reenviado com conteúdo divergente`);
+          }
+          if (row.status === 'rejected') throw new Error(`Lote ${batch.batchId} já foi rejeitado`);
+          registrations.set(batch.batchId, { status: row.status });
+        } else {
+          missing.push({
+            batchId: batch.batchId,
+            tenantId: batch.tenantId,
+            collectorId: batch.collectorId,
+            checksum: batch.checksum,
+            rawCount: batch.rawRecords.length,
+            eventCount: batch.events.length
+          });
+          registrations.set(batch.batchId, { status: 'new' });
         }
-        if (row.status === 'rejected') throw new Error(`Lote ${batch.batchId} já foi rejeitado`);
-        await client.query('COMMIT');
-        return { status: row.status };
       }
-
-      await client.query(`
-        INSERT INTO sync_batches
-          (batch_id, tenant_id, collector_id, checksum, raw_count, event_count, status)
-        VALUES ($1, $2, $3, $4, $5, $6, 'received')
-      `, [
-        batch.batchId,
-        batch.tenantId,
-        batch.collectorId,
-        batch.checksum,
-        batch.rawRecords.length,
-        batch.events.length
-      ]);
+      if (missing.length) {
+        await client.query(`
+          INSERT INTO sync_batches
+            (batch_id, tenant_id, collector_id, checksum, raw_count, event_count, status)
+          SELECT input.batch_id, input.tenant_id, input.collector_id,
+            input.checksum, input.raw_count, input.event_count, 'received'
+          FROM jsonb_to_recordset($1::jsonb) AS input(
+            batch_id uuid, tenant_id uuid, collector_id uuid,
+            checksum text, raw_count integer, event_count integer
+          )
+        `, [JSON.stringify(missing.map((batch) => ({
+          batch_id: batch.batchId,
+          tenant_id: batch.tenantId,
+          collector_id: batch.collectorId,
+          checksum: batch.checksum,
+          raw_count: batch.rawCount,
+          event_count: batch.eventCount
+        })))]);
+      }
       await client.query('COMMIT');
-      return { status: 'new' };
+      return registrations;
     } catch (error) {
       await this.safeRollback(client);
       throw error;
@@ -4224,12 +4260,18 @@ export class PostgresRepository {
   }
 
   async markBatchCommitted(batchId: string): Promise<void> {
+    await this.markBatchesCommitted([batchId]);
+  }
+
+  async markBatchesCommitted(batchIds: string[]): Promise<void> {
+    if (!batchIds.length) return;
     const result = await this.pool.query(`
       UPDATE sync_batches
       SET status = 'committed', committed_at = now(), error_message = NULL
-      WHERE batch_id = $1 AND status IN ('received', 'committed')
-    `, [batchId]);
-    if (result.rowCount !== 1) throw new Error(`Lote ${batchId} não encontrado para confirmação`);
+      WHERE batch_id = ANY($1::uuid[]) AND status IN ('received', 'committed')
+      RETURNING batch_id
+    `, [batchIds]);
+    if (result.rowCount !== new Set(batchIds).size) throw new Error('Nem todos os lotes foram encontrados para confirmação');
   }
 
   async markBatchRejected(batchId: string, error: string): Promise<void> {
