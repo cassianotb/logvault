@@ -129,6 +129,7 @@ const integrationStatePill = document.querySelector('#integration-state-pill');
 const integrationLastUpdate = document.querySelector('#integration-last-update');
 const integrationRadiusCheck = document.querySelector('#integration-radius-check');
 const integrationVoalleDatabaseCheck = document.querySelector('#integration-voalle-database-check');
+const integrationsUnavailable = document.querySelector('#integrations-unavailable');
 const integrationsEmpty = document.querySelector('#integrations-empty');
 const integrationList = document.querySelector('#integration-list');
 const addIntegrationButton = document.querySelector('#add-integration');
@@ -477,6 +478,7 @@ const capacityEdgeDisk = document.querySelector('#capacity-edge-disk');
 const capacityEdgeExplanation = document.querySelector('#capacity-edge-explanation');
 const collectorManagementPanel = document.querySelector('#collector-management-panel');
 const createCollectorForm = document.querySelector('#create-collector-form');
+const collectorModeHelp = document.querySelector('#collector-mode-help');
 const createCollectorButton = document.querySelector('#create-collector-button');
 const createCollectorFeedback = document.querySelector('#create-collector-feedback');
 const collectorDialog = document.querySelector('#collector-dialog');
@@ -561,6 +563,12 @@ const userAdminsDetail = document.querySelector('#user-admins-detail');
 const createUserForm = document.querySelector('#create-user-form');
 const createUserButton = document.querySelector('#create-user-button');
 const createUserFeedback = document.querySelector('#create-user-feedback');
+const userDialog = document.querySelector('#user-dialog');
+const openUserDialogButton = document.querySelector('#open-user-dialog');
+const closeUserDialogButton = document.querySelector('#close-user-dialog');
+const userDialogTitle = document.querySelector('#user-dialog-title');
+const userDialogCopy = document.querySelector('#user-dialog-copy');
+const userOnboardingCopy = document.querySelector('#user-onboarding-copy');
 const usersViewTitle = document.querySelector('#users-view-title');
 const usersViewCopy = document.querySelector('#users-view-copy');
 const newUserRole = document.querySelector('#new-user-role');
@@ -580,7 +588,7 @@ const closeAccessProfileDialogButton = document.querySelector('#close-access-pro
 const cancelAccessProfileButton = document.querySelector('#cancel-access-profile');
 const setFullAccessProfileButton = document.querySelector('#set-full-access-profile');
 const saveAccessProfileButton = document.querySelector('#save-access-profile');
-const userCreatePanel = document.querySelector('.user-create-panel');
+const userOnboardingCard = document.querySelector('#user-onboarding-card');
 const changePasswordButton = document.querySelector('#change-password-button');
 const passwordDialog = document.querySelector('#password-dialog');
 const closePasswordDialog = document.querySelector('#close-password-dialog');
@@ -654,6 +662,10 @@ const clientReviewAdmin = document.querySelector('#client-review-admin');
 const newCompanyLogoLabel = document.querySelector('#new-company-logo-label');
 const createPlanForm = document.querySelector('#create-plan-form');
 const planManagementPanel = document.querySelector('#plan-management-panel');
+const planOnboardingCard = document.querySelector('#plan-onboarding-card');
+const planDialog = document.querySelector('#plan-dialog');
+const openPlanDialogButton = document.querySelector('#open-plan-dialog');
+const closePlanDialogButton = document.querySelector('#close-plan-dialog');
 const clientOnboardingCard = document.querySelector('#client-onboarding-card');
 const createPlanButton = document.querySelector('#create-plan-button');
 const createPlanFeedback = document.querySelector('#create-plan-feedback');
@@ -824,6 +836,7 @@ let officialReportsLoaded = false;
 let integrationsLoaded = false;
 let integrationTargetsLoaded = false;
 let integrationProviderAvailability = null;
+let availableIntegrationProviders = [];
 let currentIntegration = null;
 let integrationWizardStep = 1;
 let integrationWizardEditing = false;
@@ -998,6 +1011,7 @@ function showLogin(message = '', messageType = 'error') {
   integrationsLoaded = false;
   integrationTargetsLoaded = false;
   integrationProviderAvailability = null;
+  availableIntegrationProviders = [];
   lastSearchContext = null;
   if (clientsPollTimer) window.clearTimeout(clientsPollTimer);
   clientsPollTimer = null;
@@ -1037,6 +1051,8 @@ function showLogin(message = '', messageType = 'error') {
   if (platformClientUsersDialog.open) platformClientUsersDialog.close();
   if (platformUserPasswordDialog.open) platformUserPasswordDialog.close();
   if (clientWizardDialog.open) clientWizardDialog.close();
+  if (planDialog.open) planDialog.close();
+  if (userDialog.open) userDialog.close();
   document.body.classList.remove('menu-open');
   window.setTimeout(() => loginForm.email.focus(), 0);
 }
@@ -1097,7 +1113,6 @@ function viewFromLocation(user = currentUser) {
   if (requested === 'capacity' && !['admin', 'auditor'].includes(user?.role)) return 'dashboard';
   if (requested === 'firewall' && !['admin', 'auditor'].includes(user?.role)) return 'dashboard';
   if (['users', 'company', 'integrations'].includes(requested) && user?.role !== 'admin') return 'dashboard';
-  if (requested === 'integrations' && integrationProviderAvailability === false) return 'dashboard';
   if (requested === 'audit' && !['admin', 'auditor'].includes(user?.role)) return 'dashboard';
   return requested;
 }
@@ -1123,7 +1138,7 @@ function showApplication(user) {
   usersNav.hidden = platformContext || user.role !== 'admin';
   firewallNav.hidden = platformContext || !['admin', 'auditor'].includes(user.role);
   companyNav.hidden = platformContext || user.role !== 'admin';
-  integrationsNav.hidden = true;
+  integrationsNav.hidden = platformContext || user.role !== 'admin';
   erpQueryOption.hidden = true;
   clientsNav.hidden = !platformContext || !hasPlatformPermission('clients', 'view', user);
   plansNav.hidden = !platformContext || !hasPlatformPermission('plans', 'view', user);
@@ -1147,13 +1162,20 @@ function showApplication(user) {
   usersViewCopy.textContent = platformContext
     ? 'Gerencie as contas administrativas que podem acessar e operar o LogVault.'
     : 'Crie contas individuais e mantenha a trilha de auditoria vinculada a cada pessoa.';
+  userOnboardingCopy.textContent = platformContext
+    ? 'Crie uma conta administrativa e associe um perfil de acesso da plataforma.'
+    : 'Crie uma conta individual e escolha o perfil adequado para este ambiente.';
+  userDialogTitle.textContent = platformContext ? 'Adicionar usuário da plataforma' : 'Adicionar usuário';
+  userDialogCopy.textContent = platformContext
+    ? 'Associe a nova conta a um perfil de acesso da plataforma.'
+    : 'Crie um acesso individual para este ambiente.';
   newUserRole.value = platformContext ? 'admin' : newUserRole.value;
   newUserRole.disabled = platformContext;
   newUserRoleField.hidden = platformContext;
   newUserAccessProfileField.hidden = !platformContext;
   newUserAccessProfile.required = platformContext;
   accessProfilesPanel.hidden = !platformContext;
-  userCreatePanel.hidden = platformContext && !hasPlatformPermission('users', 'manage', user);
+  userOnboardingCard.hidden = platformContext && !hasPlatformPermission('users', 'manage', user);
   addAccessProfileButton.hidden = platformContext && !hasPlatformPermission('users', 'manage', user);
   userAdminsLabel.textContent = platformContext ? 'PERFIS DE ACESSO' : 'ADMINISTRADORES';
   userAdminsDetail.textContent = platformContext ? 'políticas disponíveis' : 'podem gerenciar contas';
@@ -1197,7 +1219,7 @@ function showApplication(user) {
     : user.role !== 'admin';
   clientOnboardingCard.hidden = platformContext && !hasPlatformPermission('clients', 'manage', user);
   planManagementPanel.classList.toggle('read-only', platformContext && !hasPlatformPermission('plans', 'manage', user));
-  createPlanForm.hidden = platformContext && !hasPlatformPermission('plans', 'manage', user);
+  planOnboardingCard.hidden = platformContext && !hasPlatformPermission('plans', 'manage', user);
   const settingsCanManage = !platformContext || hasPlatformPermission('settings', 'manage', user);
   platformEmailForm.querySelectorAll('input, select, button').forEach((field) => { field.disabled = !settingsCanManage; });
   platformEmailTestPanel.hidden = platformContext && !settingsCanManage;
@@ -1217,7 +1239,6 @@ function navigateTo(view) {
     view = firstAllowedPlatformView();
   }
   if (!platformContext && ['clients', 'plans', 'platform-settings', 'continuity'].includes(view)) view = 'dashboard';
-  if (!platformContext && view === 'integrations' && integrationProviderAvailability === false) view = 'dashboard';
   if (!platformContext && view === 'firewall' && !['admin', 'auditor'].includes(currentUser?.role)) view = 'dashboard';
   platformDashboardView.hidden = view !== 'dashboard' || !platformContext;
   platformAuditView.hidden = view !== 'audit' || !platformContext;
@@ -2826,6 +2847,12 @@ function renderCollectors(collectors) {
   }
 }
 
+function syncCollectorModeHelp() {
+  collectorModeHelp.textContent = createCollectorForm.mode.value === 'cloud'
+    ? 'Coletor em nuvem hospedado na infraestrutura da LogVault.'
+    : 'Coletor local instalado na infraestrutura do cliente.';
+}
+
 async function loadCollectors() {
   collectorsLoading.hidden = false;
   collectorsError.hidden = true;
@@ -2845,8 +2872,8 @@ async function loadCollectors() {
     if (cloudOption) {
       cloudOption.disabled = !payload.summary.cloudAvailable;
       cloudOption.textContent = payload.summary.cloudAvailable
-        ? 'Cloud gerenciado'
-        : 'Cloud gerenciado — já cadastrado';
+        ? 'Cloud'
+        : 'Cloud — já cadastrado';
     }
     collectorsGeneratedAt.textContent = `Atualizado em ${formatDeviceMoment(payload.generatedAt)}`;
     renderCollectors(payload.collectors);
@@ -3426,12 +3453,13 @@ createCollectorForm.addEventListener('submit', async (event) => {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error(payload.error === 'cloud_collector_already_exists'
-        ? 'Este cliente já possui um coletor Cloud gerenciado.'
+        ? 'Este cliente já possui um coletor Cloud.'
         : payload.error === 'cloud_port_capacity_exhausted'
           ? 'Não há porta Cloud disponível. Contate o administrador da plataforma.'
           : 'Revise os dados do coletor.');
     }
     createCollectorForm.reset();
+    syncCollectorModeHelp();
     const ingressSummary = payload.ingress?.destinations?.map((destination) =>
       `${destination.role === 'primary' ? 'Principal' : 'Redundante'} ${destination.publicUrl}: NetFlow UDP ${destination.netflowPort}, Syslog UDP ${destination.syslogPort}`
     ).join(' · ');
@@ -3449,6 +3477,8 @@ createCollectorForm.addEventListener('submit', async (event) => {
     setButtonLoading(createCollectorButton, false);
   }
 });
+
+createCollectorForm.mode.addEventListener('change', syncCollectorModeHelp);
 
 closeCollectorDialog.addEventListener('click', () => collectorDialog.close());
 
@@ -6519,34 +6549,33 @@ function integrationEndpoint(path = '') {
   return `${API_BASE}/v1/integrations/elleven${path}${query}`;
 }
 
+async function fetchAvailableIntegrationProviders() {
+  const response = await authenticatedFetch(`${API_BASE}/v1/integrations/catalog`, {
+    headers: { Accept: 'application/json' }, cache: 'no-store'
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error('O catálogo de integrações não respondeu corretamente.');
+  return Array.isArray(payload.providers) ? payload.providers.filter((item) => item?.enabled) : [];
+}
+
+function applyAvailableIntegrationProviders(providers) {
+  availableIntegrationProviders = providers;
+  integrationProviderAvailability = providers.some((item) => item.provider === 'elleven');
+  integrationsNav.hidden = isPlatformContext() || currentUser?.role !== 'admin';
+  erpQueryOption.hidden = !integrationProviderAvailability;
+  if (!integrationProviderAvailability) erpQueryOption.querySelector('input').checked = false;
+}
+
 async function loadIntegrationProviderAvailability() {
   if (isPlatformContext()) return;
   const userAtRequest = currentUser;
   try {
-    const response = await authenticatedFetch(`${API_BASE}/v1/integrations/catalog`, {
-      headers: { Accept: 'application/json' }, cache: 'no-store'
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error('Catálogo indisponível');
+    const providers = await fetchAvailableIntegrationProviders();
     if (currentUser !== userAtRequest || isPlatformContext()) return;
-    integrationProviderAvailability = Boolean(payload.providers?.some((item) => item.provider === 'elleven' && item.enabled));
-    integrationsNav.hidden = currentUser?.role !== 'admin' || !integrationProviderAvailability;
-    erpQueryOption.hidden = !integrationProviderAvailability;
-    if (!integrationProviderAvailability) erpQueryOption.querySelector('input').checked = false;
-    if (!integrationProviderAvailability && !integrationsView.hidden) {
-      window.history.replaceState(null, '', '#dashboard');
-      navigateTo('dashboard');
-    }
+    applyAvailableIntegrationProviders(providers);
   } catch {
-    if (currentUser !== userAtRequest) return;
-    integrationProviderAvailability = false;
-    integrationsNav.hidden = true;
-    erpQueryOption.hidden = true;
-    erpQueryOption.querySelector('input').checked = false;
-    if (!integrationsView.hidden) {
-      window.history.replaceState(null, '', '#dashboard');
-      navigateTo('dashboard');
-    }
+    if (currentUser !== userAtRequest || isPlatformContext()) return;
+    applyAvailableIntegrationProviders([]);
   }
 }
 
@@ -6558,7 +6587,7 @@ function renderPlatformIntegrationProvider(item) {
   platformEllevenActionLabel.textContent = enabled ? 'Disponível para clientes' : 'Oculta para clientes';
   platformEllevenFeedback.textContent = enabled
     ? 'Os clientes podem adicionar e configurar esta integração.'
-    : 'O menu não aparece para os clientes e a utilização fica bloqueada.';
+    : 'A integração não aparece no catálogo dos clientes e a utilização fica bloqueada.';
   platformIntegrationsUpdated.textContent = item?.updatedAt
     ? `Atualizado em ${formatDeviceMoment(item.updatedAt)}`
     : 'Configuração padrão da plataforma';
@@ -6788,11 +6817,27 @@ async function loadIntegrationTargets() {
 async function loadIntegrations() {
   integrationsLoading.hidden = false;
   integrationsError.hidden = true;
+  integrationsUnavailable.hidden = true;
   integrationsEmpty.hidden = true;
   integrationList.hidden = true;
+  addIntegrationButton.hidden = true;
+  ellevenIntegrationForm.hidden = true;
   integrationTenant.disabled = true;
   try {
     await loadIntegrationTargets();
+    const providers = await fetchAvailableIntegrationProviders();
+    applyAvailableIntegrationProviders(providers);
+    if (!availableIntegrationProviders.length) {
+      integrationsUnavailable.hidden = false;
+      integrationsLoaded = true;
+      return;
+    }
+    const ellevenAvailable = availableIntegrationProviders.some((item) => item.provider === 'elleven');
+    if (!ellevenAvailable) {
+      integrationsUnavailable.hidden = false;
+      integrationsLoaded = true;
+      return;
+    }
     const response = await authenticatedFetch(integrationEndpoint(), {
       headers: { Accept: 'application/json' }, cache: 'no-store'
     });
@@ -6801,14 +6846,14 @@ async function loadIntegrations() {
       ? 'Somente administradores podem configurar integrações.'
       : 'O serviço de integrações não respondeu corretamente.');
     renderIntegration(payload.integration);
+    addIntegrationButton.hidden = false;
     ellevenIntegrationForm.hidden = false;
     integrationsLoaded = true;
-    integrationsLoading.hidden = true;
   } catch (error) {
-    integrationsLoading.hidden = true;
     integrationsError.hidden = false;
     integrationsErrorMessage.textContent = error instanceof Error ? error.message : 'Falha inesperada.';
   } finally {
+    integrationsLoading.hidden = true;
     integrationTenant.disabled = false;
   }
 }
@@ -7591,6 +7636,15 @@ createClientForm.addEventListener('submit', async (event) => {
   }
 });
 
+openPlanDialogButton.addEventListener('click', () => {
+  createPlanForm.reset();
+  setFormFeedback(createPlanFeedback, '');
+  planDialog.showModal();
+  window.setTimeout(() => createPlanForm.elements.name.focus(), 0);
+});
+
+closePlanDialogButton.addEventListener('click', () => planDialog.close());
+
 createPlanForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!createPlanForm.reportValidity()) return;
@@ -7618,6 +7672,7 @@ createPlanForm.addEventListener('submit', async (event) => {
     clientsLoaded = false;
     plansLoaded = false;
     await loadPlans();
+    planDialog.close();
   } catch (error) {
     setFormFeedback(createPlanFeedback, error instanceof Error ? error.message : 'Falha ao criar plano.', true);
   } finally {
@@ -8078,6 +8133,17 @@ async function loadUsers() {
   }
 }
 
+openUserDialogButton.addEventListener('click', () => {
+  createUserForm.reset();
+  newUserRole.value = isPlatformContext() ? 'admin' : 'operator';
+  if (isPlatformContext()) populateAccessProfileSelect(newUserAccessProfile);
+  setFormFeedback(createUserFeedback, '');
+  userDialog.showModal();
+  window.setTimeout(() => createUserForm.elements.name.focus(), 0);
+});
+
+closeUserDialogButton.addEventListener('click', () => userDialog.close());
+
 createUserForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!createUserForm.reportValidity()) return;
@@ -8104,6 +8170,7 @@ createUserForm.addEventListener('submit', async (event) => {
     setFormFeedback(createUserFeedback, `Usuário ${payload.user.email} criado com sucesso.`);
     usersLoaded = false;
     await loadUsers();
+    userDialog.close();
   } catch (error) {
     setFormFeedback(createUserFeedback, error instanceof Error ? error.message : 'Falha ao criar usuário.', true);
   } finally {

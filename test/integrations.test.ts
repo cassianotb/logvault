@@ -125,9 +125,23 @@ describe('integração Elleven/Voalle', () => {
     const configuration = await app.inject({ method: 'GET', url: '/v1/integrations/elleven', headers: { cookie } });
 
     expect(catalog.statusCode).toBe(200);
-    expect(catalog.json().providers[0]).toMatchObject({ provider: 'elleven', enabled: false });
+    expect(catalog.json()).toEqual({ providers: [] });
     expect(configuration.statusCode).toBe(403);
     expect(configuration.json()).toEqual({ error: 'integration_provider_unavailable' });
+    await app.close();
+  });
+
+  it('lista no catálogo do cliente somente conectores liberados pela plataforma', async () => {
+    const store = repository();
+    const app = Fastify();
+    registerIntegrationRoutes(app, { postgres: store.postgres, encryptionKey });
+
+    const catalog = await app.inject({ method: 'GET', url: '/v1/integrations/catalog', headers: { cookie } });
+
+    expect(catalog.statusCode).toBe(200);
+    expect(catalog.json().providers).toEqual([
+      expect.objectContaining({ provider: 'elleven', name: 'Elleven', enabled: true })
+    ]);
     await app.close();
   });
 

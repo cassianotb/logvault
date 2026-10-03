@@ -299,7 +299,7 @@ export function registerIntegrationRoutes(app: FastifyInstance, dependencies: {
     const session = await authenticateRequest(request, reply, dependencies.postgres, { allowPlatformContext: true });
     if (!session) return;
     const enabled = await dependencies.postgres.isIntegrationProviderEnabled(provider);
-    return reply.send({ providers: [providerDescription(enabled)] });
+    return reply.send({ providers: enabled ? [providerDescription(true)] : [] });
   });
 
   app.get('/v1/platform/integrations', async (request, reply) => {

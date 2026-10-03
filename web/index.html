@@ -530,7 +530,7 @@
             </div>
             <form id="create-collector-form" class="collector-form">
               <div class="field"><label for="new-collector-name">Nome</label><input id="new-collector-name" name="name" required minlength="2" autocomplete="off" placeholder="Ex.: Coletor POP Centro"></div>
-              <div class="field"><label for="new-collector-mode">Modo</label><select id="new-collector-mode" name="mode"><option value="edge">Servidor local (Edge)</option><option value="cloud">Cloud gerenciado</option></select><small class="field-help" id="collector-mode-help">Edge é instalado no cliente; Cloud roda automaticamente no servidor LogVault.</small></div>
+              <div class="field"><label for="new-collector-mode">Modo</label><select id="new-collector-mode" name="mode"><option value="edge">Servidor local</option><option value="cloud">Cloud</option></select><small class="field-help" id="collector-mode-help">Coletor local instalado na infraestrutura do cliente.</small></div>
               <button class="primary-button user-create-button" id="create-collector-button" type="submit"><span class="button-label">Adicionar</span><span class="spinner" aria-hidden="true"></span></button>
               <p class="form-feedback" id="create-collector-feedback" hidden></p>
             </form>
@@ -1145,6 +1145,7 @@
 
             <div class="state" id="integrations-loading"><div class="device-loading-dot" aria-hidden="true"></div><strong>Carregando integração…</strong></div>
             <div class="state error-state" id="integrations-error" hidden><div class="state-icon" aria-hidden="true">!</div><strong>Não foi possível carregar a integração</strong><p id="integrations-error-message">Tente novamente.</p></div>
+            <div class="integration-empty" id="integrations-unavailable" hidden><span class="integration-empty-icon"><svg aria-hidden="true"><use href="#icon-plug"/></svg></span><h2>Nenhuma integração disponível</h2><p>A administração da plataforma ainda não disponibilizou integrações para este ambiente.</p></div>
             <div class="integration-empty" id="integrations-empty" hidden><span class="integration-empty-icon"><svg aria-hidden="true"><use href="#icon-plug"/></svg></span><h2>Nenhuma integração adicionada</h2><p>Adicione o ERP utilizado pelo cliente para iniciar a identificação assistida dos assinantes.</p><button class="primary-button" id="add-first-integration" type="button">Adicionar primeira integração</button></div>
             <section class="integration-list" id="integration-list" hidden>
               <article class="integration-list-card">
@@ -1215,14 +1216,19 @@
             <article><span>SEM LIMITE</span><strong id="plan-unlimited">—</strong><small>quantidade livre</small></article>
           </div>
 
-          <section class="user-create-panel plan-management-panel" id="plan-management-panel" aria-live="polite">
-            <div class="devices-panel-head"><div><p class="eyebrow">Catálogo comercial</p><h2>Cadastrar e editar planos</h2></div><small id="plans-generated-at">Sem limite: deixe a quantidade em branco</small></div>
-            <form id="create-plan-form" class="plan-form">
-              <div class="field"><label for="new-plan-name">Nome do plano</label><input id="new-plan-name" name="name" required minlength="2" maxlength="200" autocomplete="off"></div>
-              <div class="field"><label for="new-plan-limit">Equipamentos</label><input id="new-plan-limit" name="deviceLimit" type="number" min="1" max="10000" placeholder="Sem limite"></div>
-              <button class="primary-button user-create-button" id="create-plan-button" type="submit"><span class="button-label">Criar plano</span><span class="spinner" aria-hidden="true"></span></button>
-              <p class="form-feedback" id="create-plan-feedback" hidden></p>
-            </form>
+          <section class="client-onboarding-card management-onboarding-card" id="plan-onboarding-card">
+            <div class="client-onboarding-icon" aria-hidden="true"><svg><use href="#icon-layers"/></svg></div>
+            <div class="client-onboarding-copy">
+              <p class="eyebrow">Novo plano</p>
+              <h2>Adicionar plano comercial</h2>
+              <p>Defina o nome e o limite de equipamentos oferecido aos clientes.</p>
+              <div class="client-onboarding-features"><span>Limite configurável</span><span>Disponível imediatamente</span></div>
+            </div>
+            <button class="primary-button client-onboarding-button" id="open-plan-dialog" type="button">Adicionar plano</button>
+          </section>
+
+          <section class="devices-panel plan-management-panel" id="plan-management-panel" aria-live="polite">
+            <div class="devices-panel-head"><div><p class="eyebrow">Catálogo comercial</p><h2>Planos cadastrados</h2></div><small id="plans-generated-at">Aguardando atualização</small></div>
             <div class="state" id="plans-loading"><div class="device-loading-dot" aria-hidden="true"></div><strong>Carregando planos…</strong></div>
             <div class="state error-state" id="plans-error" hidden><div class="state-icon" aria-hidden="true">!</div><strong>Não foi possível carregar os planos</strong><p id="plans-error-message">Tente novamente.</p></div>
             <div class="table-wrap" id="plans-table-wrap" hidden>
@@ -1539,19 +1545,15 @@
             <div class="access-profile-list" id="access-profile-list" hidden></div>
           </section>
 
-          <section class="user-create-panel">
-            <div class="devices-panel-head">
-              <div><p class="eyebrow">Nova conta</p><h2>Adicionar usuário</h2></div>
+          <section class="client-onboarding-card management-onboarding-card" id="user-onboarding-card">
+            <div class="client-onboarding-icon" aria-hidden="true"><svg><use href="#icon-users"/></svg></div>
+            <div class="client-onboarding-copy">
+              <p class="eyebrow">Nova conta</p>
+              <h2>Adicionar usuário</h2>
+              <p id="user-onboarding-copy">Crie uma conta individual e escolha o perfil adequado para este ambiente.</p>
+              <div class="client-onboarding-features"><span>Acesso individual</span><span>Permissões controladas</span><span>Auditoria preservada</span></div>
             </div>
-            <form id="create-user-form" class="user-form">
-              <div class="field"><label for="new-user-name">Nome</label><input id="new-user-name" name="name" autocomplete="off" required minlength="2"></div>
-              <div class="field"><label for="new-user-email">E-mail</label><input id="new-user-email" name="email" type="email" autocomplete="off" required></div>
-              <div class="field" id="new-user-role-field"><label for="new-user-role">Perfil</label><select id="new-user-role" name="role"><option value="operator">Operador</option><option value="auditor">Auditor</option><option value="admin">Administrador</option></select></div>
-              <div class="field" id="new-user-access-profile-field" hidden><label for="new-user-access-profile">Perfil de acesso</label><select id="new-user-access-profile" name="accessProfileId"><option value="">Selecione um perfil</option></select></div>
-              <div class="field"><label for="new-user-password">Senha inicial</label><input id="new-user-password" name="password" type="password" minlength="12" autocomplete="new-password" required></div>
-              <button class="primary-button user-create-button" id="create-user-button" type="submit"><span class="button-label">Criar usuário</span><span class="spinner" aria-hidden="true"></span></button>
-              <p class="form-feedback" id="create-user-feedback" hidden></p>
-            </form>
+            <button class="primary-button client-onboarding-button" id="open-user-dialog" type="button">Adicionar usuário</button>
           </section>
 
           <section class="devices-panel users-panel" aria-live="polite">
@@ -1718,7 +1720,7 @@
         <div class="dialog-head"><div><p class="eyebrow">Coletor</p><h2>Editar cadastro</h2></div><button type="button" id="close-collector-dialog" aria-label="Fechar">×</button></div>
         <input type="hidden" name="collectorId">
         <div class="field"><label for="edit-collector-name">Nome</label><input id="edit-collector-name" name="name" required minlength="2"></div>
-        <div class="field"><label for="edit-collector-mode">Modo</label><select id="edit-collector-mode" name="mode" disabled><option value="edge">Servidor local (Edge)</option><option value="cloud">Cloud gerenciado</option></select><small class="field-help">O modo é definido na criação para preservar a arquitetura do coletor.</small></div>
+        <div class="field"><label for="edit-collector-mode">Modo</label><select id="edit-collector-mode" name="mode" disabled><option value="edge">Servidor local</option><option value="cloud">Cloud</option></select><small class="field-help">O modo é definido na criação para preservar a arquitetura do coletor.</small></div>
         <label class="device-enabled"><input type="checkbox" name="active"> Coletor ativo</label>
         <p class="form-feedback" id="edit-collector-feedback" hidden></p>
         <button class="primary-button dialog-submit" id="edit-collector-submit" type="submit"><span class="button-label">Salvar alterações</span><span class="spinner" aria-hidden="true"></span></button>
@@ -1731,6 +1733,27 @@
         <div class="field"><label for="credential-config">Variáveis de configuração</label><textarea id="credential-config" readonly spellcheck="false"></textarea></div>
         <p class="form-feedback" id="credential-feedback" hidden></p>
         <button class="primary-button dialog-submit" id="copy-credential-button" type="button"><span class="button-label">Copiar configuração</span><span class="spinner" aria-hidden="true"></span></button>
+      </form>
+    </dialog>
+    <dialog class="password-dialog management-create-dialog" id="plan-dialog">
+      <form id="create-plan-form">
+        <div class="dialog-head"><div><p class="eyebrow">Catálogo comercial</p><h2>Adicionar plano</h2><span>Defina o nome e, se necessário, o limite de equipamentos.</span></div><button type="button" id="close-plan-dialog" aria-label="Fechar">×</button></div>
+        <div class="field"><label for="new-plan-name">Nome do plano</label><input id="new-plan-name" name="name" required minlength="2" maxlength="200" autocomplete="off"></div>
+        <div class="field"><label for="new-plan-limit">Equipamentos</label><input id="new-plan-limit" name="deviceLimit" type="number" min="1" max="10000" placeholder="Sem limite"><small class="field-help">Deixe em branco para criar um plano sem limite.</small></div>
+        <p class="form-feedback" id="create-plan-feedback" hidden></p>
+        <button class="primary-button dialog-submit" id="create-plan-button" type="submit"><span class="button-label">Criar plano</span><span class="spinner" aria-hidden="true"></span></button>
+      </form>
+    </dialog>
+    <dialog class="password-dialog management-create-dialog" id="user-dialog">
+      <form id="create-user-form">
+        <div class="dialog-head"><div><p class="eyebrow">Nova conta</p><h2 id="user-dialog-title">Adicionar usuário</h2><span id="user-dialog-copy">Crie um acesso individual para este ambiente.</span></div><button type="button" id="close-user-dialog" aria-label="Fechar">×</button></div>
+        <div class="field"><label for="new-user-name">Nome</label><input id="new-user-name" name="name" autocomplete="off" required minlength="2"></div>
+        <div class="field"><label for="new-user-email">E-mail</label><input id="new-user-email" name="email" type="email" autocomplete="off" required></div>
+        <div class="field" id="new-user-role-field"><label for="new-user-role">Perfil</label><select id="new-user-role" name="role"><option value="operator">Operador</option><option value="auditor">Auditor</option><option value="admin">Administrador</option></select></div>
+        <div class="field" id="new-user-access-profile-field" hidden><label for="new-user-access-profile">Perfil de acesso</label><select id="new-user-access-profile" name="accessProfileId"><option value="">Selecione um perfil</option></select></div>
+        <div class="field"><label for="new-user-password">Senha inicial</label><input id="new-user-password" name="password" type="password" minlength="12" autocomplete="new-password" required></div>
+        <p class="form-feedback" id="create-user-feedback" hidden></p>
+        <button class="primary-button dialog-submit" id="create-user-button" type="submit"><span class="button-label">Criar usuário</span><span class="spinner" aria-hidden="true"></span></button>
       </form>
     </dialog>
     <dialog class="client-wizard-dialog" id="client-wizard-dialog">
