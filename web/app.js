@@ -2,7 +2,9 @@ const API_BASE = '/api';
 const initialResetMatch = window.location.hash.match(/^#reset-password\/([A-Za-z0-9_-]{40,128})$/);
 let activePasswordResetToken = initialResetMatch?.[1] || '';
 
-if (window.location.search || initialResetMatch) window.history.replaceState(null, '', window.location.pathname);
+if (window.location.search || initialResetMatch) {
+  window.history.replaceState(null, '', window.location.pathname);
+}
 
 const loginScreen = document.querySelector('#login-screen');
 const loginMode = document.querySelector('#login-mode');
@@ -274,21 +276,22 @@ const backupHistoryPanel = document.querySelector('#backup-history-panel');
 const backupTableWrap = document.querySelector('#backup-table-wrap');
 const backupBody = document.querySelector('#backup-body');
 const backupEmpty = document.querySelector('#backup-empty');
-const platformBackupDestinationPanel = document.querySelector('#platform-backup-destination');
-const platformBackupDestinationForm = document.querySelector('#platform-backup-destination-form');
-const platformBackupDestinationStatus = document.querySelector('#platform-backup-destination-status');
-const platformBackupDestinationFeedback = document.querySelector('#platform-backup-destination-feedback');
-const backupDriveFolderId = document.querySelector('#backup-drive-folder-id');
-const backupDriveRetention = document.querySelector('#backup-drive-retention');
-const backupDriveCredentials = document.querySelector('#backup-drive-credentials');
-const backupDrivePassphrase = document.querySelector('#backup-drive-passphrase');
-const backupDriveEnabled = document.querySelector('#backup-drive-enabled');
-const testPlatformBackupDestinationButton = document.querySelector('#test-platform-backup-destination');
-const savePlatformBackupDestinationButton = document.querySelector('#save-platform-backup-destination');
+const importPlatformBackupButton = document.querySelector('#import-platform-backup');
+const backupImportDialog = document.querySelector('#backup-import-dialog');
+const backupImportForm = document.querySelector('#backup-import-form');
+const closeBackupImportButton = document.querySelector('#close-backup-import');
+const cancelBackupImportButton = document.querySelector('#cancel-backup-import');
+const backupImportFile = document.querySelector('#backup-import-file');
+const backupImportFileName = document.querySelector('#backup-import-file-name');
+const backupImportPassphrase = document.querySelector('#backup-import-passphrase');
+const backupImportProgress = document.querySelector('#backup-import-progress');
+const backupImportProgressLabel = document.querySelector('#backup-import-progress-label');
+const backupImportProgressPercent = document.querySelector('#backup-import-progress-percent');
+const backupImportProgressBar = document.querySelector('#backup-import-progress-bar');
+const backupImportFeedback = document.querySelector('#backup-import-feedback');
+const startBackupImportButton = document.querySelector('#start-backup-import');
 const tenantBackupPanel = document.querySelector('#tenant-backup-panel');
 const createTenantBackupButton = document.querySelector('#create-tenant-backup');
-const tenantBackupGoogleDrive = document.querySelector('#tenant-backup-google-drive');
-const tenantBackupGoogleDriveDetail = document.querySelector('#tenant-backup-google-drive-detail');
 const tenantBackupFeedback = document.querySelector('#tenant-backup-feedback');
 const tenantBackupTableWrap = document.querySelector('#tenant-backup-table-wrap');
 const tenantBackupBody = document.querySelector('#tenant-backup-body');
@@ -477,8 +480,12 @@ const capacityEdgeFree = document.querySelector('#capacity-edge-free');
 const capacityEdgeDisk = document.querySelector('#capacity-edge-disk');
 const capacityEdgeExplanation = document.querySelector('#capacity-edge-explanation');
 const collectorManagementPanel = document.querySelector('#collector-management-panel');
+const collectorCreateDialog = document.querySelector('#collector-create-dialog');
+const openCollectorCreateDialogButton = document.querySelector('#open-collector-create-dialog');
+const closeCollectorCreateDialogButton = document.querySelector('#close-collector-create-dialog');
 const createCollectorForm = document.querySelector('#create-collector-form');
-const collectorModeHelp = document.querySelector('#collector-mode-help');
+const collectorCloudChoice = document.querySelector('#collector-cloud-choice');
+const collectorCloudDescription = document.querySelector('#collector-cloud-description');
 const createCollectorButton = document.querySelector('#create-collector-button');
 const createCollectorFeedback = document.querySelector('#create-collector-feedback');
 const collectorDialog = document.querySelector('#collector-dialog');
@@ -562,12 +569,21 @@ const userAdminsLabel = document.querySelector('#user-admins-label');
 const userAdminsDetail = document.querySelector('#user-admins-detail');
 const createUserForm = document.querySelector('#create-user-form');
 const createUserButton = document.querySelector('#create-user-button');
+const generateUserPasswordButton = document.querySelector('#generate-user-password');
 const createUserFeedback = document.querySelector('#create-user-feedback');
 const userDialog = document.querySelector('#user-dialog');
 const openUserDialogButton = document.querySelector('#open-user-dialog');
 const closeUserDialogButton = document.querySelector('#close-user-dialog');
 const userDialogTitle = document.querySelector('#user-dialog-title');
 const userDialogCopy = document.querySelector('#user-dialog-copy');
+const editUserDialog = document.querySelector('#edit-user-dialog');
+const editUserForm = document.querySelector('#edit-user-form');
+const closeEditUserDialogButton = document.querySelector('#close-edit-user-dialog');
+const editUserRoleField = document.querySelector('#edit-user-role-field');
+const editUserAccessProfileField = document.querySelector('#edit-user-access-profile-field');
+const editUserAccessProfile = document.querySelector('#edit-user-access-profile');
+const editUserFeedback = document.querySelector('#edit-user-feedback');
+const saveEditUserButton = document.querySelector('#save-edit-user');
 const userOnboardingCopy = document.querySelector('#user-onboarding-copy');
 const usersViewTitle = document.querySelector('#users-view-title');
 const usersViewCopy = document.querySelector('#users-view-copy');
@@ -609,6 +625,9 @@ const auditExports = document.querySelector('#audit-exports');
 const auditLoginFailures = document.querySelector('#audit-login-failures');
 const auditUserChanges = document.querySelector('#audit-user-changes');
 const deviceManagementPanel = document.querySelector('#device-management-panel');
+const deviceCreateDialog = document.querySelector('#device-create-dialog');
+const openDeviceCreateDialogButton = document.querySelector('#open-device-create-dialog');
+const closeDeviceCreateDialogButton = document.querySelector('#close-device-create-dialog');
 const createDeviceForm = document.querySelector('#create-device-form');
 const createDeviceButton = document.querySelector('#create-device-button');
 const createDeviceFeedback = document.querySelector('#create-device-feedback');
@@ -666,6 +685,11 @@ const planOnboardingCard = document.querySelector('#plan-onboarding-card');
 const planDialog = document.querySelector('#plan-dialog');
 const openPlanDialogButton = document.querySelector('#open-plan-dialog');
 const closePlanDialogButton = document.querySelector('#close-plan-dialog');
+const editPlanDialog = document.querySelector('#edit-plan-dialog');
+const editPlanForm = document.querySelector('#edit-plan-form');
+const closeEditPlanDialogButton = document.querySelector('#close-edit-plan-dialog');
+const editPlanFeedback = document.querySelector('#edit-plan-feedback');
+const saveEditPlanButton = document.querySelector('#save-edit-plan');
 const clientOnboardingCard = document.querySelector('#client-onboarding-card');
 const createPlanButton = document.querySelector('#create-plan-button');
 const createPlanFeedback = document.querySelector('#create-plan-feedback');
@@ -866,6 +890,8 @@ let platformCompanyLogoDataUrl = null;
 let removePlatformCompanyLogo = false;
 let officialReportsPollTimer = null;
 let clientWizardStep = 1;
+let editingManagedUser = null;
+let editingServicePlan = null;
 const discoveryStorageKey = 'argus.deviceDiscoverySessionId';
 
 function secureRandomCharacter(characters) {
@@ -1161,14 +1187,14 @@ function showApplication(user) {
   usersViewTitle.textContent = platformContext ? 'Usuários da plataforma' : 'Usuários e permissões';
   usersViewCopy.textContent = platformContext
     ? 'Gerencie as contas administrativas que podem acessar e operar o LogVault.'
-    : 'Crie contas individuais e mantenha a trilha de auditoria vinculada a cada pessoa.';
+    : 'Gerencie contas individuais e atribua um dos três perfis fixos de acesso do cliente.';
   userOnboardingCopy.textContent = platformContext
     ? 'Crie uma conta administrativa e associe um perfil de acesso da plataforma.'
-    : 'Crie uma conta individual e escolha o perfil adequado para este ambiente.';
+    : 'Crie uma conta e selecione o perfil fixo: Administrador, Operador ou Auditor.';
   userDialogTitle.textContent = platformContext ? 'Adicionar usuário da plataforma' : 'Adicionar usuário';
   userDialogCopy.textContent = platformContext
     ? 'Associe a nova conta a um perfil de acesso da plataforma.'
-    : 'Crie um acesso individual para este ambiente.';
+    : 'Crie um acesso individual e atribua um dos três perfis fixos do cliente.';
   newUserRole.value = platformContext ? 'admin' : newUserRole.value;
   newUserRole.disabled = platformContext;
   newUserRoleField.hidden = platformContext;
@@ -1451,7 +1477,7 @@ logoutButton.addEventListener('click', async () => {
 function queryFromForm() {
   const data = new FormData(form);
   const query = new URLSearchParams({
-    publicIp: String(data.get('publicIp')).trim(),
+    publicIp: String(data.get('publicIp') || '').trim(),
     at: String(data.get('at')),
     timezone: String(data.get('timezone')),
     correlateErp: data.get('correlateErp') ? 'true' : 'false'
@@ -2191,8 +2217,16 @@ function useDiscoveryCandidate(candidate) {
   if (discoveryPollTimer) window.clearTimeout(discoveryPollTimer);
   discoveryPollTimer = null;
   deviceDiscoveryDialog.close();
-  createDeviceForm.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  window.setTimeout(() => createDeviceForm.name.focus(), 250);
+  deviceCreateDialog.showModal();
+  window.setTimeout(() => createDeviceForm.name.focus(), 0);
+}
+
+function openDeviceCreateDialog() {
+  createDeviceForm.reset();
+  populateCollectorSelect(createDeviceForm.collectorId);
+  setFormFeedback(createDeviceFeedback, '');
+  deviceCreateDialog.showModal();
+  window.setTimeout(() => createDeviceForm.name.focus(), 0);
 }
 
 function renderDiscoveryCandidates(candidates) {
@@ -2280,6 +2314,8 @@ function openDeviceDiscovery() {
 }
 
 discoverDevicesButton.addEventListener('click', openDeviceDiscovery);
+openDeviceCreateDialogButton.addEventListener('click', openDeviceCreateDialog);
+closeDeviceCreateDialogButton.addEventListener('click', () => deviceCreateDialog.close());
 closeDeviceDiscoveryButton.addEventListener('click', () => {
   if (discoveryPollTimer) window.clearTimeout(discoveryPollTimer);
   discoveryPollTimer = null;
@@ -2540,9 +2576,9 @@ createDeviceForm.addEventListener('submit', async (event) => {
     }
     createDeviceForm.reset();
     populateCollectorSelect(createDeviceForm.collectorId);
-    setFormFeedback(createDeviceFeedback, `${payload.device.name} adicionado. O coletor receberá o cadastro no próximo heartbeat.`);
     devicesLoaded = false;
     await loadDevices();
+    deviceCreateDialog.close();
   } catch (error) {
     setFormFeedback(createDeviceFeedback, error instanceof Error ? error.message : 'Falha ao adicionar equipamento.', true);
   } finally {
@@ -2554,8 +2590,10 @@ createDeviceForm.addEventListener('submit', async (event) => {
 function syncDeviceCreateAvailability() {
   const reached = currentDevicePlan?.deviceLimit !== null
     && currentDevicePlan?.devicesRemaining === 0;
-  createDeviceButton.disabled = Boolean(reached);
-  createDeviceButton.title = reached ? 'O limite de equipamentos do plano foi atingido.' : '';
+  for (const button of [createDeviceButton, openDeviceCreateDialogButton]) {
+    button.disabled = Boolean(reached);
+    button.title = reached ? 'O limite de equipamentos do plano foi atingido.' : '';
+  }
 }
 
 closeDeviceDialog.addEventListener('click', () => deviceDialog.close());
@@ -2847,12 +2885,6 @@ function renderCollectors(collectors) {
   }
 }
 
-function syncCollectorModeHelp() {
-  collectorModeHelp.textContent = createCollectorForm.mode.value === 'cloud'
-    ? 'Coletor em nuvem hospedado na infraestrutura da LogVault.'
-    : 'Coletor local instalado na infraestrutura do cliente.';
-}
-
 async function loadCollectors() {
   collectorsLoading.hidden = false;
   collectorsError.hidden = true;
@@ -2868,12 +2900,16 @@ async function loadCollectors() {
     collectorConnected.textContent = formatNumber(payload.summary.connected);
     collectorPending.textContent = formatNumber(payload.summary.pendingRecords);
     collectorSpool.textContent = formatBytes(payload.summary.spoolBytes);
-    const cloudOption = createCollectorForm.mode.querySelector('option[value="cloud"]');
+    const cloudOption = createCollectorForm.querySelector('input[name="mode"][value="cloud"]');
     if (cloudOption) {
       cloudOption.disabled = !payload.summary.cloudAvailable;
-      cloudOption.textContent = payload.summary.cloudAvailable
-        ? 'Cloud'
-        : 'Cloud — já cadastrado';
+      collectorCloudChoice.classList.toggle('disabled', !payload.summary.cloudAvailable);
+      collectorCloudDescription.textContent = payload.summary.cloudAvailable
+        ? 'Coletor em nuvem hospedado na infraestrutura da LogVault.'
+        : 'Este cliente já possui um coletor Cloud.';
+      if (!payload.summary.cloudAvailable && cloudOption.checked) {
+        createCollectorForm.elements.mode.value = 'edge';
+      }
     }
     collectorsGeneratedAt.textContent = `Atualizado em ${formatDeviceMoment(payload.generatedAt)}`;
     renderCollectors(payload.collectors);
@@ -3459,17 +3495,11 @@ createCollectorForm.addEventListener('submit', async (event) => {
           : 'Revise os dados do coletor.');
     }
     createCollectorForm.reset();
-    syncCollectorModeHelp();
-    const ingressSummary = payload.ingress?.destinations?.map((destination) =>
-      `${destination.role === 'primary' ? 'Principal' : 'Redundante'} ${destination.publicUrl}: NetFlow UDP ${destination.netflowPort}, Syslog UDP ${destination.syslogPort}`
-    ).join(' · ');
-    setFormFeedback(createCollectorFeedback, payload.managed
-      ? `${payload.collector.name} provisionado. ${ingressSummary || `NetFlow/IPFIX: UDP ${payload.ingress.netflowPort}. Syslog: UDP ${payload.ingress.syslogPort}.`}`
-      : `${payload.collector.name} criado. Copie a credencial exibida para o servidor local.`);
     collectorsLoaded = false;
     firewallLoaded = false;
     devicesLoaded = false;
     await loadCollectors();
+    collectorCreateDialog.close();
     if (payload.credentials) showCollectorCredentials(payload.credentials);
   } catch (error) {
     setFormFeedback(createCollectorFeedback, error instanceof Error ? error.message : 'Falha ao criar coletor.', true);
@@ -3478,7 +3508,15 @@ createCollectorForm.addEventListener('submit', async (event) => {
   }
 });
 
-createCollectorForm.mode.addEventListener('change', syncCollectorModeHelp);
+function openCollectorCreateDialog() {
+  createCollectorForm.reset();
+  setFormFeedback(createCollectorFeedback, '');
+  collectorCreateDialog.showModal();
+  window.setTimeout(() => createCollectorForm.name.focus(), 0);
+}
+
+openCollectorCreateDialogButton.addEventListener('click', openCollectorCreateDialog);
+closeCollectorCreateDialogButton.addEventListener('click', () => collectorCreateDialog.close());
 
 closeCollectorDialog.addEventListener('click', () => collectorDialog.close());
 
@@ -3759,7 +3797,7 @@ function renderBackups(backups, downloadAllowed) {
   for (const backup of backups) {
     const row = document.createElement('tr');
     const downloadCell = document.createElement('td');
-    downloadCell.dataset.label = 'Proteção manual';
+    downloadCell.dataset.label = 'Ações';
     if (downloadAllowed) {
       const download = document.createElement('a');
       download.className = 'table-action backup-download';
@@ -3800,15 +3838,11 @@ function renderTenantBackups(backups) {
       actionCell.append(link);
     } else actionCell.textContent = expired ? 'Download expirado'
       : backup.status === 'failed' ? backup.errorMessage || 'Falha no processamento' : 'Aguarde';
-    const external = backup.sendToGoogleDrive
-      ? backup.googleDriveFileId ? 'Google Drive concluído' : backup.status === 'failed' ? 'Falhou' : 'Pendente'
-      : 'Não solicitado';
     const row = document.createElement('tr');
     row.append(
       td(formatDeviceMoment(backup.requestedAt), 'Solicitado em'),
       td(expired ? 'Expirado' : tenantBackupStatusLabels[backup.status] || backup.status, 'Estado'),
       td(backup.byteCount ? formatBytes(backup.byteCount) : '—', 'Tamanho'),
-      td(external, 'Cópia externa'),
       actionCell
     );
     tenantBackupBody.append(row);
@@ -3825,10 +3859,6 @@ async function loadTenantBackups({ poll = true } = {}) {
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error('Não foi possível consultar os backups do cliente.');
     renderTenantBackups(payload.backups || []);
-    tenantBackupGoogleDrive.disabled = !payload.googleDriveAvailable;
-    if (!payload.googleDriveAvailable) tenantBackupGoogleDrive.checked = false;
-    tenantBackupGoogleDriveDetail.textContent = payload.googleDriveAvailable
-      ? 'Destino externo validado pela plataforma.' : 'O administrador da plataforma ainda não habilitou este destino.';
     const active = (payload.backups || []).some((backup) => ['pending', 'processing'].includes(backup.status));
     if (poll && active && !systemView.hidden) tenantBackupPollTimer = window.setTimeout(() => void loadTenantBackups(), 3000);
   } catch (error) {
@@ -3836,68 +3866,75 @@ async function loadTenantBackups({ poll = true } = {}) {
   }
 }
 
-async function loadPlatformBackupDestination() {
-  try {
-    const response = await authenticatedFetch(`${API_BASE}/v1/platform/backup-destination`, { headers: { Accept: 'application/json' }, cache: 'no-store' });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error('Não foi possível consultar o destino externo.');
-    const destination = payload.destination;
-    backupDriveEnabled.checked = Boolean(destination.enabled);
-    backupDriveFolderId.value = destination.folderId || '';
-    backupDriveRetention.value = String(destination.retentionDays || 30);
-    backupDriveCredentials.value = '';
-    backupDrivePassphrase.value = '';
-    backupDriveCredentials.placeholder = destination.credentialsConfigured
-      ? 'Credencial protegida; cole um JSON somente para substituí-la' : 'Cole o JSON da conta de serviço';
-    backupDrivePassphrase.placeholder = destination.encryptionConfigured
-      ? 'Frase protegida; preencha somente para substituí-la' : 'Mínimo de 20 caracteres; guarde fora do servidor';
-    platformBackupDestinationStatus.textContent = destination.lastTestStatus === 'success'
-      ? payload.latestUpload?.status === 'success'
-        ? `Última cópia concluída em ${formatDeviceMoment(payload.latestUpload.completedAt)}`
-        : payload.latestUpload?.status === 'failed'
-          ? 'Conexão validada · último envio falhou'
-          : payload.latestUpload?.status === 'uploading'
-            ? 'Conexão validada · envio em andamento'
-            : `Conexão validada em ${formatDeviceMoment(destination.lastTestAt)}`
-      : destination.lastTestStatus === 'failed' ? 'Último teste falhou' : destination.enabled ? 'Teste pendente' : 'Desativado';
-  } catch (error) {
-    setFormFeedback(platformBackupDestinationFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
-  }
+function updateBackupImportProgress(label, percent) {
+  backupImportProgress.hidden = false;
+  backupImportProgressLabel.textContent = label;
+  backupImportProgressPercent.textContent = `${Math.round(percent)}%`;
+  backupImportProgressBar.value = percent;
 }
 
-platformBackupDestinationForm.addEventListener('submit', async (event) => {
-  event.preventDefault();
-  setFormFeedback(platformBackupDestinationFeedback, '');
-  setButtonLoading(savePlatformBackupDestinationButton, true);
-  try {
-    const response = await authenticatedFetch(`${API_BASE}/v1/platform/backup-destination`, {
-      method: 'PUT', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: backupDriveEnabled.checked, folderId: backupDriveFolderId.value.trim(),
-        serviceAccountJson: backupDriveCredentials.value.trim(), encryptionPassphrase: backupDrivePassphrase.value,
-        retentionDays: Number(backupDriveRetention.value) })
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error === 'backup_passphrase_too_short'
-      ? 'A frase de recuperação deve ter pelo menos 20 caracteres.' : 'Não foi possível salvar o destino externo.');
-    setFormFeedback(platformBackupDestinationFeedback, 'Destino salvo. Execute o teste antes do primeiro envio.');
-    await loadPlatformBackupDestination();
-  } catch (error) {
-    setFormFeedback(platformBackupDestinationFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
-  } finally { setButtonLoading(savePlatformBackupDestinationButton, false); }
+function resetBackupImportDialog() {
+  backupImportForm.reset();
+  backupImportFileName.textContent = 'Tamanho máximo: 50 GB · envio retomável em blocos';
+  backupImportProgress.hidden = true;
+  setFormFeedback(backupImportFeedback, '');
+}
+
+importPlatformBackupButton.addEventListener('click', () => {
+  resetBackupImportDialog();
+  backupImportDialog.showModal();
+});
+closeBackupImportButton.addEventListener('click', () => backupImportDialog.close());
+cancelBackupImportButton.addEventListener('click', () => backupImportDialog.close());
+backupImportFile.addEventListener('change', () => {
+  const file = backupImportFile.files?.[0];
+  backupImportFileName.textContent = file ? `${file.name} · ${formatBytes(file.size)}` : 'Tamanho máximo: 50 GB · envio retomável em blocos';
 });
 
-testPlatformBackupDestinationButton.addEventListener('click', async () => {
-  testPlatformBackupDestinationButton.disabled = true;
-  setFormFeedback(platformBackupDestinationFeedback, 'Testando autenticação e permissão de escrita…');
+async function importLocalBackup(file, passphrase) {
+  const started = await authenticatedFetch(`${API_BASE}/v1/platform/backups/imports`, {
+    method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ fileName: file.name, totalBytes: file.size })
+  });
+  const session = await started.json().catch(() => ({}));
+  if (!started.ok) throw new Error(session.error === 'insufficient_backup_import_space'
+    ? 'Não há espaço suficiente para validar este backup.' : 'Não foi possível iniciar a importação.');
+  const chunkBytes = session.chunkBytes || 8 * 1024 * 1024;
+  for (let offset = 0; offset < file.size; offset += chunkBytes) {
+    const chunk = file.slice(offset, Math.min(file.size, offset + chunkBytes));
+    const response = await authenticatedFetch(`${API_BASE}/v1/platform/backups/imports/${encodeURIComponent(session.importId)}/chunk`, {
+      method: 'PUT', headers: { Accept: 'application/json', 'Content-Type': 'application/octet-stream', 'X-Upload-Offset': String(offset) },
+      body: chunk
+    });
+    if (!response.ok) throw new Error('O envio foi interrompido. Tente importar novamente.');
+    updateBackupImportProgress('Enviando arquivo em blocos seguros…', Math.min(90, ((offset + chunk.size) / file.size) * 90));
+  }
+  updateBackupImportProgress('Validando criptografia, estrutura e checksums…', 95);
+  const completed = await authenticatedFetch(`${API_BASE}/v1/platform/backups/imports/${encodeURIComponent(session.importId)}/complete`, {
+    method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ passphrase })
+  });
+  const payload = await completed.json().catch(() => ({}));
+  if (!completed.ok) throw new Error(payload.message || 'O backup não passou na validação de integridade.');
+  return payload;
+}
+
+backupImportForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const file = backupImportFile.files?.[0];
+  if (!file) return setFormFeedback(backupImportFeedback, 'Selecione um arquivo de backup.', true);
+  setButtonLoading(startBackupImportButton, true);
+  setFormFeedback(backupImportFeedback, '');
   try {
-    const response = await authenticatedFetch(`${API_BASE}/v1/platform/backup-destination/test`, { method: 'POST', headers: { Accept: 'application/json' } });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.message || 'Não foi possível acessar a pasta informada.');
-    setFormFeedback(platformBackupDestinationFeedback, `Conexão validada com a pasta “${payload.folder.name}”.`);
-    await loadPlatformBackupDestination();
+    const result = await importLocalBackup(file, backupImportPassphrase.value);
+    updateBackupImportProgress('Backup validado e incorporado ao catálogo.', 100);
+    const imported = result.imported?.length
+      ? `Importado: ${result.imported.join(', ')}.` : 'Este backup já estava presente no catálogo.';
+    setFormFeedback(backupImportFeedback, imported);
+    await loadSystem();
   } catch (error) {
-    setFormFeedback(platformBackupDestinationFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
-  } finally { testPlatformBackupDestinationButton.disabled = false; }
+    setFormFeedback(backupImportFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
+  } finally { setButtonLoading(startBackupImportButton, false); }
 });
 
 createTenantBackupButton.addEventListener('click', async () => {
@@ -3906,13 +3943,12 @@ createTenantBackupButton.addEventListener('click', async () => {
   try {
     const response = await authenticatedFetch(`${API_BASE}/v1/backups`, {
       method: 'POST', headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sendToGoogleDrive: tenantBackupGoogleDrive.checked })
+      body: JSON.stringify({})
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error === 'tenant_backup_already_running'
       ? 'Já existe um backup deste cliente em processamento.'
-      : payload.error === 'google_drive_not_available' ? 'O Google Drive da plataforma não está disponível.'
-        : 'Não foi possível iniciar o backup.');
+      : 'Não foi possível iniciar o backup.');
     setFormFeedback(tenantBackupFeedback, 'Backup colocado na fila. A tela será atualizada automaticamente.');
     await loadTenantBackups();
   } catch (error) {
@@ -4343,15 +4379,10 @@ async function loadSystem() {
     : 'Acompanhe os componentes e a disponibilidade dos serviços da plataforma.';
   systemBackupSummary.hidden = !canViewBackups;
   backupHistoryPanel.hidden = !canViewBackups;
-  platformBackupDestinationPanel.hidden = !platformContext || !canViewBackups;
   tenantBackupPanel.hidden = platformContext || !canViewBackups;
-  if (platformContext && canViewBackups) {
-    [...platformBackupDestinationForm.elements].forEach((element) => { element.disabled = !canManageBackups; });
-    testPlatformBackupDestinationButton.disabled = !canManageBackups;
-    savePlatformBackupDestinationButton.disabled = !canManageBackups;
-  } else if (canViewBackups) {
+  importPlatformBackupButton.hidden = !platformContext || !canManageBackups;
+  if (!platformContext && canViewBackups) {
     createTenantBackupButton.hidden = !canManageBackups;
-    tenantBackupGoogleDrive.closest('label').hidden = !canManageBackups;
   }
   systemLoading.hidden = false;
   systemError.hidden = true;
@@ -4390,8 +4421,7 @@ async function loadSystem() {
     systemLoaded = true;
     systemLoading.hidden = true;
     systemServiceList.hidden = false;
-    if (canViewBackups && platformContext) await loadPlatformBackupDestination();
-    else if (canViewBackups) await loadTenantBackups();
+    if (canViewBackups && !platformContext) await loadTenantBackups();
   } catch (error) {
     systemLoading.hidden = true;
     if (!appShell.hidden) {
@@ -5608,6 +5638,7 @@ function syncCapacityVendorScenario() {
 
 async function calculateStorageEstimate(event) {
   event?.preventDefault();
+  if (!capacityCalculatorForm.reportValidity()) return;
   const scenario = capacityVendorScenario.value;
   const ciscoPercent = scenario === 'cisco' ? 100 : scenario === 'a10' ? 0 : Number(capacityCiscoPercent.value);
   capacityCalculateButton.disabled = true;
@@ -5677,16 +5708,12 @@ function syncCustomLimit(planSelect, limitInput) {
     : plan ? `Usar ${formatNumber(plan.deviceLimit)} do plano` : 'Usar plano';
 }
 
-async function saveServicePlan(plan, row) {
-  const buttons = [...row.querySelectorAll('button')];
-  buttons.forEach((button) => { button.disabled = true; });
-  const name = row.querySelector('[data-plan-name]').value.trim();
-  const limitValue = row.querySelector('[data-plan-limit]').value;
+async function saveServicePlan(plan, changes, feedback = null) {
   try {
     const response = await authenticatedFetch(`${API_BASE}/v1/platform/plans/${encodeURIComponent(plan.code)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ name, deviceLimit: limitValue === '' ? null : Number(limitValue) })
+      body: JSON.stringify(changes)
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -5700,9 +5727,12 @@ async function saveServicePlan(plan, row) {
     clientsLoaded = false;
     plansLoaded = false;
     await loadPlans();
+    return true;
   } catch (error) {
-    window.alert(error instanceof Error ? error.message : 'Falha ao atualizar plano.');
-    buttons.forEach((button) => { button.disabled = false; });
+    const message = error instanceof Error ? error.message : 'Falha ao atualizar plano.';
+    if (feedback) setFormFeedback(feedback, message, true);
+    else window.alert(message);
+    return false;
   }
 }
 
@@ -5738,38 +5768,25 @@ function renderPlans(plans) {
     const row = document.createElement('tr');
     const nameCell = document.createElement('td');
     nameCell.dataset.label = 'Plano';
-    const name = document.createElement('input');
-    name.value = plan.name;
-    name.maxLength = 200;
-    name.dataset.planName = '';
-    name.disabled = !canManage;
-    nameCell.append(name);
+    nameCell.textContent = plan.name;
     const limitCell = document.createElement('td');
     limitCell.dataset.label = 'Limite de equipamentos';
-    const limit = document.createElement('input');
-    limit.type = 'number';
-    limit.min = '1';
-    limit.max = '10000';
-    limit.placeholder = 'Sem limite';
-    limit.dataset.planLimit = '';
-    if (plan.deviceLimit !== null) limit.value = String(plan.deviceLimit);
-    limit.disabled = !canManage;
-    limitCell.append(limit);
+    limitCell.textContent = plan.deviceLimit === null ? 'Sem limite' : formatNumber(plan.deviceLimit);
     const actionsCell = document.createElement('td');
     actionsCell.dataset.label = 'Ações';
     const actions = document.createElement('div');
     actions.className = 'user-actions';
-    const save = document.createElement('button');
-    save.type = 'button';
-    save.className = 'table-action';
-    save.textContent = 'Salvar alterações';
-    save.addEventListener('click', () => void saveServicePlan(plan, row));
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'table-action';
+    edit.textContent = 'Editar';
+    edit.addEventListener('click', () => openEditPlanDialog(plan));
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'table-action danger';
     remove.textContent = 'Excluir';
     remove.addEventListener('click', () => void deleteServicePlan(plan, row));
-    if (canManage) actions.append(save, remove);
+    if (canManage) actions.append(edit, remove);
     else {
       const readOnly = document.createElement('span');
       readOnly.className = 'access-profile-read-only';
@@ -7645,6 +7662,33 @@ openPlanDialogButton.addEventListener('click', () => {
 
 closePlanDialogButton.addEventListener('click', () => planDialog.close());
 
+function openEditPlanDialog(plan) {
+  editingServicePlan = plan;
+  editPlanForm.reset();
+  editPlanForm.elements.name.value = plan.name;
+  editPlanForm.elements.deviceLimit.value = plan.deviceLimit === null ? '' : String(plan.deviceLimit);
+  setFormFeedback(editPlanFeedback, '');
+  editPlanDialog.showModal();
+  window.setTimeout(() => editPlanForm.elements.name.focus(), 0);
+}
+
+closeEditPlanDialogButton.addEventListener('click', () => editPlanDialog.close());
+editPlanDialog.addEventListener('close', () => { editingServicePlan = null; });
+
+editPlanForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!editingServicePlan || !editPlanForm.reportValidity()) return;
+  setFormFeedback(editPlanFeedback, '');
+  setButtonLoading(saveEditPlanButton, true);
+  const limitValue = editPlanForm.elements.deviceLimit.value;
+  const updated = await saveServicePlan(editingServicePlan, {
+    name: editPlanForm.elements.name.value.trim(),
+    deviceLimit: limitValue === '' ? null : Number(limitValue)
+  }, editPlanFeedback);
+  setButtonLoading(saveEditPlanButton, false);
+  if (updated) editPlanDialog.close();
+});
+
 createPlanForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!createPlanForm.reportValidity()) return;
@@ -7938,11 +7982,11 @@ function roleSelect(selectedRole) {
   return select;
 }
 
-async function updateManagedUser(user, row, active) {
-  const name = row.querySelector('[data-user-name]').value.trim();
-  const role = row.querySelector('[data-user-role]')?.value || user.role;
-  const accessProfileId = row.querySelector('[data-user-access-profile]')?.value;
-  const buttons = [...row.querySelectorAll('button')];
+async function updateManagedUser(user, changes, buttons = [], feedback = null) {
+  const name = changes.name ?? user.name;
+  const role = changes.role ?? user.role;
+  const active = changes.active ?? user.active;
+  const accessProfileId = changes.accessProfileId ?? user.accessProfileId;
   buttons.forEach((button) => { button.disabled = true; });
   try {
     const response = await authenticatedFetch(`${API_BASE}/v1/users/${user.id}`, {
@@ -7956,6 +8000,7 @@ async function updateManagedUser(user, row, active) {
         cannot_remove_own_admin_access: 'Você não pode remover seu próprio acesso administrativo.',
         last_active_admin: 'É necessário manter pelo menos um administrador ativo.',
         invalid_user_update: 'Revise o nome e o perfil informados.',
+        user_not_found: 'Este usuário não existe mais.',
         cannot_change_own_access_profile: 'Seu próprio perfil deve ser alterado por outro administrador.',
         platform_owner_protected: 'A conta do Administrador principal é protegida.'
       };
@@ -7963,9 +8008,13 @@ async function updateManagedUser(user, row, active) {
     }
     usersLoaded = false;
     await loadUsers();
+    return true;
   } catch (error) {
-    window.alert(error instanceof Error ? error.message : 'Falha ao atualizar usuário.');
+    const message = error instanceof Error ? error.message : 'Falha ao atualizar usuário.';
+    if (feedback) setFormFeedback(feedback, message, true);
+    else window.alert(message);
     buttons.forEach((button) => { button.disabled = false; });
+    return false;
   }
 }
 
@@ -8006,12 +8055,7 @@ function renderUsers(users) {
     const row = document.createElement('tr');
     const nameCell = document.createElement('td');
     nameCell.dataset.label = 'Nome';
-    const nameInput = document.createElement('input');
-    nameInput.value = user.name;
-    nameInput.dataset.userName = '';
-    nameInput.maxLength = 200;
-    nameInput.disabled = !canEditUser;
-    nameCell.append(nameInput);
+    nameCell.textContent = user.name;
 
     const emailCell = td(user.email, 'E-mail');
     const roleCell = document.createElement('td');
@@ -8023,17 +8067,13 @@ function renderUsers(users) {
         owner.textContent = 'Administrador principal';
         roleCell.append(owner);
       } else {
-        const select = document.createElement('select');
-        populateAccessProfileSelect(select, user.accessProfileId || '');
-        select.dataset.userAccessProfile = '';
-        select.required = true;
-        select.disabled = !canManage || user.id === currentUser?.id;
-        roleCell.append(select);
+        const profile = document.createElement('span');
+        profile.className = 'access-profile-user-badge';
+        profile.textContent = user.accessProfileName || 'Sem perfil';
+        roleCell.append(profile);
       }
     } else {
-      const select = roleSelect(user.role);
-      select.dataset.userRole = '';
-      roleCell.append(select);
+      roleCell.textContent = roleLabel(user.role);
     }
 
     const statusCell = document.createElement('td');
@@ -8048,11 +8088,11 @@ function renderUsers(users) {
     actionsCell.dataset.label = 'Ações';
     const actions = document.createElement('div');
     actions.className = 'user-actions';
-    const save = document.createElement('button');
-    save.type = 'button';
-    save.className = 'table-action';
-    save.textContent = 'Salvar';
-    save.addEventListener('click', () => void updateManagedUser(user, row, user.active));
+    const edit = document.createElement('button');
+    edit.type = 'button';
+    edit.className = 'table-action';
+    edit.textContent = 'Editar';
+    edit.addEventListener('click', () => openEditUserDialog(user));
     const resetPassword = document.createElement('button');
     resetPassword.type = 'button';
     resetPassword.className = 'table-action';
@@ -8064,7 +8104,9 @@ function renderUsers(users) {
     toggle.textContent = user.active ? 'Desativar' : 'Ativar';
     toggle.disabled = user.id === currentUser?.id;
     toggle.title = toggle.disabled ? 'Sua própria conta deve permanecer ativa' : '';
-    toggle.addEventListener('click', () => void updateManagedUser(user, row, !user.active));
+    toggle.addEventListener('click', () => void updateManagedUser(
+      user, { active: !user.active }, [...row.querySelectorAll('button')]
+    ));
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'table-action danger';
@@ -8072,7 +8114,7 @@ function renderUsers(users) {
     remove.disabled = user.id === currentUser?.id;
     remove.title = remove.disabled ? 'Você não pode excluir sua própria conta' : 'Excluir usuário preservando a auditoria';
     remove.addEventListener('click', () => void deleteManagedUser(user, row));
-    if (canEditUser) actions.append(save, resetPassword, toggle, remove);
+    if (canEditUser) actions.append(edit, resetPassword, toggle, remove);
     else {
       const readOnly = document.createElement('span');
       readOnly.className = 'access-profile-read-only';
@@ -8133,8 +8175,49 @@ async function loadUsers() {
   }
 }
 
+function openEditUserDialog(user) {
+  editingManagedUser = user;
+  editUserForm.reset();
+  editUserForm.elements.name.value = user.name;
+  editUserForm.elements.email.value = user.email;
+  editUserRoleField.hidden = isPlatformContext();
+  editUserAccessProfileField.hidden = !isPlatformContext() || user.platformOwner;
+  if (isPlatformContext() && !user.platformOwner) {
+    populateAccessProfileSelect(editUserAccessProfile, user.accessProfileId || '');
+    editUserAccessProfile.disabled = user.id === currentUser?.id;
+  } else {
+    editUserForm.elements.role.value = user.role;
+    editUserForm.elements.role.disabled = user.id === currentUser?.id;
+  }
+  setFormFeedback(editUserFeedback, '');
+  editUserDialog.showModal();
+  window.setTimeout(() => editUserForm.elements.name.focus(), 0);
+}
+
+closeEditUserDialogButton.addEventListener('click', () => editUserDialog.close());
+editUserDialog.addEventListener('close', () => { editingManagedUser = null; });
+
+editUserForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  if (!editingManagedUser || !editUserForm.reportValidity()) return;
+  setFormFeedback(editUserFeedback, '');
+  setButtonLoading(saveEditUserButton, true);
+  const changes = {
+    name: editUserForm.elements.name.value.trim(),
+    role: isPlatformContext() ? 'admin' : editUserForm.elements.role.value,
+    ...(isPlatformContext() && !editingManagedUser.platformOwner
+      ? { accessProfileId: editUserAccessProfile.value }
+      : {})
+  };
+  const updated = await updateManagedUser(editingManagedUser, changes, [], editUserFeedback);
+  setButtonLoading(saveEditUserButton, false);
+  if (updated) editUserDialog.close();
+});
+
 openUserDialogButton.addEventListener('click', () => {
   createUserForm.reset();
+  createUserForm.elements.password.type = 'password';
+  generateUserPasswordButton.textContent = 'Gerar senha';
   newUserRole.value = isPlatformContext() ? 'admin' : 'operator';
   if (isPlatformContext()) populateAccessProfileSelect(newUserAccessProfile);
   setFormFeedback(createUserFeedback, '');
@@ -8143,6 +8226,16 @@ openUserDialogButton.addEventListener('click', () => {
 });
 
 closeUserDialogButton.addEventListener('click', () => userDialog.close());
+
+generateUserPasswordButton.addEventListener('click', () => {
+  const passwordInput = createUserForm.elements.password;
+  passwordInput.type = 'text';
+  passwordInput.value = generateSecurePassword();
+  generateUserPasswordButton.textContent = 'Gerar outra';
+  setFormFeedback(createUserFeedback, 'Senha forte gerada. Copie-a antes de criar o usuário.');
+  passwordInput.focus();
+  passwordInput.select();
+});
 
 createUserForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -8167,6 +8260,8 @@ createUserForm.addEventListener('submit', async (event) => {
       throw new Error(payload.error === 'email_already_exists' ? 'Já existe uma conta com este e-mail.' : 'Revise os dados do novo usuário.');
     }
     createUserForm.reset();
+    createUserForm.elements.password.type = 'password';
+    generateUserPasswordButton.textContent = 'Gerar senha';
     setFormFeedback(createUserFeedback, `Usuário ${payload.user.email} criado com sucesso.`);
     usersLoaded = false;
     await loadUsers();

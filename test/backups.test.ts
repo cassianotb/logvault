@@ -1,18 +1,15 @@
 import Fastify from 'fastify';
-import { generateKeyPairSync } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { registerBackupRoutes, startBackupProcessor } from '../src/api/backups.js';
 import type { ClickHouseRepository } from '../src/api/clickhouse.js';
 import type { AuthSession, PostgresRepository, TenantBackupJob } from '../src/api/postgres.js';
-import { createEncryptedTarGz, encryptBackupFile } from '../src/core/backup-archive.js';
-import {
-  parseGoogleServiceAccount, pruneGoogleDriveBackups, testGoogleDriveFolder
-} from '../src/core/google-drive-backup.js';
+import { createEncryptedTarGz, encryptBackupFile, fileDigest } from '../src/core/backup-archive.js';
+import { importPlatformBackup } from '../src/core/backup-import.js';
 
 const execFileAsync = promisify(execFile);
 const cookie = `argus_session=${'b'.repeat(32)}`;
@@ -29,18 +26,17 @@ const platformSession: AuthSession = {
   platformAdmin: true,
   platformOwner: true
 };
+const platformContextSession: AuthSession = { ...platformSession, context: 'platform' };
 
 function job(overrides: Partial<TenantBackupJob> = {}): TenantBackupJob {
   return {
     id: '30000000-0000-4000-8000-000000000043', tenantId, tenantName: 'Cliente A',
-    requestedByUserId: session.id, status: 'pending', sendToGoogleDrive: false,
-    archiveName: null, byteCount: 0, sha256: null, googleDriveFileId: null,
+    requestedByUserId: session.id, status: 'pending',
+    archiveName: null, byteCount: 0, sha256: null,
     errorMessage: '', requestedAt: '2026-09-29T12:00:00.000Z', startedAt: null,
     completedAt: null, expiresAt: null, ...overrides
   };
 }
-
-afterEach(() => vi.unstubAllGlobals());
 
 describe('backup criptografado', () => {
   it('é recuperado somente com a frase correta pela ferramenta distribuída', async () => {
@@ -73,8 +69,7 @@ describe('backup criptografado', () => {
       claimNextTenantBackup: async () => claimed ? null : (claimed = true, job({ status: 'pending' })),
       exportTenantSnapshot: async (requestedTenantId: string) => ({ tenant: { id: requestedTenantId }, users: [] }),
       completeTenantBackup: async (result: { archiveName: string; byteCount: number }) => completed?.(result),
-      failTenantBackup: async (_jobId: string, error: string) => { throw new Error(error); },
-      getPlatformBackupDestination: async () => null
+      failTenantBackup: async (_jobId: string, error: string) => { throw new Error(error); }
     } as unknown as PostgresRepository;
     const clickhouse = {
       exportTenantTable: async function* (_table: string, requestedTenantId: string) {
@@ -83,8 +78,7 @@ describe('backup criptografado', () => {
     } as unknown as ClickHouseRepository;
     try {
       await startBackupProcessor(app, {
-        postgres: repository, clickhouse, backupRoot: join(root, 'full'),
-        tenantBackupRoot: join(root, 'tenant'), stagingRoot: join(root, 'staging'), encryptionKey: 'a'.repeat(64)
+        postgres: repository, clickhouse, tenantBackupRoot: join(root, 'tenant')
       });
       const result = await Promise.race([
         completion,
@@ -126,51 +120,89 @@ describe('backup criptografado', () => {
   });
 });
 
-describe('Google Drive para backup', () => {
-  const privateKey = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey.export({
-    type: 'pkcs8', format: 'pem'
-  }).toString();
-  const credentials = parseGoogleServiceAccount(JSON.stringify({
-    client_email: 'backup@project.iam.gserviceaccount.com', private_key: privateKey,
-    token_uri: 'https://oauth2.googleapis.com/token'
-  }));
+describe('importação de backup da plataforma', () => {
+  async function buildPackage(root: string, { withLink = false } = {}) {
+    const id = '20260929T120000Z';
+    const runs = join(root, 'source-runs');
+    const run = join(runs, id);
+    await mkdir(join(run, 'clickhouse'), { recursive: true });
+    await writeFile(join(run, 'postgres.dump'), 'postgres\n');
+    await writeFile(join(run, 'clickhouse', 'data.bin'), 'clickhouse\n');
+    await writeFile(join(run, 'metadata.json'), `${JSON.stringify({
+      id, createdAt: '2026-09-29T12:00:00.000Z', backupType: 'full', baseBackupId: null,
+      postgresBytes: 9, clickhouseBytes: 11, collectorBytes: 0, collectorIncluded: false
+    })}\n`);
+    const files = ['postgres.dump', 'metadata.json', 'clickhouse/data.bin'];
+    const checksums = await Promise.all(files.map(async (file) => `${(await fileDigest(join(run, file))).sha256}  ${file}`));
+    await writeFile(join(run, 'checksums.sha256'), `${checksums.join('\n')}\n`);
+    await writeFile(join(run, 'COMPLETE'), `${id}\n`);
+    if (withLink) await symlink('/etc/passwd', join(run, 'clickhouse', 'unsafe-link'));
+    const archive = join(root, withLink ? 'unsafe.tar.gz' : 'backup.tar.gz');
+    await execFileAsync('tar', ['-czf', archive, '-C', runs, id]);
+    return { id, archive };
+  }
 
-  it('valida um Shared Drive criando e removendo um arquivo de prova', async () => {
-    const requests: Array<{ url: string; method: string }> = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input);
-      const method = init?.method ?? 'GET';
-      requests.push({ url, method });
-      if (url === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'token' });
-      if (method === 'GET') return Response.json({
-        id: 'shared-folder-123', name: 'Backups', driveId: 'shared-drive-123',
-        mimeType: 'application/vnd.google-apps.folder', capabilities: { canAddChildren: true }
+  it('valida checksums e incorpora o ponto ao catálogo local', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'logvault-import-test-'));
+    try {
+      const { id, archive } = await buildPackage(root);
+      const result = await importPlatformBackup({
+        sourcePath: archive, sourceName: 'backup.tar.gz', workspaceRoot: join(root, 'workspace'),
+        backupRoot: join(root, 'catalog')
       });
-      if (method === 'POST') return Response.json({ id: 'probe-file-123' });
-      return new Response(null, { status: 204 });
-    }));
-    await expect(testGoogleDriveFolder({ credentials, folderId: 'shared-folder-123' }))
-      .resolves.toEqual({ id: 'shared-folder-123', name: 'Backups' });
-    expect(requests.map(({ method }) => method)).toEqual(['POST', 'GET', 'POST', 'DELETE']);
+      expect(result.imported).toEqual([id]);
+      expect(await readFile(join(root, 'catalog', 'runs', id, 'COMPLETE'), 'utf8')).toContain(id);
+    } finally { await rm(root, { recursive: true, force: true }); }
   });
 
-  it('remove somente arquivos LogVault vencidos do escopo solicitado', async () => {
-    const methods: string[] = [];
-    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input);
-      const method = init?.method ?? 'GET';
-      methods.push(method);
-      if (url === 'https://oauth2.googleapis.com/token') return Response.json({ access_token: 'token' });
-      if (method === 'GET') return Response.json({ files: [
-        { id: 'old-backup-123', createdTime: '2025-01-01T00:00:00.000Z' },
-        { id: 'new-backup-123', createdTime: new Date().toISOString() }
-      ] });
-      return new Response(null, { status: 204 });
-    }));
-    await expect(pruneGoogleDriveBackups({
-      credentials, folderId: 'shared-folder-123', scope: 'tenant', retentionDays: 30
-    })).resolves.toBe(1);
-    expect(methods).toEqual(['POST', 'GET', 'DELETE']);
+  it('recusa pacotes que contenham links', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'logvault-import-link-test-'));
+    try {
+      const { archive } = await buildPackage(root, { withLink: true });
+      await expect(importPlatformBackup({
+        sourcePath: archive, sourceName: 'unsafe.tar.gz', workspaceRoot: join(root, 'workspace'),
+        backupRoot: join(root, 'catalog')
+      })).rejects.toThrow(/links|tipos/i);
+    } finally { await rm(root, { recursive: true, force: true }); }
+  });
+
+  it('recebe arquivo em blocos e só incorpora depois da validação', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'logvault-import-route-test-'));
+    const app = Fastify();
+    try {
+      const { id, archive } = await buildPackage(root);
+      const content = await readFile(archive);
+      const audited: string[] = [];
+      const repository = {
+        findActiveSession: async () => platformContextSession,
+        auditPlatformBackupImport: async () => { audited.push('backup_imported'); }
+      } as unknown as PostgresRepository;
+      registerBackupRoutes(app, {
+        postgres: repository, tenantBackupRoot: join(root, 'tenant'),
+        backupRoot: join(root, 'catalog'), stagingRoot: join(root, 'staging'), trigger: () => undefined
+      });
+      const started = await app.inject({
+        method: 'POST', url: '/v1/platform/backups/imports', headers: { cookie, 'content-type': 'application/json' },
+        payload: { fileName: 'backup.tar.gz', totalBytes: content.length }
+      });
+      expect(started.statusCode).toBe(201);
+      const importId = started.json().importId as string;
+      const chunk = await app.inject({
+        method: 'PUT', url: `/v1/platform/backups/imports/${importId}/chunk`,
+        headers: { cookie, 'content-type': 'application/octet-stream', 'x-upload-offset': '0' }, payload: content
+      });
+      expect(chunk.statusCode).toBe(200);
+      const completed = await app.inject({
+        method: 'POST', url: `/v1/platform/backups/imports/${importId}/complete`,
+        headers: { cookie, 'content-type': 'application/json' }, payload: {}
+      });
+      expect(completed.statusCode).toBe(200);
+      expect(completed.json().imported).toEqual([id]);
+      expect(audited).toEqual(['backup_imported']);
+    } finally {
+      await app.close();
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
 
@@ -180,15 +212,14 @@ describe('backups de cliente administrados pela plataforma', () => {
     const repository = {
       findActiveSession: async () => platformSession,
       listTenantBackupJobs: async (requestedTenantId: string) => { tenantIds.push(requestedTenantId); return [job()]; },
-      getPlatformBackupDestination: async () => null,
       createTenantBackupJob: async (input: { tenantId: string }) => { tenantIds.push(input.tenantId); return job(); }
     } as unknown as PostgresRepository;
     const app = Fastify();
-    registerBackupRoutes(app, { postgres: repository, encryptionKey: 'a'.repeat(64), tenantBackupRoot: '/tmp', trigger: () => undefined });
+    registerBackupRoutes(app, { postgres: repository, tenantBackupRoot: '/tmp', trigger: () => undefined });
     const listed = await app.inject({ method: 'GET', url: '/v1/backups', headers: { cookie } });
     const created = await app.inject({
       method: 'POST', url: '/v1/backups', headers: { cookie, 'content-type': 'application/json' },
-      payload: { sendToGoogleDrive: false, tenantId: '90000000-0000-4000-8000-000000000099' }
+      payload: { tenantId: '90000000-0000-4000-8000-000000000099' }
     });
     expect(listed.statusCode).toBe(200);
     expect(created.statusCode).toBe(202);
@@ -205,7 +236,7 @@ describe('backups de cliente administrados pela plataforma', () => {
       }
     } as unknown as PostgresRepository;
     const app = Fastify();
-    registerBackupRoutes(app, { postgres: repository, encryptionKey: 'a'.repeat(64), tenantBackupRoot: '/tmp', trigger: () => undefined });
+    registerBackupRoutes(app, { postgres: repository, tenantBackupRoot: '/tmp', trigger: () => undefined });
     const listResponse = await app.inject({ method: 'GET', url: '/v1/backups', headers: { cookie } });
     const createResponse = await app.inject({ method: 'POST', url: '/v1/backups', headers: { cookie }, payload: {} });
     const downloadResponse = await app.inject({
@@ -224,7 +255,7 @@ describe('backups de cliente administrados pela plataforma', () => {
       getTenantBackupJob: async (candidateTenantId: string) => { requestedTenantId = candidateTenantId; return null; }
     } as unknown as PostgresRepository;
     const app = Fastify();
-    registerBackupRoutes(app, { postgres: repository, encryptionKey: 'a'.repeat(64), tenantBackupRoot: '/tmp', trigger: () => undefined });
+    registerBackupRoutes(app, { postgres: repository, tenantBackupRoot: '/tmp', trigger: () => undefined });
     const response = await app.inject({
       method: 'GET', url: '/v1/backups/30000000-0000-4000-8000-000000000099/download', headers: { cookie }
     });

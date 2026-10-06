@@ -363,7 +363,7 @@
           <form class="search-panel" id="search-form">
             <div class="field field-public-ip">
               <label for="public-ip">IP público</label>
-              <input id="public-ip" name="publicIp" inputmode="decimal" autocomplete="off" placeholder="Ex.: 198.51.100.14" required>
+              <input id="public-ip" name="publicIp" inputmode="decimal" autocomplete="off" required>
             </div>
             <div class="field field-date">
               <label for="event-at">Data e horário</label>
@@ -376,7 +376,7 @@
             </div>
             <div class="field field-port">
               <label for="port">Porta <span>opcional</span></label>
-              <input id="port" name="port" type="number" min="1" max="65535" inputmode="numeric" placeholder="Ex.: 23040">
+              <input id="port" name="port" type="number" min="1" max="65535" inputmode="numeric">
             </div>
             <div class="field field-protocol">
               <label for="protocol">Protocolo</label>
@@ -475,19 +475,10 @@
             <article><span id="device-plan-label">PLANO</span><strong id="device-plan">—</strong><small id="device-plan-usage">aguardando informações</small></article>
           </div>
 
-          <section class="user-create-panel" id="device-management-panel" hidden>
-            <div class="devices-panel-head">
-              <div><p class="eyebrow">Novo exportador</p><h2>Adicionar equipamento</h2></div>
-              <button class="secondary-button refresh-button" id="discover-devices" type="button" hidden>Descobrir equipamentos</button>
-            </div>
-            <form id="create-device-form" class="device-form">
-              <div class="field"><label for="new-device-name">Nome</label><input id="new-device-name" name="name" required minlength="2" autocomplete="off"></div>
-              <div class="field"><label for="new-device-vendor">Vendor</label><select id="new-device-vendor" name="vendor"><option value="cisco">Cisco</option><option value="a10">A10</option></select></div>
-              <div class="field"><label for="new-device-exporter">IP de origem</label><input id="new-device-exporter" name="exporterIp" inputmode="decimal" required placeholder="Ex.: 192.0.2.10" autocomplete="off"></div>
-              <div class="field"><label for="new-device-collector">Coletor</label><select id="new-device-collector" name="collectorId" required></select></div>
-              <button class="primary-button user-create-button" id="create-device-button" type="submit"><span class="button-label">Adicionar</span><span class="spinner" aria-hidden="true"></span></button>
-              <p class="form-feedback" id="create-device-feedback" hidden></p>
-            </form>
+          <section class="client-onboarding-card compact-onboarding-card" id="device-management-panel" hidden>
+            <div class="client-onboarding-icon" aria-hidden="true"><svg><use href="#icon-hard-drive"/></svg></div>
+            <div class="client-onboarding-copy"><p class="eyebrow">Novo exportador</p><h2>Adicionar equipamento</h2><p>Cadastre o equipamento, identifique o fabricante e vincule-o ao coletor responsável.</p></div>
+            <div class="device-page-actions onboarding-card-actions"><button class="secondary-button" id="discover-devices" type="button" hidden>Descobrir equipamentos</button><button class="primary-button client-onboarding-button" id="open-device-create-dialog" type="button">Adicionar equipamento</button></div>
           </section>
 
           <section class="devices-panel" aria-live="polite">
@@ -524,16 +515,10 @@
             <article><span>SPOOL LOCAL</span><strong id="collector-spool">—</strong><small>SQLite, WAL e arquivos auxiliares</small></article>
           </div>
 
-          <section class="user-create-panel" id="collector-management-panel" hidden>
-            <div class="devices-panel-head">
-              <div><p class="eyebrow">Provisionamento</p><h2>Adicionar coletor</h2></div>
-            </div>
-            <form id="create-collector-form" class="collector-form">
-              <div class="field"><label for="new-collector-name">Nome</label><input id="new-collector-name" name="name" required minlength="2" autocomplete="off" placeholder="Ex.: Coletor POP Centro"></div>
-              <div class="field"><label for="new-collector-mode">Modo</label><select id="new-collector-mode" name="mode"><option value="edge">Servidor local</option><option value="cloud">Cloud</option></select><small class="field-help" id="collector-mode-help">Coletor local instalado na infraestrutura do cliente.</small></div>
-              <button class="primary-button user-create-button" id="create-collector-button" type="submit"><span class="button-label">Adicionar</span><span class="spinner" aria-hidden="true"></span></button>
-              <p class="form-feedback" id="create-collector-feedback" hidden></p>
-            </form>
+          <section class="client-onboarding-card compact-onboarding-card" id="collector-management-panel" hidden>
+            <div class="client-onboarding-icon" aria-hidden="true"><svg><use href="#icon-database-backup"/></svg></div>
+            <div class="client-onboarding-copy"><p class="eyebrow">Provisionamento</p><h2>Adicionar coletor</h2><p>Escolha onde o coletor será executado e configure uma origem segura para os logs.</p></div>
+            <button class="primary-button client-onboarding-button" id="open-collector-create-dialog" type="button">Adicionar coletor</button>
           </section>
 
           <section class="devices-panel" aria-live="polite">
@@ -635,37 +620,37 @@
           </section>
 
           <section class="devices-panel backup-panel" id="backup-history-panel">
-            <div class="devices-panel-head"><div><p class="eyebrow">Continuidade</p><h2>Backups recentes</h2></div><small class="backup-policy-copy"><span id="backup-policy">A cada 24h · retenção 35 dias</span><span id="backup-remote">Cópia externa não configurada</span></small></div>
+            <div class="devices-panel-head backup-panel-head">
+              <div><p class="eyebrow">Continuidade</p><h2>Backups recentes</h2><small class="backup-policy-copy"><span id="backup-policy">A cada 24h · retenção 35 dias</span><span id="backup-remote">Cópia externa não configurada</span></small></div>
+              <div class="device-page-actions backup-page-actions"><button class="secondary-button" id="import-platform-backup" type="button">Importar backup</button></div>
+            </div>
             <div class="table-wrap" id="backup-table-wrap" hidden>
-              <table class="audit-table"><thead><tr><th>Concluído em</th><th>PostgreSQL</th><th>ClickHouse</th><th>Spool local</th><th>ID</th><th>Proteção manual</th></tr></thead><tbody id="backup-body"></tbody></table>
+              <table class="audit-table"><thead><tr><th>Concluído em</th><th>PostgreSQL</th><th>ClickHouse</th><th>Spool local</th><th>ID</th><th>Ações</th></tr></thead><tbody id="backup-body"></tbody></table>
             </div>
             <div class="state compact-state" id="backup-empty"><div class="state-icon" aria-hidden="true">◇</div><strong>Nenhum backup concluído</strong><p>A primeira execução ocorre ao iniciar a rotina de backup.</p></div>
           </section>
 
-          <section class="devices-panel backup-panel" id="platform-backup-destination" hidden>
-            <div class="devices-panel-head"><div><p class="eyebrow">Cópia externa criptografada</p><h2>Google Drive</h2></div><small id="platform-backup-destination-status">Não configurado</small></div>
-            <form id="platform-backup-destination-form" class="platform-settings-form">
-              <div class="continuity-wizard-grid">
-                <label class="field"><span>ID da pasta em um Drive compartilhado</span><input id="backup-drive-folder-id" maxlength="200" autocomplete="off" placeholder="Ex.: 1AbC...xyz"><small>Use uma pasta de um Shared Drive do Google Workspace e adicione a conta de serviço como colaboradora.</small></label>
-                <label class="field"><span>Retenção externa em dias</span><input id="backup-drive-retention" type="number" min="1" max="3650" value="30"></label>
-                <label class="field"><span>JSON da conta de serviço</span><textarea id="backup-drive-credentials" rows="5" maxlength="32000" autocomplete="off" placeholder="Cole apenas ao configurar ou trocar a credencial"></textarea></label>
-                <label class="field"><span>Frase de recuperação</span><input id="backup-drive-passphrase" type="password" minlength="20" maxlength="256" autocomplete="new-password" placeholder="Mínimo de 20 caracteres; guarde fora do servidor"><small>Usada para criptografar os arquivos antes do upload. Sem ela, uma restauração externa não será possível.</small></label>
+          <dialog class="password-dialog backup-import-dialog" id="backup-import-dialog">
+            <form method="dialog" class="backup-import-shell" id="backup-import-form">
+              <div class="dialog-head"><div><p class="eyebrow">Recuperação controlada</p><h2>Importar backup</h2><p>O arquivo será validado antes de entrar no catálogo. Nenhum dado será restaurado nesta etapa.</p></div><button class="icon-button" id="close-backup-import" type="button" aria-label="Fechar">×</button></div>
+              <div class="backup-import-body">
+                <label class="backup-file-drop" for="backup-import-file"><strong>Selecionar arquivo de backup</strong><span id="backup-import-file-name">Tamanho máximo: 50 GB · envio retomável em blocos</span><input id="backup-import-file" type="file" accept=".tar.gz,.lvault,application/gzip" hidden></label>
+                <div class="field"><label for="backup-import-passphrase">Frase de recuperação, se necessária</label><input id="backup-import-passphrase" type="password" maxlength="256" autocomplete="off" placeholder="Use a frase configurada ou informe outra"><small class="field-help">Arquivos .lvault são descriptografados apenas na área temporária de validação.</small></div>
+                <div class="backup-import-progress" id="backup-import-progress" hidden><div><span id="backup-import-progress-label">Enviando arquivo…</span><strong id="backup-import-progress-percent">0%</strong></div><progress id="backup-import-progress-bar" max="100" value="0"></progress></div>
+                <p class="form-feedback" id="backup-import-feedback" hidden></p>
               </div>
-              <label class="integration-enable"><input id="backup-drive-enabled" type="checkbox"><span><strong>Enviar backups completos automaticamente</strong><small>A conta de serviço deve poder adicionar arquivos na pasta informada.</small></span></label>
-              <p class="form-feedback" id="platform-backup-destination-feedback" hidden></p>
-              <div class="device-page-actions"><button class="secondary-button" id="test-platform-backup-destination" type="button">Testar conexão</button><button class="primary-button" id="save-platform-backup-destination" type="submit"><span class="button-label">Salvar destino</span><span class="spinner" aria-hidden="true"></span></button></div>
+              <div class="dialog-footer"><button class="secondary-button" id="cancel-backup-import" type="button">Cancelar</button><button class="primary-button dialog-submit" id="start-backup-import" type="submit"><span class="button-label">Validar e importar</span><span class="spinner" aria-hidden="true"></span></button></div>
             </form>
-          </section>
+          </dialog>
 
           <section class="devices-panel backup-panel" id="tenant-backup-panel" hidden>
             <div class="devices-panel-head"><div><p class="eyebrow">Dados da organização</p><h2>Backups do cliente</h2></div><button class="primary-button" id="create-tenant-backup" type="button">Criar backup</button></div>
             <p class="continuity-site-names-help">O pacote contém somente dados deste cliente. Senhas, sessões, tokens e segredos de integrações são excluídos.</p>
-            <label class="integration-enable"><input id="tenant-backup-google-drive" type="checkbox"><span><strong>Enviar também ao Google Drive da plataforma</strong><small id="tenant-backup-google-drive-detail">Verificando disponibilidade</small></span></label>
             <p class="form-feedback" id="tenant-backup-feedback" hidden></p>
             <div class="table-wrap" id="tenant-backup-table-wrap" hidden>
-              <table class="audit-table"><thead><tr><th>Solicitado em</th><th>Estado</th><th>Tamanho</th><th>Cópia externa</th><th>Ação</th></tr></thead><tbody id="tenant-backup-body"></tbody></table>
+              <table class="audit-table"><thead><tr><th>Solicitado em</th><th>Estado</th><th>Tamanho</th><th>Ação</th></tr></thead><tbody id="tenant-backup-body"></tbody></table>
             </div>
-            <div class="state compact-state" id="tenant-backup-empty"><div class="state-icon" aria-hidden="true">◇</div><strong>Nenhum backup do cliente</strong><p>Crie um snapshot lógico para download ou cópia externa.</p></div>
+            <div class="state compact-state" id="tenant-backup-empty"><div class="state-icon" aria-hidden="true">◇</div><strong>Nenhum backup do cliente</strong><p>Crie um snapshot lógico para download.</p></div>
           </section>
         </section>
 
@@ -1034,12 +1019,12 @@
                 <small>Não altera o plano nem o cadastro do cliente</small>
               </div>
               <form class="capacity-calculator-form" id="capacity-calculator-form">
-                <label><span>Assinantes ativos</span><input id="capacity-subscribers" name="subscribers" type="number" min="1" max="10000000" step="1" value="1000" required></label>
-                <label><span>Cenário</span><select id="capacity-vendor-scenario" name="scenario"><option value="cisco">Somente Cisco</option><option value="a10">Somente A10</option><option value="mixed">Ambiente misto</option></select></label>
-                <label id="capacity-cisco-mix-field" hidden><span>Participação Cisco (%)</span><input id="capacity-cisco-percent" name="ciscoPercent" type="number" min="0" max="100" step="1" value="50"></label>
-                <label><span>Crescimento previsto (%)</span><input id="capacity-growth-percent" name="growthPercent" type="number" min="0" max="500" step="1" value="0" required></label>
-                <label><span>Margem técnica (%)</span><input id="capacity-headroom-percent" name="headroomPercent" type="number" min="0" max="100" step="1" value="30" required></label>
-                <label><span>Máximo sem internet (h)</span><input id="capacity-offline-hours" name="offlineHours" type="number" min="1" max="168" step="1" value="6" required></label>
+                <label><span>Assinantes ativos</span><input id="capacity-subscribers" name="subscribers" type="number" min="1" max="10000000" step="1" required></label>
+                <label><span>Cenário</span><select id="capacity-vendor-scenario" name="scenario" required><option value="" selected disabled hidden></option><option value="cisco">Somente Cisco</option><option value="a10">Somente A10</option><option value="mixed">Ambiente misto</option></select></label>
+                <label id="capacity-cisco-mix-field" hidden><span>Participação Cisco (%)</span><input id="capacity-cisco-percent" name="ciscoPercent" type="number" min="0" max="100" step="1"></label>
+                <label><span>Crescimento previsto (%)</span><input id="capacity-growth-percent" name="growthPercent" type="number" min="0" max="500" step="1" required></label>
+                <label><span>Margem técnica (%)</span><input id="capacity-headroom-percent" name="headroomPercent" type="number" min="0" max="100" step="1" required></label>
+                <label><span>Máximo sem internet (h)</span><input id="capacity-offline-hours" name="offlineHours" type="number" min="1" max="168" step="1" required></label>
                 <button class="primary-button capacity-calculate-button" id="capacity-calculate-button" type="submit">Calcular estimativa</button>
               </form>
               <p class="form-feedback" id="capacity-calculator-feedback" role="status"></p>
@@ -1175,13 +1160,12 @@
             <article><span>COLETORES</span><strong id="client-collectors">—</strong><small>instâncias cadastradas</small></article>
           </div>
 
-          <section class="client-onboarding-card" id="client-onboarding-card">
+          <section class="client-onboarding-card compact-onboarding-card" id="client-onboarding-card">
             <div class="client-onboarding-icon" aria-hidden="true"><svg><use href="#icon-building"/></svg></div>
             <div class="client-onboarding-copy">
               <p class="eyebrow">Novo ambiente</p>
               <h2>Adicionar cliente</h2>
               <p>Crie o ambiente do ISP com os dados institucionais, o plano contratado e o primeiro acesso administrativo.</p>
-              <div class="client-onboarding-features"><span>Dados organizados</span><span>Plano validado</span><span>Acesso imediato</span></div>
             </div>
             <button class="primary-button client-onboarding-button" id="open-client-wizard" type="button" disabled>Cadastrar novo cliente</button>
           </section>
@@ -1216,13 +1200,12 @@
             <article><span>SEM LIMITE</span><strong id="plan-unlimited">—</strong><small>quantidade livre</small></article>
           </div>
 
-          <section class="client-onboarding-card management-onboarding-card" id="plan-onboarding-card">
+          <section class="client-onboarding-card management-onboarding-card compact-onboarding-card" id="plan-onboarding-card">
             <div class="client-onboarding-icon" aria-hidden="true"><svg><use href="#icon-layers"/></svg></div>
             <div class="client-onboarding-copy">
               <p class="eyebrow">Novo plano</p>
               <h2>Adicionar plano comercial</h2>
               <p>Defina o nome e o limite de equipamentos oferecido aos clientes.</p>
-              <div class="client-onboarding-features"><span>Limite configurável</span><span>Disponível imediatamente</span></div>
             </div>
             <button class="primary-button client-onboarding-button" id="open-plan-dialog" type="button">Adicionar plano</button>
           </section>
@@ -1517,6 +1500,19 @@
                   <div class="manual-footer-note"><svg><use href="#icon-book"/></svg><div><strong>Precisa de ajuda?</strong><p>Ao abrir um chamado, informe equipamento, IP de origem, coletor, horário aproximado e uma amostra sanitizada do registro.</p></div></div>
                 </div>
               </article>
+
+              <article class="manual-section">
+                <div class="manual-section-number">06</div><div class="manual-section-body">
+                  <p class="eyebrow">Usuários e permissões</p><h3>Entender os perfis de acesso do cliente</h3>
+                  <p>O ambiente do cliente utiliza três perfis fixos. Eles não podem ser personalizados; ao cadastrar ou editar um usuário, escolha o perfil de acordo com a responsabilidade da pessoa.</p>
+                  <div class="manual-table-wrap"><table class="manual-table"><thead><tr><th>Perfil</th><th>O que pode fazer</th><th>Uso recomendado</th></tr></thead><tbody>
+                    <tr><td><strong>Administrador</strong><small>Gerenciamento completo</small></td><td>Consulta dados e monitora o ambiente. Também cadastra e altera usuários, equipamentos e coletores, administra dados da empresa, integrações, firewall e canais de alerta.</td><td>Responsáveis pela administração do ambiente LogVault. Conceda apenas a quem realmente precisa realizar alterações.</td></tr>
+                    <tr><td><strong>Operador</strong><small>Operação diária</small></td><td>Acessa o Dashboard, realiza consultas CGNAT e acompanha equipamentos, coletores, sistema, servidores e alertas. Não altera cadastros ou configurações administrativas.</td><td>Equipes de NOC, suporte e operação que consultam e monitoram o serviço.</td></tr>
+                    <tr><td><strong>Auditor</strong><small>Consulta ampliada</small></td><td>Possui acesso de leitura às áreas operacionais e também pode consultar Firewall, Capacidade e Auditoria. Não cadastra usuários nem altera configurações.</td><td>Auditoria, conformidade, segurança e responsáveis por revisões sem permissão de mudança.</td></tr>
+                  </tbody></table></div>
+                  <div class="manual-callout info"><strong>Perfis fixos</strong><p>O botão “Adicionar perfil” existe somente na administração da plataforma LogVault. No ambiente do cliente, o administrador escolhe entre Administrador, Operador e Auditor.</p></div>
+                </div>
+              </article>
             </div>
           </div>
         </section>
@@ -1545,13 +1541,12 @@
             <div class="access-profile-list" id="access-profile-list" hidden></div>
           </section>
 
-          <section class="client-onboarding-card management-onboarding-card" id="user-onboarding-card">
+          <section class="client-onboarding-card management-onboarding-card compact-onboarding-card" id="user-onboarding-card">
             <div class="client-onboarding-icon" aria-hidden="true"><svg><use href="#icon-users"/></svg></div>
             <div class="client-onboarding-copy">
               <p class="eyebrow">Nova conta</p>
               <h2>Adicionar usuário</h2>
               <p id="user-onboarding-copy">Crie uma conta individual e escolha o perfil adequado para este ambiente.</p>
-              <div class="client-onboarding-features"><span>Acesso individual</span><span>Permissões controladas</span><span>Auditoria preservada</span></div>
             </div>
             <button class="primary-button client-onboarding-button" id="open-user-dialog" type="button">Adicionar usuário</button>
           </section>
@@ -1682,6 +1677,31 @@
         <button class="primary-button dialog-submit" id="change-password-submit" type="submit"><span class="button-label">Alterar senha</span><span class="spinner" aria-hidden="true"></span></button>
       </form>
     </dialog>
+    <dialog class="password-dialog provisioning-dialog" id="device-create-dialog">
+      <form id="create-device-form" class="provisioning-form">
+        <div class="dialog-head"><div><p class="eyebrow">Novo exportador</p><h2>Adicionar equipamento</h2><span>Informe a origem dos logs e o coletor que receberá os dados.</span></div><button type="button" id="close-device-create-dialog" aria-label="Fechar">×</button></div>
+        <div class="field"><label for="new-device-name">Nome</label><input id="new-device-name" name="name" required minlength="2" maxlength="200" autocomplete="off"></div>
+        <fieldset class="provisioning-choice-field"><legend>Vendor</legend><div class="provisioning-choice-grid vendor-choice-grid">
+          <label class="provisioning-choice"><input type="radio" name="vendor" value="cisco" checked><span class="provisioning-choice-mark vendor"><img src="/assets/vendors/cisco.svg" alt=""></span><span class="provisioning-choice-copy"><strong>Cisco</strong><small>Roteadores e gateways com exportação NetFlow/IPFIX.</small></span></label>
+          <label class="provisioning-choice"><input type="radio" name="vendor" value="a10"><span class="provisioning-choice-mark vendor"><img src="/assets/vendors/a10.png" alt=""></span><span class="provisioning-choice-copy"><strong>A10 Networks</strong><small>Appliances Thunder CGN com envio de eventos Syslog.</small></span></label>
+        </div></fieldset>
+        <div class="provisioning-fields-grid"><div class="field"><label for="new-device-exporter">IP de origem</label><input id="new-device-exporter" name="exporterIp" inputmode="decimal" required placeholder="Ex.: 192.0.2.10" autocomplete="off"></div><div class="field"><label for="new-device-collector">Coletor</label><select id="new-device-collector" name="collectorId" required></select></div></div>
+        <p class="form-feedback" id="create-device-feedback" hidden></p>
+        <button class="primary-button dialog-submit" id="create-device-button" type="submit"><span class="button-label">Adicionar equipamento</span><span class="spinner" aria-hidden="true"></span></button>
+      </form>
+    </dialog>
+    <dialog class="password-dialog provisioning-dialog" id="collector-create-dialog">
+      <form id="create-collector-form" class="provisioning-form">
+        <div class="dialog-head"><div><p class="eyebrow">Provisionamento</p><h2>Adicionar coletor</h2><span>Escolha o modelo de implantação adequado ao ambiente do cliente.</span></div><button type="button" id="close-collector-create-dialog" aria-label="Fechar">×</button></div>
+        <div class="field"><label for="new-collector-name">Nome</label><input id="new-collector-name" name="name" required minlength="2" maxlength="200" autocomplete="off" placeholder="Ex.: Coletor POP Centro"></div>
+        <fieldset class="provisioning-choice-field"><legend>Tipo de coletor</legend><div class="provisioning-choice-grid collector-mode-choice-grid">
+          <label class="provisioning-choice"><input type="radio" name="mode" value="edge" checked><span class="provisioning-choice-mark local"><svg aria-hidden="true"><use href="#icon-server"/></svg></span><span class="provisioning-choice-copy"><strong>Coletor local</strong><small>Coletor local instalado na infraestrutura do cliente.</small></span></label>
+          <label class="provisioning-choice" id="collector-cloud-choice"><input id="new-collector-mode-cloud" type="radio" name="mode" value="cloud"><span class="provisioning-choice-mark cloud"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17.5 18.5H7a4.5 4.5 0 0 1-.7-8.95A6.5 6.5 0 0 1 18.8 11.4a3.6 3.6 0 0 1-1.3 7.1Z"/><path d="M9 14.5h6M13 12.5l2 2-2 2"/></svg></span><span class="provisioning-choice-copy"><strong>Cloud</strong><small id="collector-cloud-description">Coletor em nuvem hospedado na infraestrutura da LogVault.</small></span></label>
+        </div></fieldset>
+        <p class="form-feedback" id="create-collector-feedback" hidden></p>
+        <button class="primary-button dialog-submit" id="create-collector-button" type="submit"><span class="button-label">Adicionar coletor</span><span class="spinner" aria-hidden="true"></span></button>
+      </form>
+    </dialog>
     <dialog class="password-dialog device-dialog" id="device-dialog">
       <form id="edit-device-form">
         <div class="dialog-head"><div><p class="eyebrow">Equipamento</p><h2>Editar cadastro</h2></div><button type="button" id="close-device-dialog" aria-label="Fechar">×</button></div>
@@ -1744,6 +1764,15 @@
         <button class="primary-button dialog-submit" id="create-plan-button" type="submit"><span class="button-label">Criar plano</span><span class="spinner" aria-hidden="true"></span></button>
       </form>
     </dialog>
+    <dialog class="password-dialog management-create-dialog" id="edit-plan-dialog">
+      <form id="edit-plan-form">
+        <div class="dialog-head"><div><p class="eyebrow">Catálogo comercial</p><h2>Editar plano</h2><span>Atualize o nome e o limite de equipamentos.</span></div><button type="button" id="close-edit-plan-dialog" aria-label="Fechar">×</button></div>
+        <div class="field"><label for="edit-plan-name">Nome do plano</label><input id="edit-plan-name" name="name" required minlength="2" maxlength="200" autocomplete="off"></div>
+        <div class="field"><label for="edit-plan-limit">Equipamentos</label><input id="edit-plan-limit" name="deviceLimit" type="number" min="1" max="10000" placeholder="Sem limite"><small class="field-help">Deixe em branco para manter o plano sem limite.</small></div>
+        <p class="form-feedback" id="edit-plan-feedback" hidden></p>
+        <button class="primary-button dialog-submit" id="save-edit-plan" type="submit"><span class="button-label">Salvar alterações</span><span class="spinner" aria-hidden="true"></span></button>
+      </form>
+    </dialog>
     <dialog class="password-dialog management-create-dialog" id="user-dialog">
       <form id="create-user-form">
         <div class="dialog-head"><div><p class="eyebrow">Nova conta</p><h2 id="user-dialog-title">Adicionar usuário</h2><span id="user-dialog-copy">Crie um acesso individual para este ambiente.</span></div><button type="button" id="close-user-dialog" aria-label="Fechar">×</button></div>
@@ -1751,9 +1780,20 @@
         <div class="field"><label for="new-user-email">E-mail</label><input id="new-user-email" name="email" type="email" autocomplete="off" required></div>
         <div class="field" id="new-user-role-field"><label for="new-user-role">Perfil</label><select id="new-user-role" name="role"><option value="operator">Operador</option><option value="auditor">Auditor</option><option value="admin">Administrador</option></select></div>
         <div class="field" id="new-user-access-profile-field" hidden><label for="new-user-access-profile">Perfil de acesso</label><select id="new-user-access-profile" name="accessProfileId"><option value="">Selecione um perfil</option></select></div>
-        <div class="field"><label for="new-user-password">Senha inicial</label><input id="new-user-password" name="password" type="password" minlength="12" autocomplete="new-password" required></div>
+        <div class="field"><label for="new-user-password">Senha inicial</label><div class="password-generator"><input id="new-user-password" name="password" type="password" minlength="12" maxlength="1024" autocomplete="new-password" required><button class="password-generator-button" id="generate-user-password" type="button" title="Gerar senha aleatória forte">Gerar senha</button></div></div>
         <p class="form-feedback" id="create-user-feedback" hidden></p>
         <button class="primary-button dialog-submit" id="create-user-button" type="submit"><span class="button-label">Criar usuário</span><span class="spinner" aria-hidden="true"></span></button>
+      </form>
+    </dialog>
+    <dialog class="password-dialog management-create-dialog" id="edit-user-dialog">
+      <form id="edit-user-form">
+        <div class="dialog-head"><div><p class="eyebrow">Conta cadastrada</p><h2>Editar usuário</h2><span>Atualize o nome e o perfil de acesso desta conta.</span></div><button type="button" id="close-edit-user-dialog" aria-label="Fechar">×</button></div>
+        <div class="field"><label for="edit-user-name">Nome</label><input id="edit-user-name" name="name" autocomplete="off" required minlength="2" maxlength="200"></div>
+        <div class="field"><label for="edit-user-email">E-mail</label><input id="edit-user-email" name="email" type="email" readonly><small class="field-help">O e-mail de acesso não pode ser alterado.</small></div>
+        <div class="field" id="edit-user-role-field"><label for="edit-user-role">Perfil</label><select id="edit-user-role" name="role"><option value="operator">Operador</option><option value="auditor">Auditor</option><option value="admin">Administrador</option></select></div>
+        <div class="field" id="edit-user-access-profile-field" hidden><label for="edit-user-access-profile">Perfil de acesso</label><select id="edit-user-access-profile" name="accessProfileId"><option value="">Selecione um perfil</option></select></div>
+        <p class="form-feedback" id="edit-user-feedback" hidden></p>
+        <button class="primary-button dialog-submit" id="save-edit-user" type="submit"><span class="button-label">Salvar alterações</span><span class="spinner" aria-hidden="true"></span></button>
       </form>
     </dialog>
     <dialog class="client-wizard-dialog" id="client-wizard-dialog">

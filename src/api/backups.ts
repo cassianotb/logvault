@@ -1,5 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, readdir, rm, stat, statfs, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -8,59 +9,28 @@ import { z } from 'zod';
 import { authenticateRequest } from './auth.js';
 import { requirePlatformAccess } from './access-control.js';
 import type { ClickHouseRepository } from './clickhouse.js';
-import type { PlatformBackupDestination, PostgresRepository, TenantBackupJob } from './postgres.js';
-import { openSecret, sealSecret } from '../core/secret-box.js';
-import { createEncryptedTarGz, createTarGz, encryptBackupFile, fileDigest } from '../core/backup-archive.js';
-import {
-  parseGoogleServiceAccount, pruneGoogleDriveBackups, testGoogleDriveFolder, uploadGoogleDriveFile
-} from '../core/google-drive-backup.js';
+import type { PostgresRepository, TenantBackupJob } from './postgres.js';
+import { createTarGz, fileDigest } from '../core/backup-archive.js';
+import { importPlatformBackup } from '../core/backup-import.js';
 
-const destinationSchema = z.object({
-  enabled: z.boolean(),
-  folderId: z.string().trim().max(200).refine((value) => !value || /^[A-Za-z0-9_-]{10,200}$/.test(value), 'ID da pasta inválido'),
-  serviceAccountJson: z.string().max(32_000).default(''),
-  encryptionPassphrase: z.string().max(256).default(''),
-  retentionDays: z.number().int().min(1).max(3650)
-});
-const createJobSchema = z.object({ sendToGoogleDrive: z.boolean().default(false) });
+const MAX_PLATFORM_IMPORT_BYTES = 50 * 1024 * 1024 * 1024;
+
 const jobParamsSchema = z.object({ jobId: z.string().uuid() });
-
-function publicDestination(settings: PlatformBackupDestination | null) {
-  return settings ? {
-    enabled: settings.enabled, provider: settings.provider, folderId: settings.folderId,
-    credentialsConfigured: Boolean(settings.serviceAccountSecret),
-    encryptionConfigured: Boolean(settings.encryptionPassphraseSecret),
-    retentionDays: settings.retentionDays, lastTestAt: settings.lastTestAt,
-    lastTestStatus: settings.lastTestStatus, lastTestError: settings.lastTestError,
-    updatedAt: settings.updatedAt
-  } : {
-    enabled: false, provider: 'google_drive', folderId: '', credentialsConfigured: false,
-    encryptionConfigured: false, retentionDays: 30, lastTestAt: null,
-    lastTestStatus: null, lastTestError: '', updatedAt: null
-  };
-}
+const importStartSchema = z.object({
+  fileName: z.string().trim().min(1).max(240).refine((value) => /(?:\.tar\.gz|\.lvault)$/i.test(value), 'formato inválido'),
+  totalBytes: z.number().int().positive().max(MAX_PLATFORM_IMPORT_BYTES)
+});
+const importParamsSchema = z.object({ importId: z.string().uuid() });
+const importCompleteSchema = z.object({ passphrase: z.string().max(256).default('') });
 
 function safeError(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).replace(/[\r\n]+/g, ' ').slice(0, 2000);
 }
 
-async function configuredDrive(postgres: PostgresRepository, encryptionKey: string): Promise<{
-  settings: PlatformBackupDestination;
-  credentials: ReturnType<typeof parseGoogleServiceAccount>;
-  passphrase: string;
-}> {
-  const settings = await postgres.getPlatformBackupDestination();
-  if (!settings?.enabled || settings.lastTestStatus !== 'success') throw new Error('Google Drive não está habilitado e validado pela plataforma');
-  const credentials = parseGoogleServiceAccount(openSecret(settings.serviceAccountSecret, encryptionKey));
-  const passphrase = openSecret(settings.encryptionPassphraseSecret, encryptionKey);
-  if (passphrase.length < 20) throw new Error('Frase de recuperação do backup não está configurada');
-  return { settings, credentials, passphrase };
-}
-
 async function writeTenantBackup(input: {
   job: TenantBackupJob; postgres: PostgresRepository; clickhouse: ClickHouseRepository;
-  backupRoot: string; encryptionKey: string; warn?: (error: unknown, message: string) => void;
-}): Promise<{ archiveName: string; bytes: number; sha256: string; googleDriveFileId: string | null }> {
+  backupRoot: string;
+}): Promise<{ archiveName: string; bytes: number; sha256: string }> {
   const jobRoot = join(input.backupRoot, 'work', input.job.id);
   const archiveRoot = join(input.backupRoot, 'archives');
   await rm(jobRoot, { recursive: true, force: true });
@@ -113,157 +83,109 @@ async function writeTenantBackup(input: {
       outputPath: archivePath
     });
     const digest = await fileDigest(archivePath);
-    let googleDriveFileId: string | null = null;
-    if (input.job.sendToGoogleDrive) {
-      const drive = await configuredDrive(input.postgres, input.encryptionKey);
-      const previous = await input.postgres.getExternalBackupUpload('tenant', input.job.id);
-      if (previous?.status === 'success' && previous.remoteFileId) {
-        googleDriveFileId = previous.remoteFileId;
-        return { archiveName, ...digest, googleDriveFileId };
-      }
-      const encryptedPath = `${archivePath}.lvault`;
-      await encryptBackupFile({ sourcePath: archivePath, outputPath: encryptedPath, passphrase: drive.passphrase });
-      const encryptedDigest = await fileDigest(encryptedPath);
-      await input.postgres.beginExternalBackupUpload({ scope: 'tenant', sourceBackupId: input.job.id, tenantId: input.job.tenantId });
-      try {
-        const uploaded = await uploadGoogleDriveFile({
-          credentials: drive.credentials, folderId: drive.settings.folderId, filePath: encryptedPath,
-          fileName: `${archiveName}.lvault`,
-          appProperties: { logvaultScope: 'tenant', tenantId: input.job.tenantId, backupId: input.job.id }
-        });
-        googleDriveFileId = uploaded.id;
-        await input.postgres.completeExternalBackupUpload({
-          scope: 'tenant', sourceBackupId: input.job.id, byteCount: encryptedDigest.bytes,
-          sha256: encryptedDigest.sha256, remoteFileId: uploaded.id
-        });
-        try {
-          await pruneGoogleDriveBackups({
-            credentials: drive.credentials, folderId: drive.settings.folderId,
-            scope: 'tenant', retentionDays: drive.settings.retentionDays
-          });
-        } catch (error) { input.warn?.(error, 'Não foi possível aplicar a retenção dos backups de clientes no Google Drive'); }
-      } catch (error) {
-        await input.postgres.failExternalBackupUpload('tenant', input.job.id, safeError(error));
-        throw error;
-      } finally { await rm(encryptedPath, { force: true }); }
-    }
-    return { archiveName, ...digest, googleDriveFileId };
+    return { archiveName, ...digest };
   } finally {
     await rm(jobRoot, { recursive: true, force: true });
   }
 }
 
-async function syncLatestPlatformBackup(input: {
-  postgres: PostgresRepository; backupRoot: string; stagingRoot: string; encryptionKey: string;
-  warn?: (error: unknown, message: string) => void;
-}): Promise<void> {
-  let latest: { id?: unknown; backupType?: unknown; baseBackupId?: unknown };
-  try { latest = JSON.parse(await readFile(join(input.backupRoot, 'LAST_SUCCESS.json'), 'utf8')) as typeof latest; }
-  catch { return; }
-  if (typeof latest.id !== 'string' || !/^\d{8}T\d{6}Z$/.test(latest.id)) return;
-  const previous = await input.postgres.getExternalBackupUpload('platform', latest.id);
-  if (previous?.status === 'success') return;
-  const drive = await configuredDrive(input.postgres, input.encryptionKey);
-  const entries = [latest.id];
-  if (latest.backupType === 'incremental' && typeof latest.baseBackupId === 'string' && /^\d{8}T\d{6}Z$/.test(latest.baseBackupId)) {
-    entries.unshift(latest.baseBackupId);
-  }
-  await mkdir(input.stagingRoot, { recursive: true, mode: 0o700 });
-  const encryptedPath = join(input.stagingRoot, `logvault-platform-${latest.id}.tar.gz.lvault`);
-  await input.postgres.beginExternalBackupUpload({ scope: 'platform', sourceBackupId: latest.id, tenantId: null });
-  try {
-    await createEncryptedTarGz({
-      sourceDirectory: join(input.backupRoot, 'runs'), entries,
-      outputPath: encryptedPath, passphrase: drive.passphrase
-    });
-    const digest = await fileDigest(encryptedPath);
-    const uploaded = await uploadGoogleDriveFile({
-      credentials: drive.credentials, folderId: drive.settings.folderId, filePath: encryptedPath,
-      fileName: `logvault-platform-${latest.id}.tar.gz.lvault`,
-      appProperties: { logvaultScope: 'platform', backupId: latest.id }
-    });
-    await input.postgres.completeExternalBackupUpload({
-      scope: 'platform', sourceBackupId: latest.id, byteCount: digest.bytes,
-      sha256: digest.sha256, remoteFileId: uploaded.id
-    });
-    try {
-      await pruneGoogleDriveBackups({
-        credentials: drive.credentials, folderId: drive.settings.folderId,
-        scope: 'platform', retentionDays: drive.settings.retentionDays
-      });
-    } catch (error) { input.warn?.(error, 'Não foi possível aplicar a retenção do backup da plataforma no Google Drive'); }
-  } catch (error) {
-    await input.postgres.failExternalBackupUpload('platform', latest.id, safeError(error));
-    throw error;
-  } finally {
-    await rm(encryptedPath, { force: true });
-  }
-}
-
 export function registerBackupRoutes(app: FastifyInstance, dependencies: {
-  postgres: PostgresRepository; encryptionKey: string; tenantBackupRoot: string;
+  postgres: PostgresRepository; tenantBackupRoot: string;
+  backupRoot?: string; stagingRoot?: string;
   trigger: () => void;
 }): void {
-  app.get('/v1/platform/backup-destination', async (request, reply) => {
-    const session = await authenticateRequest(request, reply, dependencies.postgres, { allowPlatformContext: true });
-    if (!session) return;
-    if (session.context !== 'platform') return reply.code(403).send({ error: 'platform_context_required' });
-    if (!requirePlatformAccess(session, reply, 'system', 'view')) return;
-    const [destination, latestUpload] = await Promise.all([
-      dependencies.postgres.getPlatformBackupDestination(),
-      dependencies.postgres.getLatestExternalBackupUpload('platform')
-    ]);
-    return reply.send({ destination: publicDestination(destination), latestUpload });
-  });
-
-  app.put('/v1/platform/backup-destination', async (request, reply) => {
-    const session = await authenticateRequest(request, reply, dependencies.postgres, { allowPlatformContext: true });
-    if (!session) return;
-    if (session.context !== 'platform') return reply.code(403).send({ error: 'platform_context_required' });
-    if (!requirePlatformAccess(session, reply, 'system', 'manage')) return;
-    const parsed = destinationSchema.safeParse(request.body);
-    if (!parsed.success) return reply.code(400).send({ error: 'invalid_backup_destination', details: parsed.error.flatten() });
-    const current = await dependencies.postgres.getPlatformBackupDestination();
-    let serviceAccountSecret = current?.serviceAccountSecret ?? '';
-    let encryptionPassphraseSecret = current?.encryptionPassphraseSecret ?? '';
-    if (parsed.data.serviceAccountJson) {
-      parseGoogleServiceAccount(parsed.data.serviceAccountJson);
-      serviceAccountSecret = sealSecret(parsed.data.serviceAccountJson, dependencies.encryptionKey);
-    }
-    if (parsed.data.encryptionPassphrase) {
-      if (parsed.data.encryptionPassphrase.length < 20) return reply.code(400).send({ error: 'backup_passphrase_too_short' });
-      encryptionPassphraseSecret = sealSecret(parsed.data.encryptionPassphrase, dependencies.encryptionKey);
-    }
-    if (parsed.data.enabled && (!parsed.data.folderId || !serviceAccountSecret || !encryptionPassphraseSecret)) {
-      return reply.code(400).send({ error: 'backup_destination_fields_required' });
-    }
-    const saved = await dependencies.postgres.savePlatformBackupDestination({
-      actorUserId: session.id, enabled: parsed.data.enabled, folderId: parsed.data.folderId,
-      serviceAccountSecret, encryptionPassphraseSecret, retentionDays: parsed.data.retentionDays,
-      credentialsChanged: Boolean(parsed.data.serviceAccountJson), passphraseChanged: Boolean(parsed.data.encryptionPassphrase)
-    });
-    return reply.send({ destination: publicDestination(saved) });
-  });
-
-  app.post('/v1/platform/backup-destination/test', async (request, reply) => {
-    const session = await authenticateRequest(request, reply, dependencies.postgres, { allowPlatformContext: true });
-    if (!session) return;
-    if (session.context !== 'platform') return reply.code(403).send({ error: 'platform_context_required' });
-    if (!requirePlatformAccess(session, reply, 'system', 'manage')) return;
-    const settings = await dependencies.postgres.getPlatformBackupDestination();
-    if (!settings?.serviceAccountSecret || !settings.folderId) return reply.code(409).send({ error: 'backup_destination_not_configured' });
+  const backupRoot = dependencies.backupRoot ?? '/var/lib/argus/backups';
+  const stagingRoot = dependencies.stagingRoot ?? '/var/lib/argus/backup-staging';
+  if (!app.hasContentTypeParser('application/octet-stream')) {
+    app.addContentTypeParser('application/octet-stream', { parseAs: 'buffer', bodyLimit: 9 * 1024 * 1024 },
+      (_request, body, done) => done(null, body));
+  }
+  const importDirectory = (importId: string) => join(stagingRoot, 'imports', importId);
+  const readImportSession = async (importId: string): Promise<{
+    actorUserId: string; fileName: string; totalBytes: number; createdAt: string;
+  }> => JSON.parse(await readFile(join(importDirectory(importId), 'session.json'), 'utf8')) as {
+    actorUserId: string; fileName: string; totalBytes: number; createdAt: string;
+  };
+  void (async () => {
+    const root = join(stagingRoot, 'imports');
+    const cutoff = Date.now() - 24 * 60 * 60_000;
     try {
-      const folder = await testGoogleDriveFolder({
-        credentials: parseGoogleServiceAccount(openSecret(settings.serviceAccountSecret, dependencies.encryptionKey)),
-        folderId: settings.folderId
+      for (const entry of await readdir(root, { withFileTypes: true })) {
+        if (!entry.isDirectory() || !z.string().uuid().safeParse(entry.name).success) continue;
+        const path = join(root, entry.name);
+        if ((await stat(path)).mtimeMs < cutoff) await rm(path, { recursive: true, force: true });
+      }
+    } catch { /* a pasta será criada na primeira importação */ }
+  })();
+  app.post('/v1/platform/backups/imports', async (request, reply) => {
+    const session = await authenticateRequest(request, reply, dependencies.postgres, { allowPlatformContext: true });
+    if (!session) return;
+    if (session.context !== 'platform') return reply.code(403).send({ error: 'platform_context_required' });
+    if (!requirePlatformAccess(session, reply, 'system', 'manage')) return;
+    const parsed = importStartSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_backup_import', details: parsed.error.flatten() });
+    await mkdir(stagingRoot, { recursive: true, mode: 0o700 });
+    const filesystem = await statfs(stagingRoot);
+    if (filesystem.bavail * filesystem.bsize < parsed.data.totalBytes + 512 * 1024 * 1024) {
+      return reply.code(507).send({ error: 'insufficient_backup_import_space' });
+    }
+    const importId = randomUUID();
+    const root = importDirectory(importId);
+    await mkdir(root, { recursive: true, mode: 0o700 });
+    await writeFile(join(root, 'session.json'), JSON.stringify({
+      actorUserId: session.id, fileName: parsed.data.fileName,
+      totalBytes: parsed.data.totalBytes, createdAt: new Date().toISOString()
+    }), { mode: 0o600 });
+    await writeFile(join(root, 'upload.bin'), Buffer.alloc(0), { mode: 0o600 });
+    return reply.code(201).send({ importId, chunkBytes: 8 * 1024 * 1024 });
+  });
+
+  app.put('/v1/platform/backups/imports/:importId/chunk', async (request, reply) => {
+    const session = await authenticateRequest(request, reply, dependencies.postgres, { allowPlatformContext: true });
+    if (!session) return;
+    if (session.context !== 'platform') return reply.code(403).send({ error: 'platform_context_required' });
+    if (!requirePlatformAccess(session, reply, 'system', 'manage')) return;
+    const params = importParamsSchema.safeParse(request.params);
+    if (!params.success || !Buffer.isBuffer(request.body)) return reply.code(400).send({ error: 'invalid_backup_import_chunk' });
+    const metadata = await readImportSession(params.data.importId).catch(() => null);
+    if (!metadata || metadata.actorUserId !== session.id) return reply.code(404).send({ error: 'backup_import_not_found' });
+    const uploadPath = join(importDirectory(params.data.importId), 'upload.bin');
+    const currentBytes = (await stat(uploadPath)).size;
+    const expectedOffset = Number(request.headers['x-upload-offset']);
+    if (!Number.isSafeInteger(expectedOffset) || expectedOffset !== currentBytes
+      || currentBytes + request.body.length > metadata.totalBytes) {
+      return reply.code(409).send({ error: 'backup_import_offset_mismatch', receivedBytes: currentBytes });
+    }
+    await appendFile(uploadPath, request.body);
+    return reply.send({ receivedBytes: currentBytes + request.body.length, totalBytes: metadata.totalBytes });
+  });
+
+  app.post('/v1/platform/backups/imports/:importId/complete', async (request, reply) => {
+    const session = await authenticateRequest(request, reply, dependencies.postgres, { allowPlatformContext: true });
+    if (!session) return;
+    if (session.context !== 'platform') return reply.code(403).send({ error: 'platform_context_required' });
+    if (!requirePlatformAccess(session, reply, 'system', 'manage')) return;
+    const params = importParamsSchema.safeParse(request.params);
+    const body = importCompleteSchema.safeParse(request.body ?? {});
+    if (!params.success || !body.success) return reply.code(400).send({ error: 'invalid_backup_import' });
+    const metadata = await readImportSession(params.data.importId).catch(() => null);
+    if (!metadata || metadata.actorUserId !== session.id) return reply.code(404).send({ error: 'backup_import_not_found' });
+    const uploadPath = join(importDirectory(params.data.importId), 'upload.bin');
+    if ((await stat(uploadPath)).size !== metadata.totalBytes) return reply.code(409).send({ error: 'backup_import_incomplete' });
+    try {
+      const result = await importPlatformBackup({
+        sourcePath: uploadPath, sourceName: metadata.fileName,
+        passphrase: body.data.passphrase,
+        workspaceRoot: join(importDirectory(params.data.importId), 'validation'), backupRoot
       });
-      await dependencies.postgres.recordPlatformBackupDestinationTest({ actorUserId: session.id, status: 'success', error: '' });
-      dependencies.trigger();
-      return reply.send({ status: 'success', folder });
+      await dependencies.postgres.auditPlatformBackupImport({
+        actorUserId: session.id,
+        details: { source: 'local', backupIds: result.backupIds, imported: result.imported }
+      });
+      await rm(importDirectory(params.data.importId), { recursive: true, force: true });
+      return reply.send(result);
     } catch (error) {
-      const message = safeError(error);
-      await dependencies.postgres.recordPlatformBackupDestinationTest({ actorUserId: session.id, status: 'failed', error: message });
-      return reply.code(422).send({ error: 'backup_destination_test_failed', message });
+      return reply.code(422).send({ error: 'backup_import_validation_failed', message: safeError(error) });
     }
   });
 
@@ -272,22 +194,15 @@ export function registerBackupRoutes(app: FastifyInstance, dependencies: {
     if (!session) return;
     if (!requirePlatformAccess(session, reply, 'system', 'view')) return;
     const jobs = await dependencies.postgres.listTenantBackupJobs(session.tenantId);
-    const destination = await dependencies.postgres.getPlatformBackupDestination();
-    return reply.send({ backups: jobs, googleDriveAvailable: Boolean(destination?.enabled && destination.lastTestStatus === 'success') });
+    return reply.send({ backups: jobs });
   });
 
   app.post('/v1/backups', async (request, reply) => {
     const session = await authenticateRequest(request, reply, dependencies.postgres);
     if (!session) return;
     if (!requirePlatformAccess(session, reply, 'system', 'manage')) return;
-    const parsed = createJobSchema.safeParse(request.body ?? {});
-    if (!parsed.success) return reply.code(400).send({ error: 'invalid_tenant_backup_request' });
-    if (parsed.data.sendToGoogleDrive) {
-      const destination = await dependencies.postgres.getPlatformBackupDestination();
-      if (!destination?.enabled || destination.lastTestStatus !== 'success') return reply.code(409).send({ error: 'google_drive_not_available' });
-    }
     const job = await dependencies.postgres.createTenantBackupJob({
-      tenantId: session.tenantId, actorUserId: session.id, sendToGoogleDrive: parsed.data.sendToGoogleDrive
+      tenantId: session.tenantId, actorUserId: session.id
     });
     if (job === 'active_exists') return reply.code(409).send({ error: 'tenant_backup_already_running' });
     dependencies.trigger();
@@ -322,11 +237,10 @@ export function registerBackupRoutes(app: FastifyInstance, dependencies: {
 }
 
 export async function startBackupProcessor(app: FastifyInstance, dependencies: {
-  postgres: PostgresRepository; clickhouse: ClickHouseRepository; backupRoot: string;
-  tenantBackupRoot: string; stagingRoot: string; encryptionKey: string;
+  postgres: PostgresRepository; clickhouse: ClickHouseRepository;
+  tenantBackupRoot: string;
 }): Promise<() => void> {
   let running = false;
-  let platformSyncRunning = false;
   let stopped = false;
   await dependencies.postgres.recoverInterruptedTenantBackups();
   const cleanupExpiredTenantArchives = async () => {
@@ -348,11 +262,10 @@ export async function startBackupProcessor(app: FastifyInstance, dependencies: {
         if (!job) break;
         try {
           const result = await writeTenantBackup({ job, postgres: dependencies.postgres, clickhouse: dependencies.clickhouse,
-            backupRoot: dependencies.tenantBackupRoot, encryptionKey: dependencies.encryptionKey,
-            warn: (error, message) => app.log.warn({ error: safeError(error) }, message) });
+            backupRoot: dependencies.tenantBackupRoot });
           await dependencies.postgres.completeTenantBackup({
             jobId: job.id, archiveName: result.archiveName, byteCount: result.bytes,
-            sha256: result.sha256, googleDriveFileId: result.googleDriveFileId
+            sha256: result.sha256
           });
         } catch (error) {
           await dependencies.postgres.failTenantBackup(job.id, safeError(error));
@@ -361,29 +274,14 @@ export async function startBackupProcessor(app: FastifyInstance, dependencies: {
       }
     } finally { running = false; }
   };
-  const processPlatform = async () => {
-    if (platformSyncRunning || stopped) return;
-    platformSyncRunning = true;
-    try {
-      const settings = await dependencies.postgres.getPlatformBackupDestination();
-      if (settings?.enabled && settings.lastTestStatus === 'success') {
-        await syncLatestPlatformBackup({ postgres: dependencies.postgres, backupRoot: dependencies.backupRoot,
-          stagingRoot: dependencies.stagingRoot, encryptionKey: dependencies.encryptionKey,
-          warn: (error, message) => app.log.warn({ error: safeError(error) }, message) });
-      }
-    } catch (error) {
-      app.log.error({ error: safeError(error) }, 'Cópia do backup da plataforma para o Google Drive falhou');
-    } finally { platformSyncRunning = false; }
-  };
-  const trigger = () => { void processTenantQueue(); void processPlatform(); };
+  const trigger = () => { void processTenantQueue(); };
   trigger();
   void cleanupExpiredTenantArchives();
   const tenantTimer = setInterval(() => void processTenantQueue(), 5_000);
-  const platformTimer = setInterval(() => void processPlatform(), 60_000);
   const cleanupTimer = setInterval(() => void cleanupExpiredTenantArchives(), 3_600_000);
-  tenantTimer.unref(); platformTimer.unref(); cleanupTimer.unref();
+  tenantTimer.unref(); cleanupTimer.unref();
   app.addHook('onClose', async () => {
-    stopped = true; clearInterval(tenantTimer); clearInterval(platformTimer); clearInterval(cleanupTimer);
+    stopped = true; clearInterval(tenantTimer); clearInterval(cleanupTimer);
   });
   return trigger;
 }

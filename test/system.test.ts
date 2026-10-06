@@ -173,6 +173,9 @@ describe('alertas globais da plataforma', () => {
 
     expect(response.statusCode).toBe(200);
     expect(response.json().scope).toBe('platform');
+    expect(response.json().backup.remote).toMatchObject({
+      enabled: false, status: 'disabled'
+    });
     expect(response.json().alerts).toEqual(expect.arrayContaining([
       expect.objectContaining({ source: 'backup', tenantName: 'Plataforma' }),
       expect.objectContaining({ source: 'parser', tenantId, tenantName: 'ISP Cliente' })

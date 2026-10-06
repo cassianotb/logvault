@@ -1,7 +1,21 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { buildCapacityReport, buildPlatformCapacityReport, buildStorageEstimate } from '../src/api/capacity.js';
 
 describe('dimensionamento de capacidade', () => {
+  it('inicia a calculadora sem valores preenchidos nem texto null', () => {
+    const html = readFileSync('web/index.html', 'utf8');
+    const script = readFileSync('web/app.js', 'utf8');
+    for (const id of ['capacity-subscribers', 'capacity-cisco-percent', 'capacity-growth-percent',
+      'capacity-headroom-percent', 'capacity-offline-hours']) {
+      const input = html.match(new RegExp(`<input id="${id}"[^>]*>`))?.[0] || '';
+      expect(input).not.toMatch(/\svalue=/);
+      expect(input).not.toContain('null');
+    }
+    expect(html).toContain('<option value="" selected disabled hidden></option>');
+    expect(script).toContain('if (!capacityCalculatorForm.reportValidity()) return;');
+  });
+
   it('usa a maior taxa observada e mantém margem explícita', () => {
     const report = buildCapacityReport({
       snapshot: {

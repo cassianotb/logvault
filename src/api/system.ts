@@ -270,7 +270,9 @@ async function listBackups(root: string): Promise<{ backups: BackupMetadata[]; l
 }
 
 async function remoteBackupState(root: string, enabled: boolean, latestBackupId: string | null): Promise<RemoteBackupState> {
-  if (!enabled) return { enabled: false, status: 'disabled', lastBackupId: null, copiedAt: null, failedAt: null };
+  if (!enabled) return {
+    enabled: false, status: 'disabled', lastBackupId: null, copiedAt: null, failedAt: null
+  };
   const success = await optionalJson(join(root, 'LAST_REMOTE_SUCCESS.json')) as { backupId?: unknown; copiedAt?: unknown } | undefined;
   const failure = await optionalJson(join(root, 'LAST_REMOTE_FAILURE.json')) as { failedAt?: unknown } | undefined;
   const lastBackupId = typeof success?.backupId === 'string' && validBackupId(success.backupId) ? success.backupId : null;
@@ -301,7 +303,9 @@ export async function collectOperationalAlerts(
   ]);
   const alerts: OperationalAlert[] = [];
   const latestBackup = backupState.backups[0] ?? null;
-  const remoteState = await remoteBackupState(dependencies.backupRoot, dependencies.backupRemoteEnabled, latestBackup?.id ?? null);
+  const remoteState = await remoteBackupState(
+    dependencies.backupRoot, dependencies.backupRemoteEnabled, latestBackup?.id ?? null
+  );
   const { status: backupStatus, ageHours } = backupOperationalStatus(
     latestBackup?.createdAt ?? null, backupState.lastFailureAt, dependencies.backupExpectedHours, nowMs
   );

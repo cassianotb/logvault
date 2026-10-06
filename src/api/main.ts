@@ -331,14 +331,13 @@ registerSystemRoutes(app, {
   cloudMetricsProvider: () => latestCloudMetrics
 });
 const triggerBackup = await startBackupProcessor(app, {
-  postgres, clickhouse, backupRoot: config.ARGUS_BACKUP_ROOT,
-  tenantBackupRoot: config.ARGUS_TENANT_BACKUP_ROOT,
-  stagingRoot: config.ARGUS_BACKUP_STAGING_ROOT,
-  encryptionKey: alertEncryptionKey
+  postgres, clickhouse, tenantBackupRoot: config.ARGUS_TENANT_BACKUP_ROOT
 });
 registerBackupRoutes(app, {
-  postgres, encryptionKey: alertEncryptionKey,
+  postgres,
   tenantBackupRoot: config.ARGUS_TENANT_BACKUP_ROOT,
+  backupRoot: config.ARGUS_BACKUP_ROOT,
+  stagingRoot: config.ARGUS_BACKUP_STAGING_ROOT,
   trigger: triggerBackup
 });
 registerAlertRoutes(app, { postgres, encryptionKey: alertEncryptionKey });

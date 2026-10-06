@@ -262,24 +262,13 @@ No contexto de um cliente, a mesma tela não expõe o backup global. Um administ
 
 Os backups locais protegem contra corrupção e erros operacionais, mas continuam na mesma VM. Para tolerar perda completa do host, replique o caminho definido em `ARGUS_BACKUP_DATA_PATH` para outro servidor ou storage. Isso pode ser feito sem serviço pago, por exemplo com cópia periódica via SSH/rsync para outro equipamento do cliente.
 
-### Cópia criptografada no Google Drive
+### Importação de backup
 
-Na plataforma, abra **Sistema → Google Drive**. Informe uma pasta pertencente a um **Drive compartilhado do Google Workspace**, o JSON de uma conta de serviço com acesso de colaborador e uma frase de recuperação com pelo menos 20 caracteres. Contas de serviço não possuem cota própria no “Meu Drive”, por isso uma pasta pessoal compartilhada não é aceita. O teste cria e remove um arquivo de prova antes de liberar o destino.
+Administradores da plataforma podem usar **Sistema → Importar backup** para selecionar um arquivo local `.tar.gz` ou um arquivo legado `.lvault`. O navegador envia blocos de 8 MB para suportar arquivos grandes sem mantê-los em memória. Arquivos legados criptografados exigem a frase de recuperação original.
 
-O JSON e a frase ficam cifrados no PostgreSQL. Guarde uma cópia da frase fora da VM e do próprio Drive: ela não volta a ser exibida e, sem ela, os arquivos externos não podem ser recuperados. Depois de salvar, execute **Testar conexão** e habilite o envio. O processador envia automaticamente o ponto completo mais recente — incluindo a base exigida por um incremental — usando upload retomável, e exclui do Drive somente arquivos LogVault mais antigos que a retenção configurada. Uma falha externa não remove nem invalida o backup local.
+A importação ocorre em uma área temporária. Antes de incorporar o ponto ao catálogo, o LogVault valida o cabeçalho criptográfico, autenticação AES-GCM, caminhos do pacote, ausência de links, manifesto, cadeia completo/incremental e todos os hashes SHA-256. Sessões temporárias abandonadas expiram após 24 horas.
 
-O administrador de um cliente pode marcar **Enviar também ao Google Drive da plataforma** ao criar seu pacote. O backend fixa o tenant pela sessão, sem aceitar um identificador de cliente enviado pelo navegador. Usuários operadores e auditores podem consultar o estado, mas não gerar nem baixar o arquivo.
-
-Todo arquivo enviado termina em `.lvault` e usa AES-256-GCM com chave derivada por scrypt. Para recuperar um arquivo, crie um arquivo privado contendo somente a frase, com permissão `0600`, e execute no checkout da mesma versão ou de uma posterior:
-
-```bash
-node scripts/decrypt-backup.mjs \
-  logvault-platform-20260929T120000Z.tar.gz.lvault \
-  logvault-platform-20260929T120000Z.tar.gz \
-  /root/logvault-backup.pass
-```
-
-Se a frase estiver errada ou o arquivo tiver sido alterado, a autenticação falha e a saída parcial é removida. Depois de descriptografar um backup da plataforma, extraia o pacote em uma área privada, confira os checksums internos e siga o procedimento de restauração abaixo.
+Importar não restaura nem interrompe serviços. A restauração continua sendo uma operação separada, destrutiva e sujeita à confirmação explícita descrita abaixo.
 
 ### Segunda cópia via SSH/rsync
 

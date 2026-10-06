@@ -83,7 +83,6 @@ function platformRouteRequirement(request: FastifyRequest): {
   if (path.startsWith('/v1/capacity')) return { module: 'capacity', level };
   if (path.startsWith('/v1/users') || path.startsWith('/v1/platform/access-profiles')) return { module: 'users', level };
   if (path.startsWith('/v1/platform/email-settings')) return { module: 'settings', level };
-  if (path.startsWith('/v1/platform/backup-destination')) return { module: 'system', level };
   if (path.startsWith('/v1/platform/integrations')) return { module: 'integrations', level };
   if (path.startsWith('/v1/platform/audit')) return { module: 'audit', level };
   if (path.startsWith('/v1/platform/plans')) return { module: 'plans', level };
