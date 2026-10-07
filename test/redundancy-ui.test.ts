@@ -10,7 +10,8 @@ describe('pareamento de alta disponibilidade no painel', () => {
     expect(html).toContain('id="copy-redundancy-token"');
     expect(html).toContain('Copiar código');
     expect(html).toContain('Alta Disponibilidade');
-    expect(html).toContain('id="platform-continuity-nav" hidden><svg aria-hidden="true"><use href="#icon-datacenters"/></svg> HA</a>');
+    expect(html).toContain('id="platform-continuity-nav" hidden><svg aria-hidden="true"><use href="#icon-ha-switch"/></svg> HA</a>');
+    expect(html).toContain('id="icon-ha-switch"');
     expect(html).toContain('Dupla ingestão e alta disponibilidade');
     expect(html).toContain('Adicionar servidor standby');
     expect(html).not.toContain('Adicionar servidor secundário');

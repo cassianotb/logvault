@@ -7195,9 +7195,10 @@ platformEmailTestForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   if (!platformEmailTestForm.reportValidity()) return;
   setFormFeedback(platformEmailTestFeedback, 'Enviando mensagem de teste…');
-  const original = testPlatformEmailButton.textContent;
+  const buttonLabel = testPlatformEmailButton.querySelector('.button-label');
+  const original = buttonLabel.textContent;
   testPlatformEmailButton.disabled = true;
-  testPlatformEmailButton.textContent = 'Enviando…';
+  buttonLabel.textContent = 'Enviando…';
   try {
     const response = await authenticatedFetch(`${API_BASE}/v1/platform/email-settings/test`, {
       method: 'POST',
@@ -7214,7 +7215,7 @@ platformEmailTestForm.addEventListener('submit', async (event) => {
     platformEmailLoaded = false;
     await loadPlatformEmailSettings();
   } finally {
-    testPlatformEmailButton.textContent = original;
+    buttonLabel.textContent = original;
     testPlatformEmailButton.disabled = false;
   }
 });

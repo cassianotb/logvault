@@ -974,18 +974,51 @@ dialog.password-dialog.client-users-dialog { width: min(1120px, calc(100% - 28px
 .platform-audit-controls { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .platform-audit-controls select { height: 34px; min-width: 150px; padding: 0 9px; border: 1px solid #ccd5e2; border-radius: 6px; color: #35435a; background: #fff; font-size: 9px; }
 .platform-audit-panel .devices-panel-head > small { min-width: 145px; text-align: right; }
+.platform-email-overview { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 19px; }
+.platform-email-status-card { display: grid; grid-template-columns: 44px minmax(0, 1fr); align-items: center; gap: 14px; min-height: 104px; padding: 18px; border: 1px solid #dce4ed; border-radius: 11px; background: #fff; box-shadow: var(--shadow); }
+.platform-email-status-card.primary { border-color: #cfe0f4; background: linear-gradient(135deg, #fff 0%, #f5f9ff 100%); }
+.platform-email-card-icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 11px; color: #3478c5; background: #eaf3ff; }
+.platform-email-card-icon svg, .platform-email-form-section-head svg, .platform-email-test-head svg, .platform-email-test-form button svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.platform-email-status-card > div { min-width: 0; }
+.platform-email-status-card > div > span { display: block; color: #71829a; font-size: 8px; font-weight: 800; letter-spacing: .08em; }
+.platform-email-status-card strong { display: block; overflow: hidden; margin-top: 7px; color: #152d4d; font-size: 17px; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.platform-email-status-card strong.summary-good { color: #17805f; }
+.platform-email-status-card strong.summary-warning { color: #ac6f00; }
+.platform-email-status-card small { display: block; overflow: hidden; margin-top: 5px; color: #8390a2; font-size: 8px; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+.platform-email-workspace { display: grid; grid-template-columns: minmax(0, 1fr) 330px; align-items: start; gap: 19px; }
 .platform-email-panel, .platform-email-test-panel { overflow: hidden; }
-.platform-email-test-panel { margin-top: 19px; }
-.platform-email-form { padding: 18px 20px 20px; background: #f8fafc; }
-.platform-email-master { margin-bottom: 18px; }
-.platform-email-fields { display: grid; grid-template-columns: 1.4fr .55fr 1fr; gap: 16px 14px; }
-.platform-email-fields .field { min-width: 0; }
-.platform-email-save-row { display: flex; align-items: center; justify-content: flex-end; gap: 16px; margin-top: 20px; padding-top: 17px; border-top: 1px solid #e0e6ee; }
+.platform-email-form { padding: 20px; background: #f8fafc; }
+.platform-email-master { margin-bottom: 16px; background: #f0f6ff; }
+.platform-email-form-section { margin-top: 12px; padding: 17px; border: 1px solid #e0e7ef; border-radius: 9px; background: #fff; }
+.platform-email-form-section-head { display: grid; grid-template-columns: 34px minmax(0, 1fr); align-items: center; gap: 11px; margin-bottom: 15px; }
+.platform-email-form-section-head > span { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 9px; color: #397bc3; background: #edf5ff; }
+.platform-email-form-section-head svg { width: 17px; height: 17px; }
+.platform-email-form-section-head strong, .platform-email-form-section-head small { display: block; }
+.platform-email-form-section-head strong { color: #293d58; font-size: 11px; }
+.platform-email-form-section-head small { margin-top: 3px; color: #7e8b9e; font-size: 8px; }
+.platform-email-connection-fields { display: grid; grid-template-columns: minmax(220px, 1.4fr) 110px minmax(190px, .8fr); gap: 13px; }
+.platform-email-auth-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.platform-email-form-section .field { min-width: 0; }
+.platform-email-save-row { display: flex; align-items: center; justify-content: flex-end; gap: 16px; margin-top: 18px; padding-top: 17px; border-top: 1px solid #e0e6ee; }
 .platform-email-save-row .form-feedback { flex: 1; margin: 0; }
 .platform-email-save-row button { min-width: 160px; }
-.platform-email-test-form { display: grid; grid-template-columns: minmax(260px, 430px) auto minmax(0, 1fr); align-items: end; gap: 12px; padding: 18px 20px 20px; }
-.platform-email-test-form .secondary-button { height: 42px; min-width: 120px; }
-.platform-email-test-form .form-feedback { align-self: center; margin: 0; }
+.platform-email-test-panel { padding: 20px; }
+.platform-email-test-head { display: grid; grid-template-columns: 42px minmax(0, 1fr); align-items: center; gap: 13px; padding-bottom: 17px; border-bottom: 1px solid #e3e8ef; }
+.platform-email-test-head > span { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 11px; color: #287760; background: #e9f7f2; }
+.platform-email-test-head h2 { margin: 3px 0 4px; color: #172e4d; font-size: 15px; }
+.platform-email-test-head small { display: block; color: #748397; font-size: 8px; line-height: 1.45; }
+.platform-email-sender-preview { min-width: 0; margin: 16px 0; padding: 13px 14px; border: 1px solid #e0e7ef; border-radius: 8px; background: #f8fafc; }
+.platform-email-sender-preview span, .platform-email-sender-preview strong, .platform-email-sender-preview small { display: block; }
+.platform-email-sender-preview span { color: #71829a; font-size: 7px; font-weight: 800; letter-spacing: .08em; }
+.platform-email-sender-preview strong { overflow-wrap: anywhere; margin-top: 7px; color: #2a3f59; font-size: 10px; line-height: 1.45; }
+.platform-email-sender-preview small { margin-top: 4px; color: #8a96a6; font-size: 7px; }
+.platform-email-test-form { display: grid; gap: 12px; }
+.platform-email-test-form .secondary-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; width: 100%; height: 42px; }
+.platform-email-test-form .secondary-button svg { width: 15px; height: 15px; }
+.platform-email-test-form .form-feedback { margin: 0; }
+.platform-email-test-note { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 8px; margin-top: 16px; padding-top: 15px; border-top: 1px solid #e4e9f0; color: #7c899a; }
+.platform-email-test-note > span { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; color: #49749e; background: #eaf2fa; font-size: 8px; font-weight: 800; }
+.platform-email-test-note p { margin: 0; font-size: 8px; line-height: 1.55; }
 .user-status { display: inline-flex; padding: 4px 7px; border-radius: 12px; font-size: 9px; font-weight: 700; }
 .user-status.active { color: var(--green); background: #ebf8f4; }
 .user-status.inactive { color: #8a5660; background: #faeef0; }
@@ -1678,9 +1711,14 @@ button.integration-catalog-option:hover:not(:disabled) { border-color: #76a8e5; 
   .company-profile-form { grid-template-columns: 160px minmax(0, 1fr); }
   .company-fields-grid, .company-dialog-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .plan-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .platform-email-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .platform-email-test-form { grid-template-columns: minmax(240px, 1fr) auto; }
+  .platform-email-workspace { grid-template-columns: 1fr; }
+  .platform-email-test-panel { display: grid; grid-template-columns: minmax(230px, .7fr) minmax(300px, 1.3fr); gap: 16px 22px; }
+  .platform-email-test-head { grid-column: 1 / -1; }
+  .platform-email-sender-preview { grid-column: 1; grid-row: 2 / 4; margin: 0; }
+  .platform-email-test-form { grid-column: 2; grid-row: 2; grid-template-columns: minmax(220px, 1fr) auto; align-items: end; }
+  .platform-email-test-form .secondary-button { width: auto; min-width: 150px; }
   .platform-email-test-form .form-feedback { grid-column: 1 / -1; }
+  .platform-email-test-note { grid-column: 2; grid-row: 3; margin-top: 0; }
   .platform-audit-controls { width: 100%; margin-left: 0; flex-wrap: wrap; }
   .device-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .collector-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -1882,10 +1920,17 @@ button.integration-catalog-option:hover:not(:disabled) { border-color: #76a8e5; 
   .search-row-actions { grid-column: 1 / -1; flex-wrap: wrap; min-width: 0; }
   .search-row-actions::before { flex-basis: 100%; }
   .plan-form { grid-template-columns: 1fr; }
-  .platform-email-fields, .platform-email-test-form { grid-template-columns: 1fr; }
+  .platform-email-overview { grid-template-columns: 1fr; }
+  .platform-email-status-card { min-height: 88px; }
+  .platform-email-connection-fields, .platform-email-auth-fields { grid-template-columns: 1fr; }
+  .platform-email-test-panel { display: block; }
+  .platform-email-test-head { margin-bottom: 16px; }
+  .platform-email-sender-preview { margin: 0 0 16px; }
+  .platform-email-test-form { display: grid; grid-template-columns: 1fr; }
   .platform-email-save-row { align-items: stretch; flex-direction: column; }
   .platform-email-save-row button, .platform-email-test-form button { width: 100%; }
   .platform-email-test-form .form-feedback { grid-column: auto; }
+  .platform-email-test-note { margin-top: 16px; }
   .platform-audit-controls { align-items: stretch; flex-direction: column; }
   .platform-audit-controls select, .platform-audit-controls button { width: 100%; }
   .device-form { grid-template-columns: 1fr; }
