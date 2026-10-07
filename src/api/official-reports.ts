@@ -94,6 +94,11 @@ export function registerOfficialReportRoutes(app: FastifyInstance, dependencies:
     });
     const selected = rows.find((row) => row.lastEventId === parsed.data.lastEventId);
     if (!selected) return reply.code(409).send({ error: 'selected_cgnat_record_not_found' });
+    const allocationCycle = await dependencies.clickhouse.getAllocationCycle({
+      tenantId: session.tenantId,
+      eventId: selected.lastEventId
+    });
+    if (!allocationCycle) return reply.code(409).send({ error: 'selected_cgnat_cycle_not_found' });
     const [company, logo] = await Promise.all([
       dependencies.postgres.getCompanyProfile(session.tenantId),
       dependencies.postgres.getCompanyLogo(session.tenantId)
@@ -128,7 +133,7 @@ export function registerOfficialReportRoutes(app: FastifyInstance, dependencies:
         requestingAuthority: parsed.data.requestingAuthority,
         notes: parsed.data.notes
       },
-      cgnat: selected,
+      cgnat: { ...selected, allocationCycle },
       company,
       logo,
       subscriber

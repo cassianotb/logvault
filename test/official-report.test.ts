@@ -1,6 +1,6 @@
 import { PDFDocument } from 'pdf-lib';
 import { describe, expect, it } from 'vitest';
-import { buildOfficialReportPdf } from '../src/api/official-report-document.js';
+import { buildCgnatReportRows, buildOfficialReportPdf } from '../src/api/official-report-document.js';
 import type { OfficialReportClaim } from '../src/api/postgres.js';
 
 const job: OfficialReportClaim = {
@@ -35,7 +35,42 @@ const job: OfficialReportClaim = {
     portStep: null,
     lastEvent: 'allocated',
     lastEventAt: '2026-08-06T23:56:55.000Z',
-    exactPortMatch: true
+    exactPortMatch: true,
+    allocationCycle: {
+      status: 'closed',
+      allocation: {
+        eventId: '30000000-0000-4000-8000-000000000001',
+        deviceId: '20000000-0000-4000-8000-000000000001',
+        eventAt: '2026-08-06T23:56:55.000Z',
+        receivedAt: '2026-08-06T23:56:56.000Z',
+        publicIp: '198.51.100.14',
+        privateIp: '100.65.170.202',
+        protocol: 6,
+        protocolName: 'TCP',
+        portStart: 23040,
+        portEnd: 23551,
+        portMode: 'contiguous',
+        portStep: null,
+        eventType: 'allocated'
+      },
+      deallocation: {
+        eventId: '30000000-0000-4000-8000-000000000002',
+        deviceId: '20000000-0000-4000-8000-000000000001',
+        eventAt: '2026-08-07T01:06:55.000Z',
+        receivedAt: '2026-08-07T01:06:56.000Z',
+        publicIp: '198.51.100.14',
+        privateIp: '100.65.170.202',
+        protocol: 6,
+        protocolName: 'TCP',
+        portStart: 23040,
+        portEnd: 23551,
+        portMode: 'contiguous',
+        portStep: null,
+        eventType: 'deallocated'
+      },
+      conflictingAllocation: null,
+      durationSeconds: 4200
+    }
   },
   company: {
     tenantId: '10000000-0000-4000-8000-000000000001',
@@ -65,6 +100,37 @@ const job: OfficialReportClaim = {
 };
 
 describe('relatório oficial CGNAT', () => {
+  it('substitui o último evento pelo início e fim da alocação', () => {
+    const rows = buildCgnatReportRows(job);
+    expect(rows.map((row) => row.label)).toEqual([
+      'IP público (externo)', 'IP privado (interno)', 'Protocolo', 'Faixa de portas alocada',
+      'Início da alocação', 'Fim da alocação'
+    ]);
+    expect(rows[4]).toMatchObject({ value: '06/08/2026 20:56:55', detail: 'Equivalente a 06/08/2026 23:56:55 UTC' });
+    expect(rows[5]).toMatchObject({ value: '06/08/2026 22:06:55', detail: 'Equivalente a 07/08/2026 01:06:55 UTC' });
+  });
+
+  it.each([
+    ['open', 'Sem horário de encerramento'],
+    ['ambiguous', 'Sem horário de encerramento confirmado']
+  ] as const)('descreve corretamente um ciclo %s', (status, expected) => {
+    const cycle = job.cgnat.allocationCycle!;
+    const rows = buildCgnatReportRows({
+      request: job.request,
+      cgnat: {
+        ...job.cgnat,
+        allocationCycle: {
+          ...cycle,
+          status,
+          deallocation: null,
+          conflictingAllocation: status === 'ambiguous' ? cycle.allocation : null,
+          durationSeconds: null
+        }
+      }
+    });
+    expect(rows.at(-1)?.value).toBe(expected);
+  });
+
   it('gera PDF apenas com o registro CGNAT e marca o ERP como não integrado', async () => {
     const pdf = await buildOfficialReportPdf(job);
     const text = pdf.toString('latin1');

@@ -18,10 +18,6 @@ function protocolLabel(protocol: number, name: string): string {
   return name || ({ 1: 'ICMP', 6: 'TCP', 17: 'UDP' } as Record<number, string>)[protocol] || String(protocol);
 }
 
-function eventLabel(value: string): string {
-  return ({ allocated: 'Alocação', deallocated: 'Desalocação' } as Record<string, string>)[value] || value;
-}
-
 function localMoment(value: string, timezone: string): string {
   try {
     return new Intl.DateTimeFormat('pt-BR', {
@@ -96,7 +92,7 @@ function wrap(text: string, font: PDFFont, size: number, width: number): string[
   return lines;
 }
 
-interface ReportTableRow {
+export interface ReportTableRow {
   label: string;
   value: string;
   detail?: string;
@@ -173,6 +169,40 @@ function formatMomentInTimezone(value: string, timezone: string): string {
 
 function formatUtcMoment(value: string): string {
   return `${formatMomentInTimezone(value, 'UTC')} UTC`;
+}
+
+export function buildCgnatReportRows(job: Pick<OfficialReportClaim, 'cgnat' | 'request'>): ReportTableRow[] {
+  const cycle = job.cgnat.allocationCycle;
+  const allocationAt = cycle?.allocation.eventAt ?? job.cgnat.lastEventAt;
+  const end: ReportTableRow = cycle?.status === 'closed' && cycle.deallocation
+    ? {
+        label: 'Fim da alocação',
+        value: formatMomentInTimezone(cycle.deallocation.eventAt, job.request.searchedTimezone),
+        detail: `Equivalente a ${formatUtcMoment(cycle.deallocation.eventAt)}`
+      }
+    : cycle?.status === 'ambiguous'
+      ? {
+          label: 'Fim da alocação',
+          value: 'Sem horário de encerramento confirmado',
+          detail: 'Não foi possível associar uma desalocação com segurança a esta alocação.'
+        }
+      : {
+          label: 'Fim da alocação',
+          value: 'Sem horário de encerramento',
+          detail: 'Nenhuma desalocação correspondente estava registrada até a emissão do relatório.'
+        };
+  return [
+    { label: 'IP público (externo)', value: job.cgnat.publicIp },
+    { label: 'IP privado (interno)', value: job.cgnat.privateIp },
+    { label: 'Protocolo', value: protocolLabel(job.cgnat.protocol, job.cgnat.protocolName) },
+    { label: 'Faixa de portas alocada', value: `${job.cgnat.portStart} – ${job.cgnat.portEnd}` },
+    {
+      label: 'Início da alocação',
+      value: formatMomentInTimezone(allocationAt, job.request.searchedTimezone),
+      detail: `Equivalente a ${formatUtcMoment(allocationAt)}`
+    },
+    end
+  ];
 }
 
 function timezoneOffset(value: string, timezone: string): string {
@@ -279,18 +309,7 @@ export async function buildOfficialReportPdf(job: OfficialReportClaim): Promise<
   y = drawReportTable(page, regular, bold, requestRows, y) - 26;
 
   y = drawNumberedSectionTitle(page, bold, 2, 'Registro CGNAT identificado', y);
-  y = drawReportTable(page, regular, bold, [
-    { label: 'IP público (externo)', value: job.cgnat.publicIp },
-    { label: 'IP privado (interno)', value: job.cgnat.privateIp },
-    { label: 'Protocolo', value: protocolLabel(job.cgnat.protocol, job.cgnat.protocolName) },
-    { label: 'Faixa de portas alocada', value: `${job.cgnat.portStart} – ${job.cgnat.portEnd}` },
-    { label: 'Último evento explícito', value: eventLabel(job.cgnat.lastEvent), regularValue: true },
-    {
-      label: 'Data e horário do evento',
-      value: formatMomentInTimezone(job.cgnat.lastEventAt, job.request.searchedTimezone),
-      detail: `Equivalente a ${formatUtcMoment(job.cgnat.lastEventAt)}`
-    }
-  ], y) - 26;
+  y = drawReportTable(page, regular, bold, buildCgnatReportRows(job), y) - 26;
 
   y = drawNumberedSectionTitle(page, bold, 3, 'Identificação do assinante', y);
   if (job.subscriber.status === 'identified') {

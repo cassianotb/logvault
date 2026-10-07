@@ -17,8 +17,10 @@ describe('instalador unificado do LogVault', () => {
     expect(result.status, result.stderr).toBe(0);
     expect(result.stdout).toContain('system');
     expect(result.stdout).toContain('collector');
-    expect(result.stdout).toContain('dc-b');
+    expect(result.stdout).toContain('secondary');
     expect(result.stdout).toContain('update');
+    expect(result.stdout).toContain('Alta Disponibilidade > Adicionar servidor standby');
+    expect(result.stdout).not.toContain('dc-b');
   });
 
   it('informa a versão do LogVault pela linha de comando', () => {
@@ -37,9 +39,9 @@ describe('instalador unificado do LogVault', () => {
     expect(result.stdout).toContain('Sistema LogVault');
     expect(result.stdout).toContain('proxy e HTTPS automático');
     expect(result.stdout).toContain('Coletor local');
-    expect(result.stdout).toContain('Servidor redundante');
-    expect(result.stdout).toContain('Continuidade antiga (legada)');
+    expect(result.stdout).toContain('Sistema LogVault Standby');
     expect(result.stdout).toContain('Atualizar LogVault');
+    expect(result.stdout).not.toContain('Continuidade antiga (legada)');
     expect(result.stdout).not.toContain('\u001b[');
   });
 
@@ -76,13 +78,10 @@ describe('instalador unificado do LogVault', () => {
     expect(dryRun.stdout).toContain('--config-file /secure/collector.env --prepare-only');
   });
 
-  it('seleciona o DC-B e encaminha suas opções ao assistente de standby', () => {
-    const dryRun = run([
-      '--dry-run', 'dc-b', '--argus-url', 'https://logs.example.com', '--prepare-only'
-    ], { NO_COLOR: '1' });
-    expect(dryRun.status, dryRun.stderr).toBe(0);
-    expect(dryRun.stdout).toContain('install-dc-b.sh install');
-    expect(dryRun.stdout).toContain('--argus-url https://logs.example.com --prepare-only');
+  it('não expõe o instalador legado pelo comando unificado', () => {
+    const result = run(['--dry-run', 'dc-b'], { NO_COLOR: '1' });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('opção ou perfil desconhecido: dc-b');
   });
 
   it('seleciona a segunda VM e encaminha o pareamento ao novo instalador', () => {
@@ -107,6 +106,6 @@ describe('instalador unificado do LogVault', () => {
   it('exige seleção explícita quando não há terminal interativo', () => {
     const result = run([], { NO_COLOR: '1' });
     expect(result.status).toBe(2);
-    expect(result.stderr).toContain("informe 'system', 'collector', 'secondary', 'dc-b' ou 'update'");
+    expect(result.stderr).toContain("informe 'system', 'collector', 'secondary' ou 'update'");
   });
 });

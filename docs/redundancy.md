@@ -1,31 +1,31 @@
-# Redundância por dupla ingestão
+# Alta disponibilidade (HA) por dupla ingestão
 
 ## Modelo operacional
 
 O LogVault opera com uma autoridade administrativa principal e uma instalação
-secundária completa. As duas VMs têm API, PostgreSQL, ClickHouse, painel,
+standby completa. As duas VMs têm API, PostgreSQL, ClickHouse, painel,
 coletor Cloud e backups próprios. Não existe replicação direta entre os bancos
 nesse modelo.
 
 A VM principal sincroniza por HTTPS somente o plano de controle necessário à
 ingestão: clientes, coletores, hashes de credenciais, equipamentos, portas
-Cloud e políticas de origem. A secundária aceita ingestão e consultas, mas fica
+Cloud e políticas de origem. A standby aceita ingestão e consultas, mas fica
 administrativamente somente leitura.
 
 ## Instalação
 
 1. Instale a primeira VM com `sudo ./install.sh system`.
-2. No painel, abra **Redundância** e selecione **Ativar como principal**.
-3. Selecione **Adicionar servidor secundário** e copie o código temporário.
+2. No painel, abra **Alta Disponibilidade** e selecione **Ativar como principal**.
+3. Selecione **Adicionar servidor standby** e copie o código temporário.
 4. Em uma VM nova, clone o mesmo repositório, execute `sudo ./install.sh`,
-   selecione **Servidor redundante** e cole somente o código quando solicitado.
-5. Confirme no painel principal que o secundário apresenta heartbeat recente.
+   selecione **Sistema LogVault Standby** e cole somente o código quando solicitado.
+5. Confirme no painel principal que a standby apresenta heartbeat recente.
 6. Configure cada equipamento Cloud com os dois destinos e seus respectivos
    pares de portas, exibidos no painel. Os pares são distintos para permitir
    exportadores que exigem uma porta diferente por destino. Por padrão, a VM
-   principal usa `30000–31999/UDP` e a redundante usa `32000–33999/UDP`.
+   principal usa `30000–31999/UDP` e a standby usa `32000–33999/UDP`.
 7. Gere novamente a configuração dos coletores locais; ela passa a incluir as
-   URLs e o token do destino secundário.
+   URLs e o token do destino standby.
 
 O pareamento exige HTTPS. `--allow-insecure-http` existe somente para um
 laboratório isolado e nunca deve ser usado na Internet.
@@ -50,11 +50,11 @@ lotes; reenvios são idempotentes pelos IDs de registro/evento e pelo checksum.
 ## Promoção
 
 1. Confirme que a VM principal antiga está desligada ou isolada da rede.
-2. Acesse a URL independente da secundária.
-3. Em **Redundância**, selecione **Promover esta VM**.
-4. Digite `PROMOVER SECUNDARIO` quando solicitado.
+2. Acesse a URL independente da standby.
+3. Em **Alta Disponibilidade**, selecione **Promover esta VM**.
+4. Digite `PROMOVER STANDBY` quando solicitado.
 5. Atualize DNS/NAT e os destinos dos equipamentos conforme o runbook externo.
-6. Reinstale ou reintegre a VM antiga como uma nova secundária antes de
+6. Reinstale ou reintegre a VM antiga como uma nova standby antes de
    restabelecer sua conectividade administrativa.
 
 A promoção aumenta a época de autoridade. Ela não altera DNS, NAT ou o
@@ -65,7 +65,7 @@ firewall externo automaticamente.
 O painel controla a sequência abaixo e não permite saltar etapas:
 
 1. `Preparada`: principal ativado, código gerado e plano de testes aprovado.
-2. `Migrada`: secundário com heartbeat recente; coletores locais e equipamentos
+2. `Migrada`: standby com heartbeat recente; coletores locais e equipamentos
    Cloud configurados para os dois destinos.
 3. `Validada`: ingestão, consulta, backup, indisponibilidade de cada lado e
    promoção foram testados.
@@ -77,11 +77,11 @@ configurações antigas.
 ## Checklist de homologação com duas VMs
 
 - criar um coletor local e confirmar o mesmo `batchId` nas duas APIs;
-- interromper a API principal e comprovar que a secundária continua recebendo;
+- interromper a API principal e comprovar que a standby continua recebendo;
 - restaurar a principal e comprovar o reenvio da fila pendente;
 - enviar NetFlow e Syslog Cloud diretamente aos dois IPs;
 - confirmar consultas equivalentes em ambas as URLs;
-- confirmar bloqueio HTTP `423` para alterações administrativas na secundária;
+- confirmar bloqueio HTTP `423` para alterações administrativas na standby;
 - executar e restaurar um backup independente de cada VM;
-- isolar a principal, promover a secundária e validar a nova autoridade;
-- reintegrar a VM antiga somente como secundária.
+- isolar a principal, promover a standby e validar a nova autoridade;
+- reintegrar a VM antiga somente como standby.

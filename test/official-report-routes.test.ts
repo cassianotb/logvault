@@ -32,6 +32,28 @@ const cgnat = {
   lastEventAt: '2026-08-06T23:56:55.000Z',
   exactPortMatch: true
 };
+const allocation = {
+  eventId: cgnat.lastEventId,
+  deviceId: cgnat.deviceId,
+  eventAt: cgnat.lastEventAt,
+  receivedAt: '2026-08-06T23:56:56.000Z',
+  publicIp: cgnat.publicIp,
+  privateIp: cgnat.privateIp,
+  protocol: cgnat.protocol,
+  protocolName: cgnat.protocolName,
+  portStart: cgnat.portStart,
+  portEnd: cgnat.portEnd,
+  portMode: cgnat.portMode,
+  portStep: cgnat.portStep,
+  eventType: 'allocated' as const
+};
+const allocationCycle = {
+  status: 'open' as const,
+  allocation,
+  deallocation: null,
+  conflictingAllocation: null,
+  durationSeconds: null
+};
 
 describe('solicitação de relatório para ofício', () => {
   it('enfileira somente o registro CGNAT confirmado pela auditoria', async () => {
@@ -53,7 +75,10 @@ describe('solicitação de relatório para ofício', () => {
         return '60000000-0000-4000-8000-000000000001';
       }
     } as unknown as PostgresRepository;
-    const clickhouse = { search: async () => [cgnat] } as unknown as ClickHouseRepository;
+    const clickhouse = {
+      search: async () => [cgnat],
+      getAllocationCycle: async () => allocationCycle
+    } as unknown as ClickHouseRepository;
     let triggers = 0;
     const app = Fastify();
     registerOfficialReportRoutes(app, { postgres: repository, clickhouse, trigger: () => { triggers += 1; } });
@@ -71,7 +96,10 @@ describe('solicitação de relatório para ofício', () => {
     expect(response.statusCode).toBe(202);
     expect(response.json()).toMatchObject({ status: 'pending', subscriberStatus: 'erp_not_integrated' });
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toMatchObject({ cgnat, queryAuditId: '50000000-0000-4000-8000-000000000001' });
+    expect(calls[0]).toMatchObject({
+      cgnat: { ...cgnat, allocationCycle },
+      queryAuditId: '50000000-0000-4000-8000-000000000001'
+    });
     expect(triggers).toBe(1);
     await app.close();
   });

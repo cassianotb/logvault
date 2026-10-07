@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
-describe('pareamento de redundância no painel', () => {
+describe('pareamento de alta disponibilidade no painel', () => {
   it('exibe e copia somente o código esperado pelo instalador interativo', () => {
     const html = readFileSync('web/index.html', 'utf8');
     const script = readFileSync('web/app.js', 'utf8');
@@ -9,11 +9,17 @@ describe('pareamento de redundância no painel', () => {
     expect(html).toContain('id="redundancy-token"');
     expect(html).toContain('id="copy-redundancy-token"');
     expect(html).toContain('Copiar código');
+    expect(html).toContain('Alta Disponibilidade');
+    expect(html).toContain('id="platform-continuity-nav" hidden><svg aria-hidden="true"><use href="#icon-datacenters"/></svg> HA</a>');
+    expect(html).toContain('Dupla ingestão e alta disponibilidade');
+    expect(html).toContain('Adicionar servidor standby');
+    expect(html).not.toContain('Adicionar servidor secundário');
+    expect(script).toContain("secondary: 'Standby'");
     expect(script).toContain('redundancyToken.value = payload.token');
     expect(script).toContain('navigator.clipboard.writeText(redundancyToken.value)');
     expect(script).not.toContain('redundancyToken.value = `sudo ./install.sh');
-    expect(script).toContain("metric('NetFlow redundante'");
-    expect(script).toContain("metric('Syslog redundante'");
+    expect(script).toContain("metric('NetFlow standby'");
+    expect(script).toContain("metric('Syslog standby'");
     expect(html).not.toContain('MIGRAÇÃO DO LEGADO');
     expect(html).not.toContain('id="advance-redundancy-migration"');
     expect(html).toContain('id="tenant-manual-nav"');

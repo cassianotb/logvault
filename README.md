@@ -68,8 +68,8 @@ de eventos ocorre apenas para completar um lote sem manifesto ou interrompido.
 Use uma VM nova com **Ubuntu Server 24.04 LTS ou superior** ou **Debian 12 ou
 superior**, relógio sincronizado e acesso à internet durante a instalação. Para
 produção, comece com pelo menos 8 vCPU, 16 GiB de RAM e discos dimensionados
-pela carga indicada na tela **Capacidade**. O DC-B precisa suportar toda a carga
-do DC-A.
+pela carga indicada na tela **Capacidade**. A VM standby precisa suportar toda
+a carga da VM principal.
 
 Você precisará de:
 
@@ -78,9 +78,9 @@ Você precisará de:
 - DNS apontando para a VM caso o painel seja publicado por domínio;
 - portas TCP 80 e 443 encaminhadas até a VM para emissão e renovação do
   certificado HTTPS;
-- conectividade HTTPS entre as duas VMs quando usar redundância;
+- conectividade HTTPS entre as duas VMs quando usar alta disponibilidade (HA);
 - para coletores **Cloud**, a faixa UDP configurada para Cloud — por padrão
-  `30000–31999` na VM principal e `32000–33999` na redundante — encaminhada
+  `30000–31999` na VM principal e `32000–33999` na standby — encaminhada
   à VM correspondente e restrita às origens autorizadas.
 
 As portas UDP de um coletor **local** são abertas somente na respectiva VM
@@ -145,17 +145,15 @@ Ainda em `/opt/logvault`, execute:
 sudo ./install.sh
 ```
 
-O menu mostra a versão instalada e oferece cinco ações:
+O menu mostra a versão instalada e oferece quatro ações:
 
 1. **Sistema LogVault** — instala painel, API, PostgreSQL, ClickHouse, serviço
    de coleta Cloud gerenciado e backups na VM principal (DC-A).
 2. **Coletor local** — instala somente o coletor em um servidor próximo aos
    equipamentos.
-3. **Servidor redundante** — instala uma segunda plataforma completa, com
+3. **Sistema LogVault Standby** — instala uma segunda plataforma completa, com
    ingestão ativa e administração inicialmente somente leitura.
-4. **Continuidade antiga (legada)** — preserva temporariamente o instalador da
-   replicação direta para migração controlada.
-5. **Atualizar LogVault** — busca a versão mais recente, preserva configuração
+4. **Atualizar LogVault** — busca a versão mais recente, preserva configuração
    e dados e recria os serviços necessários.
 
 Use as setas e `Enter`, ou pressione o número da opção.
@@ -174,7 +172,7 @@ Escolha **1 — Sistema LogVault**. Tenha estas respostas preparadas:
 
 O armazenamento é configurado automaticamente em `/var/lib/logvault`. A
 continuidade permanece desativada e as portas dos bancos ficam vinculadas ao
-`127.0.0.1`; nenhum dado do DC-B é solicitado nesta primeira instalação.
+`127.0.0.1`; nenhum dado da VM standby é solicitado nesta primeira instalação.
 
 Antes de confirmar uma URL HTTPS, faça o registro DNS apontar para a VM e
 confirme que 80/TCP e 443/TCP chegam até ela. Revise o resumo e confirme. O
@@ -226,16 +224,17 @@ Syslog à segunda, usando o DNS/IP público do LogVault.
 
 No firewall externo da plataforma, permita o intervalo Cloud configurado —
 por padrão `30000–31999/UDP` na VM principal e `32000–33999/UDP` na VM
-redundante — apenas das redes ou IPs de origem dos equipamentos quando essa
+standby — apenas das redes ou IPs de origem dos equipamentos quando essa
 restrição for conhecida. A própria aplicação também observa e permite
 controlar as origens pela tela **Firewall**.
 
-### 8. Instalar o servidor redundante
+### 8. Instalar o Sistema LogVault Standby
 
 Instale e valide primeiro o ambiente principal. No painel da plataforma, abra
-**Redundância**, ative a VM como principal e gere um código de pareamento. Na
+**Alta Disponibilidade**, ative a VM como principal e selecione **Adicionar
+servidor standby** para gerar um código de pareamento. Na
 segunda VM, clone o mesmo repositório, execute `sudo ./install.sh`, selecione
-**Servidor redundante** e cole somente o código quando solicitado. O código
+**Sistema LogVault Standby** e cole somente o código quando solicitado. O código
 expira em 30 minutos e pode ser consumido uma única vez.
 
 A segunda VM executa seu próprio painel, API, PostgreSQL, ClickHouse, coletor
@@ -251,18 +250,14 @@ autoridade principal por HTTPS; logs não atravessam entre bancos.
 - Coletor Cloud: o equipamento precisa aceitar múltiplos destinos e envia
   NetFlow/Syslog diretamente aos dois IPs. Cada servidor usa um par exclusivo,
   reservado automaticamente e exibido no painel — por exemplo, principal
-  `30000/30001` e redundante `32000/32001`.
+  `30000/30001` e standby `32000/32001`.
 - Equipamentos que aceitam somente um destino não fazem parte desta topologia.
-- Falha de uma VM não interrompe a entrega à outra, e redundância não substitui
+- Falha de uma VM não interrompe a entrega à outra, e alta disponibilidade não substitui
   os backups independentes.
 
 A promoção exige isolamento confirmado do principal antigo. Nunca mantenha
 duas autoridades administrativas ao mesmo tempo. Consulte o procedimento e o
 checklist em [docs/redundancy.md](docs/redundancy.md).
-
-A replicação direta antiga continua acessível como **legada**. A tela exige as
-etapas `Preparada → Migrada → Validada`; sua remoção somente é liberada após
-um secundário saudável e a validação completa.
 
 ### 9. Atualizar o LogVault
 
@@ -314,7 +309,7 @@ salva a configuração anterior em `.env.bak`.
 - `web`: autentica o usuário, exibe indicadores CGNAT, gerencia contas, exibe auditoria, monitora equipamentos/coletores, consulta por IP público, data/hora, porta opcional e protocolo; exporta CSV/PDF e gera relatórios para ofício.
 - `ClickHouse`: mensagens/pacotes originais e eventos normalizados, com retenção automática de 13 meses.
 - `PostgreSQL`: tenants, usuários, equipamentos, coletores, integrações ERP e auditoria.
-- `backup`: gera pontos diários consistentes de PostgreSQL, ClickHouse e spool SQLite, com backup completo semanal e incremental diário, download auditado, réplica SSH/rsync opcional e cópia criptografada para Google Shared Drive.
+- `backup`: gera pontos diários consistentes de PostgreSQL, ClickHouse e spool SQLite, com backup completo semanal e incremental diário, download e importação controlados e réplica SSH/rsync opcional.
 - `proxy`: publica o painel e a API com Caddy, HTTPS automático e renovação do certificado.
 
 O cadastro de assinantes não é copiado. A integração sob demanda com o ERP está prevista, mas ainda não está ativa nesta etapa; consultas e relatórios informam isso explicitamente e não tentam identificar o assinante por inferência.
@@ -352,19 +347,15 @@ Em automações, selecione o perfil sem abrir o menu e acrescente as opções do
 sudo ./install.sh system --admin-email admin@example.com --admin-password-file /root/logvault-admin.pass --data-root /var/lib/logvault --public-url https://logs.example.com --acme-email infra@example.com --tls-challenge automatic
 sudo ./install.sh collector --config-file /caminho/seguro/collector.env
 sudo ./install.sh secondary --primary-url https://logs-principal.example.com --enrollment-token TOKEN_DE_USO_UNICO
-sudo ./install.sh dc-b --argus-url https://logs.example.com --enrollment-token-file /root/logvault-dcb.token --site-a-host logvault-dca.example.com --site-b-host logvault-dcb.example.com --panel-host logs.example.com --ingest-host ingest.example.com --dr-control-host dr.example.com --yes
 ```
 
 Proteja o arquivo usado em `--admin-password-file` com permissão `0600` e remova-o do servidor depois de confirmar o primeiro acesso. A senha nunca deve ser passada diretamente como argumento.
 
 No modo interativo do coletor, a configuração gerada no painel pode ser colada diretamente no instalador; o token não é exibido e o `.env.edge` é criado com permissão `0600` após a validação.
 
-O modo `dc-b` anterior permanece disponível apenas para instalações em
-migração. Novas implantações devem usar `secondary`. O mecanismo legado não
-é removido automaticamente e seu runbook histórico continua em
-[docs/datacenter-b-installation.md](docs/datacenter-b-installation.md).
-
-Use `./install.sh --help` para consultar os modos disponíveis. Os scripts específicos continuam disponíveis para compatibilidade com automações existentes.
+Use `./install.sh --help` para consultar os modos disponíveis. Scripts
+específicos antigos permanecem no repositório apenas para compatibilidade com
+instalações existentes e não aparecem no instalador unificado.
 
 O procedimento completo para o primeiro teste está em [docs/homologation.md](docs/homologation.md).
 Os comandos de manutenção e a liberação segura para equipamentos estão em [docs/operations.md](docs/operations.md).

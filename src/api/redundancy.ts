@@ -40,7 +40,7 @@ const heartbeatSchema = z.object({
   metrics: hostMetricsSchema
 });
 const promotionSchema = z.object({
-  confirmation: z.literal('PROMOVER SECUNDARIO'),
+  confirmation: z.literal('PROMOVER STANDBY'),
   primaryIsolated: z.literal(true)
 });
 const siteIdSchema = z.object({ siteId: z.string().uuid() });
@@ -259,7 +259,7 @@ export function registerRedundancyRoutes(app: FastifyInstance, dependencies: {
     try {
       const settings = await dependencies.postgres.promoteRedundancySecondary(session.id);
       dependencies.onModeChanged?.(settings.mode);
-      return reply.send({ status: 'promoted', settings, warning: 'O servidor primário anterior deve permanecer isolado até ser reintegrado como secundário.' });
+      return reply.send({ status: 'promoted', settings, warning: 'O servidor principal anterior deve permanecer isolado até ser reintegrado como standby.' });
     } catch (error) {
       if (error instanceof Error && error.message === 'redundancy_secondary_required') {
         return reply.code(409).send({ error: error.message });
@@ -320,7 +320,7 @@ export function startRedundancyConfigurationSync(dependencies: {
         }),
         redirect: 'error', signal: AbortSignal.timeout(5_000)
       });
-      if (!heartbeat.ok) throw new Error(`Heartbeat de redundância recusado: HTTP ${heartbeat.status}`);
+      if (!heartbeat.ok) throw new Error(`Heartbeat de alta disponibilidade recusado: HTTP ${heartbeat.status}`);
     } catch (error) {
       dependencies.onError?.(error);
     } finally { running = false; }

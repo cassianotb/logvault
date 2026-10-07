@@ -167,7 +167,7 @@
             <p class="nav-section-title" id="nav-platform-infrastructure-title">Infraestrutura</p>
             <a class="nav-item" href="#sistema" data-view="system" id="platform-system-nav" hidden><svg aria-hidden="true"><use href="#icon-activity"/></svg> Sistema</a>
             <a class="nav-item" href="#servidores" data-view="servers" id="platform-servers-nav" hidden><svg aria-hidden="true"><use href="#icon-server"/></svg> Servidores</a>
-            <a class="nav-item" href="#continuidade" data-view="continuity" id="platform-continuity-nav" hidden><svg aria-hidden="true"><use href="#icon-datacenters"/></svg> Redundância</a>
+            <a class="nav-item" href="#continuidade" data-view="continuity" id="platform-continuity-nav" hidden><svg aria-hidden="true"><use href="#icon-datacenters"/></svg> HA</a>
             <a class="nav-item" href="#firewall" data-view="firewall" id="platform-firewall-nav" hidden><svg aria-hidden="true"><use href="#icon-shield"/></svg> Firewall</a>
             <a class="nav-item" href="#alertas" data-view="alerts" id="platform-alerts-nav" hidden><svg aria-hidden="true"><use href="#icon-bell"/></svg> Alertas</a>
             <a class="nav-item" href="#capacidade" data-view="capacity" id="platform-capacity-nav" hidden><svg aria-hidden="true"><use href="#icon-gauge"/></svg> Capacidade</a>
@@ -737,7 +737,7 @@
                     <label><input type="checkbox" name="source" value="parser"><span><strong>Parsing</strong><small>Falhas de normalização</small></span></label>
                     <label id="backup-alert-source"><input type="checkbox" name="source" value="backup"><span><strong>Backups</strong><small>Rotina e cópia externa</small></span></label>
                     <label><input type="checkbox" name="source" value="server"><span><strong>Servidores</strong><small>CPU, RAM e disco</small></span></label>
-                    <label><input type="checkbox" name="source" value="continuity"><span><strong>Continuidade</strong><small>Replicação e DC-B</small></span></label>
+                    <label><input type="checkbox" name="source" value="continuity"><span><strong>Alta Disponibilidade</strong><small>Dupla ingestão e servidor standby</small></span></label>
                   </div>
                 </section>
 
@@ -778,12 +778,12 @@
 
         <section class="content" id="continuity-view" hidden>
           <div class="intro devices-intro">
-            <div><h2>Redundância entre ambientes</h2><p>Duas instalações completas recebem os dados de forma independente e permanecem prontas para operação.</p></div>
+            <div><h2>Alta disponibilidade entre ambientes</h2><p>Duas instalações completas recebem os dados de forma independente e permanecem prontas para operação.</p></div>
             <button class="secondary-button refresh-button" id="refresh-continuity" type="button">Atualizar agora</button>
           </div>
 
           <section class="devices-panel redundancy-panel" id="redundancy-panel">
-            <div class="devices-panel-head"><div><p class="eyebrow">Arquitetura atual</p><h2>Redundância por dupla ingestão</h2></div><span class="redundancy-role" id="redundancy-role">Consultando</span></div>
+            <div class="devices-panel-head"><div><p class="eyebrow">Arquitetura atual</p><h2>Dupla ingestão independente</h2></div><span class="redundancy-role" id="redundancy-role">Consultando</span></div>
             <div class="redundancy-summary">
               <article><span>PAPEL DESTA VM</span><strong id="redundancy-local-role">—</strong><small id="redundancy-read-only">aguardando configuração</small></article>
               <article><span>AMBIENTES PAREADOS</span><strong id="redundancy-site-count">—</strong><small>servidores independentes</small></article>
@@ -791,7 +791,7 @@
             <div class="redundancy-sites" id="redundancy-sites"></div>
             <div class="device-page-actions redundancy-actions">
               <button class="secondary-button" id="configure-redundancy-primary" type="button">Ativar como principal</button>
-              <button class="primary-button" id="create-redundancy-enrollment" type="button" hidden>Adicionar servidor secundário</button>
+              <button class="primary-button" id="create-redundancy-enrollment" type="button" hidden>Adicionar servidor standby</button>
               <button class="primary-button" id="promote-redundancy-secondary" type="button" hidden>Promover esta VM</button>
             </div>
             <div class="continuity-enrollment-command" id="redundancy-enrollment-command" hidden>
@@ -1274,7 +1274,7 @@
             </div>
             <div class="manual-hero-actions">
               <label for="manual-search">Pesquisar no manual</label>
-              <div><input id="manual-search" type="search" placeholder="Ex.: coletor, firewall, redundância…" autocomplete="off"><button class="secondary-button" id="print-manual" type="button">Imprimir / salvar PDF</button></div>
+              <div><input id="manual-search" type="search" placeholder="Ex.: coletor, firewall, alta disponibilidade…" autocomplete="off"><button class="secondary-button" id="print-manual" type="button">Imprimir / salvar PDF</button></div>
             </div>
           </header>
 
@@ -1289,10 +1289,9 @@
               <button type="button" data-manual-target="manual-investigation"><span>06</span>Consulta CGNAT</button>
               <button type="button" data-manual-target="manual-operation"><span>07</span>Operação e capacidade</button>
               <button type="button" data-manual-target="manual-security"><span>08</span>Segurança e firewall</button>
-              <button type="button" data-manual-target="manual-continuity"><span>09</span>Redundância por dupla ingestão</button>
-              <button type="button" data-manual-target="manual-administration"><span>10</span>Administração</button>
-              <button type="button" data-manual-target="manual-routines"><span>11</span>Rotinas recomendadas</button>
-              <button type="button" data-manual-target="manual-glossary"><span>12</span>Estados e glossário</button>
+              <button type="button" data-manual-target="manual-administration"><span>09</span>Administração</button>
+              <button type="button" data-manual-target="manual-routines"><span>10</span>Rotinas recomendadas</button>
+              <button type="button" data-manual-target="manual-glossary"><span>11</span>Estados e glossário</button>
             </aside>
 
             <div class="manual-document" id="manual-document">
@@ -1326,13 +1325,18 @@
                   </div>
                   <h4>Responsabilidade dos componentes</h4>
                   <div class="manual-table-wrap"><table class="manual-table"><thead><tr><th>Componente</th><th>Função</th><th>Comportamento em falha</th></tr></thead><tbody>
-                    <tr><td><strong>Coletor Edge</strong><small>Servidor no cliente</small></td><td>Escuta os equipamentos na rede local e envia lotes autenticados.</td><td>Guarda a fila localmente e retoma o sincronismo quando a comunicação volta.</td></tr>
+                    <tr><td><strong>Coletor local</strong><small>Servidor no cliente</small></td><td>Escuta os equipamentos na rede local e envia lotes autenticados.</td><td>Guarda a fila localmente e retoma o sincronismo quando a comunicação volta.</td></tr>
                     <tr><td><strong>Coletor Cloud</strong><small>Gerenciado pelo LogVault</small></td><td>Recebe tráfego encaminhado pela Internet em portas exclusivas.</td><td>É monitorado pela infraestrutura central e pelo firewall de ingestão.</td></tr>
                     <tr><td><strong>PostgreSQL</strong><small>Controle</small></td><td>Cadastros, usuários, sessões, planos, configurações e auditoria.</td><td>Cada servidor mantém sua própria instância; a configuração autorizada é sincronizada entre os ambientes.</td></tr>
                     <tr><td><strong>ClickHouse</strong><small>Evidências</small></td><td>Registros brutos, eventos CGNAT, métricas e consultas analíticas.</td><td>Cada servidor recebe e grava os logs diretamente, sem depender de uma réplica do outro.</td></tr>
                     <tr><td><strong>API + Painel WEB</strong><small>Aplicação</small></td><td>Autenticação, regras de negócio, consultas e interface administrativa.</td><td>As duas instalações permanecem disponíveis em endereços próprios.</td></tr>
                   </tbody></table></div>
                   <div class="manual-callout"><strong>Confirmação ponta a ponta</strong><p>O coletor remove um lote da fila pendente somente após a confirmação da API. Essa regra reduz o risco de perda durante indisponibilidades temporárias.</p></div>
+                  <h4>Dupla ingestão e alta disponibilidade</h4>
+                  <p>O servidor principal e o servidor standby recebem os mesmos logs diretamente. Cada ambiente mantém seus próprios bancos, sua fila, seus backups e seu endereço de acesso.</p>
+                  <div class="manual-flow continuity"><div><strong>Equipamentos</strong><small>Enviam para dois destinos</small></div><i>⇢</i><div><strong>Servidor principal</strong><small>Recebe e grava localmente</small></div><i>+</i><div><strong>Servidor standby</strong><small>Recebe e grava localmente</small></div></div>
+                  <ol class="manual-steps compact"><li><span>1</span><div><strong>Prepare a segunda VM</strong><p>Instale uma segunda instância completa com armazenamento e endereço próprios.</p></div></li><li><span>2</span><div><strong>Gere o pareamento</strong><p>Na tela Alta Disponibilidade, selecione Adicionar servidor standby, copie o código temporário e informe-o ao instalador.</p></div></li><li><span>3</span><div><strong>Configure os dois destinos</strong><p>Aponte equipamentos e coletores para os IPs e portas apresentados por cada servidor.</p></div></li><li><span>4</span><div><strong>Valide de ponta a ponta</strong><p>Confirme recebimento, consultas e crescimento independente dos dois ambientes.</p></div></li></ol>
+                  <div class="manual-callout info"><strong>Sem replicação direta de bancos</strong><p>A proteção depende do envio dos logs aos dois destinos. Uma falha em um servidor não impede que o outro continue recebendo sua própria cópia.</p></div>
                 </div>
               </article>
 
@@ -1346,7 +1350,7 @@
                     <li><span>4</span><div><strong>Implantar a coleta</strong><p>Escolha Edge ou Cloud, gere a credencial individual e cadastre os equipamentos de origem.</p></div></li>
                     <li><span>5</span><div><strong>Validar uma evidência</strong><p>Confirme recebimento, processamento e uma consulta real antes de considerar o cliente operacional.</p></div></li>
                     <li><span>6</span><div><strong>Ativar segurança e alertas</strong><p>Restrinja os IPs, configure destinatários e valide cada canal de notificação.</p></div></li>
-                    <li><span>7</span><div><strong>Implantar o servidor secundário</strong><p>Pareie a segunda instalação e valide o envio direto dos equipamentos ou coletores para os dois IPs.</p></div></li>
+                    <li><span>7</span><div><strong>Implantar o servidor standby</strong><p>Pareie a segunda instalação e valide o envio direto dos equipamentos ou coletores para os dois IPs.</p></div></li>
                   </ol>
                   <div class="manual-checklist"><strong>Critério de aceite</strong><span>✓ Serviços saudáveis</span><span>✓ Logs nos dois destinos</span><span>✓ Consulta validada</span><span>✓ Alertas testados</span><span>✓ Backup recente</span><span>✓ Ambientes pareados</span></div>
                 </div></article>
@@ -1378,6 +1382,9 @@
                   <p class="eyebrow">Consulta CGNAT</p><h3>Como realizar uma investigação confiável</h3>
                   <ol class="manual-steps compact"><li><span>1</span><div><strong>Informe IP público e data/hora</strong><p>Use o fuso horário do cliente. Um horário incorreto pode apontar para outro ciclo de alocação.</p></div></li><li><span>2</span><div><strong>Adicione porta e protocolo quando disponíveis</strong><p>Esses dados reduzem ambiguidades em endereços compartilhados.</p></div></li><li><span>3</span><div><strong>Analise o ciclo completo</strong><p>Confira alocação, liberação, IP privado, equipamento, intervalo de portas e evidência original.</p></div></li><li><span>4</span><div><strong>Gere o relatório</strong><p>Exporte somente depois de revisar identidade da empresa, parâmetros e resultado.</p></div></li></ol>
                   <div class="manual-card-grid two"><article><svg><use href="#icon-search"/></svg><div><strong>Resultado exato</strong><p>A porta consultada pertence ao intervalo alocado, no protocolo e momento informados.</p></div></article><article><svg><use href="#icon-file-search"/></svg><div><strong>Resultado amplo</strong><p>Sem porta, podem existir várias traduções possíveis. O painel sinaliza a menor precisão.</p></div></article></div>
+                  <h4>Como interpretar o último evento</h4>
+                  <div class="manual-definition-list"><div><strong>Último evento</strong><p>É o último evento explícito existente até a data e o horário pesquisados. A tradução aparece no resultado somente quando esse evento é uma alocação, indicando que ela estava ativa naquele instante.</p></div><div><strong>Ver ciclo</strong><p>Parte da alocação selecionada e procura o próximo evento correspondente, inclusive depois do horário pesquisado. Por isso, o ciclo pode mostrar uma desalocação posterior à consulta.</p></div></div>
+                  <div class="manual-callout info"><strong>Exemplo</strong><p>Se uma alocação ocorreu às 03:31, a consulta foi feita para 08:10 e a desalocação aconteceu às 13:11, o resultado mostra “Alocado · 03:31”. Ao abrir “Ver ciclo”, também apresenta a desalocação das 13:11 e a duração completa. Isso não altera o estado válido às 08:10.</p></div>
                   <div class="manual-callout warning"><strong>Boa prática probatória</strong><p>Não conclua a identificação apenas pelo IP público quando a operadora trabalha com CGNAT. Sempre solicite porta de origem, protocolo e timestamp com fuso.</p></div>
                 </div></article>
 
@@ -1398,34 +1405,43 @@
                   <div class="manual-callout warning"><strong>Antes de restringir</strong><p>Confirme seu próprio IP de administração, o acesso alternativo e uma janela de reversão. Uma regra incorreta pode bloquear o acesso legítimo à plataforma.</p></div>
                 </div></article>
 
-              <article class="manual-section" id="manual-continuity" data-manual-section>
-                <div class="manual-section-number">09</div><div class="manual-section-body">
-                  <p class="eyebrow">Redundância</p><h3>Duas instalações independentes com dupla ingestão</h3>
-                  <p>O servidor principal e o servidor secundário recebem os mesmos logs diretamente. Cada ambiente mantém seus próprios bancos, sua fila, seus backups e seu endereço de acesso.</p>
-                  <div class="manual-flow continuity"><div><strong>Equipamentos</strong><small>Enviam para dois IPs</small></div><i>⇢</i><div><strong>Servidor principal</strong><small>Recebe e grava localmente</small></div><i>+</i><div><strong>Servidor secundário</strong><small>Recebe e grava localmente</small></div></div>
-                  <h4>Implantação do servidor secundário</h4>
-                  <ol class="manual-steps compact"><li><span>1</span><div><strong>Prepare a segunda VM</strong><p>Instale uma segunda instância completa com armazenamento e endereço próprios.</p></div></li><li><span>2</span><div><strong>Gere o pareamento</strong><p>Na tela Redundância, gere o código temporário e informe-o ao instalador do secundário.</p></div></li><li><span>3</span><div><strong>Configure os dois destinos</strong><p>Aponte equipamentos e coletores para os IPs e portas apresentados por cada servidor.</p></div></li><li><span>4</span><div><strong>Valide de ponta a ponta</strong><p>Confirme recebimento, consultas e crescimento independente dos dois ambientes.</p></div></li></ol>
-                  <div class="manual-callout info"><strong>Sem replicação direta de bancos</strong><p>A proteção depende do envio dos logs aos dois destinos. Uma falha em um servidor não impede que o outro continue recebendo sua própria cópia.</p></div>
-                </div></article>
-
               <article class="manual-section" id="manual-administration" data-manual-section>
-                <div class="manual-section-number">10</div><div class="manual-section-body">
+                <div class="manual-section-number">09</div><div class="manual-section-body">
                   <p class="eyebrow">Administração</p><h3>Usuários, integrações, configurações e auditoria</h3>
                   <div class="manual-card-grid"><article><svg><use href="#icon-users"/></svg><div><strong>Usuários e perfis</strong><p>Contas são individuais. Perfis definem “Sem acesso”, “Visualizar” ou “Gerenciar” para cada módulo.</p><small>Evite contas compartilhadas: elas enfraquecem a autoria da auditoria.</small></div></article><article><svg><use href="#icon-plug"/></svg><div><strong>Integrações</strong><p>O catálogo controla provedores disponíveis e os assistentes validam credenciais antes da ativação.</p><small>Uma integração só deve ser habilitada após teste bem-sucedido.</small></div></article><article><svg><use href="#icon-settings"/></svg><div><strong>Configurações</strong><p>O SMTP global envia recuperação de senha. Salve, teste um destinatário real e depois habilite.</p><small>Credenciais não são exibidas novamente em texto aberto.</small></div></article><article><svg><use href="#icon-file-search"/></svg><div><strong>Auditoria</strong><p>Registra autenticação, consultas e alterações administrativas com autor, data, alvo e resultado.</p><small>Filtros e exportação ajudam em revisões e investigações internas.</small></div></article></div>
                   <div class="manual-comparison permissions"><article><span>VISUALIZAR</span><h4>Consulta operacional</h4><p>Permite abrir o módulo e analisar informações, sem executar alterações administrativas.</p></article><article><span>GERENCIAR</span><h4>Operação completa</h4><p>Inclui visualização e libera cadastros, edições, ativações e demais ações do módulo.</p></article></div>
                 </div></article>
 
               <article class="manual-section" id="manual-routines" data-manual-section>
-                <div class="manual-section-number">11</div><div class="manual-section-body">
+                <div class="manual-section-number">10</div><div class="manual-section-body">
                   <p class="eyebrow">Rotinas recomendadas</p><h3>Checklist para manter o ambiente confiável</h3>
                   <div class="manual-routine-grid"><article><span>DIARIAMENTE</span><ul><li>Revisar alertas críticos e de atenção</li><li>Confirmar coletores online e filas estáveis</li><li>Verificar último backup bem-sucedido</li><li>Observar espaço em disco e falhas de parser</li></ul></article><article><span>SEMANALMENTE</span><ul><li>Analisar tendência de CPU, RAM, disco e rede</li><li>Revisar origens observadas no firewall</li><li>Confirmar recebimento nos dois servidores</li><li>Investigar equipamentos sem recebimento</li></ul></article><article><span>MENSALMENTE</span><ul><li>Testar restauração de backup</li><li>Revisar usuários e perfis de acesso</li><li>Comparar capacidade com crescimento</li><li>Atualizar contatos e canais de alerta</li></ul></article><article><span>TRIMESTRALMENTE</span><ul><li>Simular indisponibilidade de um destino</li><li>Revisar runbooks, DNS e responsáveis</li><li>Auditar regras de firewall e chaves SSH</li><li>Registrar resultados e ações corretivas</li></ul></article></div>
-                  <div class="manual-callout"><strong>Regra operacional</strong><p>Uma cópia só é considerada backup depois de uma restauração validada. A redundância só está pronta quando os dois servidores recebem e consultam os logs de forma independente.</p></div>
+                  <div class="manual-callout"><strong>Regra operacional</strong><p>Uma cópia só é considerada backup depois de uma restauração validada. A alta disponibilidade só está pronta quando os dois servidores recebem e consultam os logs de forma independente.</p></div>
                 </div></article>
 
               <article class="manual-section" id="manual-glossary" data-manual-section>
-                <div class="manual-section-number">12</div><div class="manual-section-body">
+                <div class="manual-section-number">11</div><div class="manual-section-body">
                   <p class="eyebrow">Estados e glossário</p><h3>Termos usados na plataforma</h3>
-                  <div class="manual-glossary"><div><strong>CGNAT</strong><p>Compartilhamento de um IP público por múltiplos assinantes.</p></div><div><strong>Dupla ingestão</strong><p>Envio do mesmo fluxo de logs diretamente para duas instalações independentes.</p></div><div><strong>Servidor principal</strong><p>Ambiente que mantém a autoridade das configurações administrativas.</p></div><div><strong>Servidor secundário</strong><p>Segunda instalação completa que recebe e armazena sua própria cópia dos logs.</p></div><div><strong>Spool</strong><p>Fila persistente usada pelo coletor enquanto aguarda confirmação.</p></div><div><strong>Heartbeat</strong><p>Mensagem periódica que comprova vida e envia telemetria.</p></div><div><strong>Retenção</strong><p>Período durante o qual evidências permanecem armazenadas.</p></div><div><strong>Sem telemetria</strong><p>Recurso cadastrado, porém sem leitura recente suficiente.</p></div></div>
+                  <div class="manual-glossary">
+                    <div><strong>CGNAT</strong><p>Técnica que permite a vários assinantes compartilhar um mesmo endereço IP público.</p></div>
+                    <div><strong>Alocação</strong><p>Evento que associa IP privado, IP público, protocolo e faixa de portas a partir de determinado horário.</p></div>
+                    <div><strong>Desalocação</strong><p>Evento explícito que encerra uma alocação e libera a tradução correspondente.</p></div>
+                    <div><strong>Ciclo de alocação</strong><p>Período entre uma alocação e sua desalocação correspondente.</p></div>
+                    <div><strong>Registro bruto</strong><p>Conteúdo original recebido do equipamento antes da interpretação.</p></div>
+                    <div><strong>Evento normalizado</strong><p>Representação padronizada de uma alocação ou desalocação usada nas consultas.</p></div>
+                    <div><strong>Coletor local</strong><p>Serviço instalado na infraestrutura do cliente para receber logs e sincronizá-los com o LogVault.</p></div>
+                    <div><strong>Coletor Cloud</strong><p>Serviço hospedado pela LogVault que recebe logs pela Internet em portas exclusivas.</p></div>
+                    <div><strong>Spool</strong><p>Fila persistente usada pelo coletor local enquanto aguarda a confirmação de envio.</p></div>
+                    <div><strong>Heartbeat</strong><p>Mensagem periódica que informa que o coletor está ativo e envia sua telemetria.</p></div>
+                    <div><strong>Retenção</strong><p>Período durante o qual registros e eventos permanecem disponíveis para consulta.</p></div>
+                    <div><strong>Parser</strong><p>Componente que interpreta o formato do fabricante e produz eventos normalizados.</p></div>
+                    <div><strong>Dupla ingestão</strong><p>Envio do mesmo fluxo de logs diretamente para dois servidores independentes.</p></div>
+                    <div><strong>Servidor principal</strong><p>Servidor que mantém a autoridade das configurações administrativas do ambiente.</p></div>
+                    <div><strong>Servidor standby</strong><p>Segundo servidor LogVault, que recebe e armazena sua própria cópia dos logs.</p></div>
+                    <div><strong>NTP</strong><p>Serviço de sincronização de data e hora usado para manter os eventos temporalmente corretos.</p></div>
+                    <div><strong>CIDR</strong><p>Notação de IP ou rede usada para autorizar origens no firewall, como 198.51.100.10/32 ou 198.51.100.0/24.</p></div>
+                    <div><strong>Sem telemetria</strong><p>Recurso cadastrado que ainda não enviou uma leitura recente suficiente.</p></div>
+                  </div>
                   <div class="manual-footer-note"><svg><use href="#icon-book"/></svg><div><strong>Este manual acompanha a plataforma</strong><p>Procedimentos específicos do ambiente — endereços, responsáveis, credenciais de emergência e contatos de operadoras — devem permanecer no runbook interno da organização.</p></div></div>
                 </div></article>
             </div>
@@ -1442,67 +1458,208 @@
             </div>
           </header>
           <div class="manual-shell tenant-manual-shell">
+            <aside class="manual-index" aria-label="Índice do manual do cliente">
+              <strong>CONTEÚDO</strong>
+              <button class="active" type="button" data-manual-target="client-manual-overview"><span>01</span>Visão geral</button>
+              <button type="button" data-manual-target="client-manual-architecture"><span>02</span>Arquitetura e dados</button>
+              <button type="button" data-manual-target="client-manual-first-steps"><span>03</span>Primeiros passos</button>
+              <button type="button" data-manual-target="client-manual-cisco"><span>04</span>Cisco</button>
+              <button type="button" data-manual-target="client-manual-a10"><span>05</span>A10 Networks</button>
+              <button type="button" data-manual-target="client-manual-query"><span>06</span>Consulta CGNAT</button>
+              <button type="button" data-manual-target="client-manual-operation"><span>07</span>Operação e capacidade</button>
+              <button type="button" data-manual-target="client-manual-firewall"><span>08</span>Segurança e firewall</button>
+              <button type="button" data-manual-target="client-manual-users"><span>09</span>Usuários e permissões</button>
+              <button type="button" data-manual-target="client-manual-glossary"><span>10</span>Estados e glossário</button>
+            </aside>
             <div class="manual-document">
-              <article class="manual-section">
+              <article class="manual-section" id="client-manual-overview">
                 <div class="manual-section-number">01</div><div class="manual-section-body">
+                  <p class="eyebrow">Visão geral</p><h3>O que é o LogVault e como ele apoia a operação</h3>
+                  <p>O LogVault recebe os registros CGNAT produzidos pelos equipamentos da sua organização, preserva os dados originais, normaliza os eventos de alocação e permite localizar qual assinante utilizava uma tradução em determinado instante.</p>
+                  <div class="manual-purpose-grid">
+                    <article><span>01</span><strong>Coletar</strong><p>Receber NetFlow v9 ou Syslog por coletores Cloud ou instalados na infraestrutura do cliente.</p></article>
+                    <article><span>02</span><strong>Preservar</strong><p>Manter o registro bruto e os eventos normalizados durante o período de retenção.</p></article>
+                    <article><span>03</span><strong>Consultar</strong><p>Relacionar IP público, porta, protocolo e horário ao IP privado correspondente.</p></article>
+                    <article><span>04</span><strong>Comprovar</strong><p>Gerar resultados auditáveis e relatórios formais para atendimento de solicitações.</p></article>
+                  </div>
+                  <div class="manual-callout info"><strong>Ambiente isolado</strong><p>Equipamentos, coletores, usuários, consultas, relatórios e auditorias são vinculados exclusivamente à sua organização. Outros clientes não visualizam nem consultam esses dados.</p></div>
+                </div>
+              </article>
+
+              <article class="manual-section" id="client-manual-architecture">
+                <div class="manual-section-number">02</div><div class="manual-section-body">
+                  <p class="eyebrow">Arquitetura e dados</p><h3>Como um log percorre o LogVault</h3>
+                  <div class="manual-flow" aria-label="Fluxo dos dados no LogVault">
+                    <div><svg><use href="#icon-hard-drive"/></svg><strong>Equipamento</strong><small>Produz NetFlow v9 ou Syslog</small></div><i>→</i>
+                    <div><svg><use href="#icon-database-backup"/></svg><strong>Coletor</strong><small>Recebe e encaminha os registros</small></div><i>→</i>
+                    <div><svg><use href="#icon-server"/></svg><strong>Ingestão</strong><small>Autentica, valida e confirma</small></div><i>→</i>
+                    <div><svg><use href="#icon-database-backup"/></svg><strong>Dados</strong><small>Bruto + eventos normalizados</small></div><i>→</i>
+                    <div><svg><use href="#icon-search"/></svg><strong>Consulta</strong><small>Pesquisa e relatório auditável</small></div>
+                  </div>
+                  <h4>Responsabilidade dos componentes</h4>
+                  <div class="manual-table-wrap"><table class="manual-table"><thead><tr><th>Componente</th><th>Função</th><th>Comportamento em falha</th></tr></thead><tbody>
+                    <tr><td><strong>Coletor local</strong><small>Na infraestrutura do cliente</small></td><td>Recebe os logs na rede local, mantém uma fila persistente e envia lotes autenticados ao LogVault.</td><td>Continua guardando os registros localmente e retoma o envio quando a comunicação é restabelecida.</td></tr>
+                    <tr><td><strong>Coletor Cloud</strong><small>Na infraestrutura LogVault</small></td><td>Recebe pela Internet nas portas exclusivas apresentadas no cadastro do coletor.</td><td>As origens e o recebimento são acompanhados centralmente e pelo firewall de ingestão.</td></tr>
+                    <tr><td><strong>Dados brutos</strong><small>Evidência original</small></td><td>Preservam o conteúdo recebido do equipamento para rastreabilidade e reprocessamento.</td><td>Permanecem armazenados conforme a política de retenção do ambiente.</td></tr>
+                    <tr><td><strong>Eventos normalizados</strong><small>Alocação e desalocação</small></td><td>Transformam formatos de fabricantes diferentes em uma estrutura comum para pesquisa.</td><td>Falhas de interpretação são sinalizadas para análise sem alterar o registro bruto.</td></tr>
+                  </tbody></table></div>
+                  <div class="manual-callout"><strong>Confirmação ponta a ponta</strong><p>O coletor local só remove um lote da fila pendente depois que o servidor confirma seu recebimento. Essa regra permite retomar o sincronismo após indisponibilidades temporárias.</p></div>
+                  <h4>Dupla ingestão e alta disponibilidade</h4>
+                  <p>Quando o ambiente possui dois servidores LogVault, os mesmos logs são enviados diretamente aos dois destinos. O servidor principal e o standby recebem e armazenam suas próprias cópias de forma independente.</p>
+                  <div class="manual-flow continuity"><div><strong>Equipamento ou coletor</strong><small>Envia para os destinos A e B</small></div><i>⇢</i><div><strong>Servidor principal</strong><small>Recebe, grava e permite consultas</small></div><i>+</i><div><strong>Servidor standby</strong><small>Recebe, grava e permanece disponível</small></div></div>
+                  <div class="manual-definition-list"><div><strong>Sem replicação direta dos logs</strong><p>A proteção depende de configurar os dois destinos. Cada servidor recebe os registros diretamente da origem.</p></div><div><strong>Operação independente</strong><p>Uma indisponibilidade em um destino não impede que o outro continue recebendo sua própria cópia.</p></div><div><strong>Coletor Cloud</strong><p>Use os endereços e as portas apresentados para os servidores A e B no menu Coletores.</p></div><div><strong>Coletor local</strong><p>O coletor mantém filas separadas por destino e sincroniza cada uma após a confirmação correspondente.</p></div></div>
+                  <div class="manual-callout warning"><strong>Validação necessária</strong><p>A alta disponibilidade só está efetiva quando os dois destinos apresentam recebimento recente e uma consulta pode ser realizada de forma independente em ambos.</p></div>
+                </div>
+              </article>
+
+              <article class="manual-section" id="client-manual-first-steps">
+                <div class="manual-section-number">03</div><div class="manual-section-body">
                   <p class="eyebrow">Primeiros passos</p><h3>Preparar a coleta de logs</h3>
                   <ol class="manual-steps">
                     <li><span>1</span><div><strong>Cadastre o equipamento</strong><p>Em Equipamentos, informe um nome claro, o fabricante e o IP de origem usado pelo roteador ou appliance.</p></div></li>
-                    <li><span>2</span><div><strong>Escolha o coletor</strong><p>Use as portas exibidas em Coletores. Um coletor Cloud recebe pela Internet; um coletor Edge recebe na rede local.</p></div></li>
+                    <li><span>2</span><div><strong>Escolha o coletor</strong><p>Use as portas exibidas em Coletores. Um coletor Cloud recebe pela Internet; um coletor local recebe na rede do cliente.</p></div></li>
                     <li><span>3</span><div><strong>Configure o equipamento</strong><p>Envie NetFlow v9 para a porta NetFlow ou Syslog para a porta Syslog informada pelo LogVault.</p></div></li>
                     <li><span>4</span><div><strong>Valide o recebimento</strong><p>Confira o último pacote, os contadores e possíveis falhas de interpretação nas telas Equipamentos e Alertas.</p></div></li>
                   </ol>
                   <div class="manual-callout info"><strong>IP de origem</strong><p>O IP cadastrado precisa ser o mesmo observado pelo coletor. NAT, túnel ou interface de gerenciamento podem alterar esse endereço.</p></div>
+                  <div class="manual-callout warning"><strong>Data, hora e NTP</strong><p>Os equipamentos que estiverem exportando logs devem manter data, hora e fuso corretos, preferencialmente sincronizados com um servidor NTP confiável. O LogVault utiliza o horário informado pelo equipamento para reconstruir o ciclo de alocação e responder às consultas.</p></div>
                 </div>
               </article>
 
-              <article class="manual-section">
-                <div class="manual-section-number">02</div><div class="manual-section-body">
+              <article class="manual-section" id="client-manual-cisco">
+                <div class="manual-section-number">04</div><div class="manual-section-body">
                   <p class="eyebrow">Cisco</p><h3>Enviar NetFlow v9 ao LogVault</h3>
-                  <p>Use o IP e a porta NetFlow apresentados no coletor. O exemplo abaixo é uma referência para IOS/IOS-XE; os comandos podem variar conforme plataforma e versão.</p>
-                  <div class="manual-config-example"><code>flow exporter LOGVAULT<br> destination &lt;IP_DO_COLETOR&gt;<br> transport udp 2055<br> export-protocol netflow-v9<br>!<br>flow monitor LOGVAULT<br> exporter LOGVAULT<br> record netflow ipv4 original-output<br>!<br>interface &lt;INTERFACE&gt;<br> ip flow monitor LOGVAULT input<br> ip flow monitor LOGVAULT output</code></div>
-                  <div class="manual-checklist"><strong>Validação</strong><span>✓ NetFlow v9</span><span>✓ IP correto</span><span>✓ Porta do coletor</span><span>✓ Templates exportados</span><span>✓ Relógio/NTP correto</span></div>
+                  <p>Configure a exportação das traduções NAT em NetFlow v9. Substitua <strong>&lt;INTERFACE&gt;</strong> pela interface de origem usada pelo equipamento; a sintaxe pode variar conforme a plataforma e a versão do IOS/IOS-XE.</p>
+                  <h4>Coletor local</h4>
+                  <p>Informe o IP privado da VM onde o coletor está instalado. A porta NetFlow padrão do coletor local é <strong>2055/UDP</strong>.</p>
+                  <div class="manual-config-example"><code>ip nat log translations flow-export v9 udp destination &lt;IP_DO_COLETOR&gt; 2055 source &lt;INTERFACE&gt;</code></div>
+                  <h4>Coletor Cloud</h4>
+                  <p>Abra o menu <strong>Coletores</strong> e consulte a porta NetFlow apresentada para cada servidor de ingestão. Não use automaticamente a porta 2055: substitua <strong>&lt;PORTA&gt;</strong> pela porta indicada ao lado de cada destino.</p>
+                  <div class="manual-config-example"><code>ip nat log translations flow-export v9 udp destination ingest-a.logvault.com.br &lt;PORTA&gt; source &lt;INTERFACE&gt;<br>ip nat log translations flow-export v9 udp destination ingest-b.logvault.com.br &lt;PORTA&gt; source &lt;INTERFACE&gt;</code></div>
+                  <p>Configure os dois destinos para que as VMs A e B recebam os eventos de forma independente. No firewall do cliente, permita a saída UDP do equipamento para os dois endereços e portas informados.</p>
+                  <div class="manual-checklist"><strong>Validação</strong><span>✓ NetFlow v9</span><span>✓ Destino correto</span><span>✓ Porta exibida no coletor</span><span>✓ Interface de origem</span><span>✓ Relógio/NTP correto</span></div>
                 </div>
               </article>
 
-              <article class="manual-section">
-                <div class="manual-section-number">03</div><div class="manual-section-body">
+              <article class="manual-section" id="client-manual-a10">
+                <div class="manual-section-number">05</div><div class="manual-section-body">
                   <p class="eyebrow">A10 Networks</p><h3>Enviar Syslog CGNAT ao LogVault</h3>
-                  <p>Configure o destino Syslog com o IP e a porta exibidos no coletor. Habilite os eventos de NAT/CGNAT necessários à correlação de endereço e porta.</p>
-                  <div class="manual-config-example"><code>logging host &lt;IP_DO_COLETOR&gt; port 5140 protocol udp<br>logging facility local0<br>logging level informational</code></div>
-                  <p>Em ambientes HA, confirme qual nó envia os eventos e evite duplicidade. Preserve data, hora, IP privado, IP público, portas e protocolo no formato enviado.</p>
+                  <p>Configure o destino Syslog CGNAT e o template de exportação. Os exemplos utilizam mensagens RFC 5424 com os eventos de alocação e liberação necessários à correlação.</p>
+                  <h4>Coletor local</h4>
+                  <p>Substitua <strong>&lt;IP_DO_COLETOR&gt;</strong> pelo IP privado da VM do coletor local. A porta Syslog padrão é <strong>5140/UDP</strong>.</p>
+                  <div class="manual-config-example"><code>cgnv6 server LOGVAULT-COLETOR &lt;IP_DO_COLETOR&gt;<br>  health-check-disable<br>  port 5140 udp<br>!<br><br>cgnv6 service-group CGN-SYSLOG udp<br>  member LOGVAULT-COLETOR 5140<br>!</code></div>
+                  <h4>Coletor Cloud</h4>
+                  <p>No menu <strong>Coletores</strong>, consulte a porta Syslog apresentada para cada servidor. Substitua <strong>&lt;PORTA_A&gt;</strong> e <strong>&lt;PORTA_B&gt;</strong> pelas respectivas portas; coletores Cloud não utilizam automaticamente a porta 5140.</p>
+                  <div class="manual-config-example"><code>cgnv6 server LOGVAULT-CLOUD-A ingest-a.logvault.com.br<br>  health-check-disable<br>  port &lt;PORTA_A&gt; udp<br>!<br><br>cgnv6 server LOGVAULT-CLOUD-B ingest-b.logvault.com.br<br>  health-check-disable<br>  port &lt;PORTA_B&gt; udp<br>!<br><br>cgnv6 service-group CGN-SYSLOG udp<br>  member LOGVAULT-CLOUD-A &lt;PORTA_A&gt;<br>  member LOGVAULT-CLOUD-B &lt;PORTA_B&gt;<br>!</code></div>
+                  <h4>Template de exportação</h4>
+                  <p>O mesmo template pode ser utilizado com o service-group local ou Cloud configurado acima.</p>
+                  <div class="manual-config-example"><code>cgnv6 template logging CGN-LOGGING<br>  format rfc5424<br>  batched-logging-disable<br>  service-group CGN-SYSLOG<br>  source-port any<br>  custom message port-batch-v2-allocated "PORTAS-ALOCADAS $proto-name$ $src-ip$ $nat-ip$  $nat-port-start$ $nat-port-end$"<br>  custom message port-batch-v2-freed "PORTAS-LIBERADAS $proto-name$ $src-ip$ $nat-ip$  $nat-port-start$ $nat-port-end$"<br>  disable-log-by-destination<br>    udp port 53<br>    udp port 68<br>    udp port 123<br>    udp port 137 to 138<br>    icmp<br>!</code></div>
+                  <p>Em ambientes HA, os servidores A e B recebem os eventos de forma independente. Preserve data, hora, IP privado, IP público, portas e protocolo no formato enviado.</p>
+                  <div class="manual-checklist"><strong>Validação</strong><span>✓ RFC 5424</span><span>✓ Porta Syslog correta</span><span>✓ Dois destinos Cloud</span><span>✓ Eventos allocated/freed</span><span>✓ Relógio/NTP correto</span></div>
                   <div class="manual-callout"><strong>Versões do ACOS</strong><p>A nomenclatura dos comandos pode variar. Use o exemplo como referência e confirme a sintaxe da versão instalada antes de aplicar.</p></div>
                 </div>
               </article>
 
-              <article class="manual-section">
-                <div class="manual-section-number">04</div><div class="manual-section-body">
+              <article class="manual-section" id="client-manual-query">
+                <div class="manual-section-number">06</div><div class="manual-section-body">
                   <p class="eyebrow">Consulta CGNAT</p><h3>Localizar o assinante de uma conexão</h3>
+                  <p>A consulta reconstrói qual tradução CGNAT estava ativa no instante informado. Para obter um resultado preciso, utilize os dados do registro externo, do chamado ou do ofício exatamente como foram recebidos.</p>
                   <ol class="manual-steps">
-                    <li><span>1</span><div><strong>Abra Consulta</strong><p>Informe o IP público observado no registro externo.</p></div></li>
-                    <li><span>2</span><div><strong>Informe data e hora</strong><p>Use o instante do evento e confira o fuso horário mostrado pela plataforma.</p></div></li>
-                    <li><span>3</span><div><strong>Refine os filtros</strong><p>Quando disponíveis, adicione porta pública e protocolo para reduzir resultados ambíguos.</p></div></li>
-                    <li><span>4</span><div><strong>Analise o resultado</strong><p>Confira IP privado, intervalo da alocação, equipamento de origem e consistência temporal.</p></div></li>
-                    <li><span>5</span><div><strong>Exporte quando necessário</strong><p>Gere o relatório pelo próprio resultado; a consulta e a exportação permanecem registradas na auditoria.</p></div></li>
+                    <li><span>1</span><div><strong>Informe o IP público</strong><p>Digite o endereço IPv4 que aparece no registro da conexão investigada.</p></div></li>
+                    <li><span>2</span><div><strong>Informe data, hora e fuso</strong><p>Use o instante exato observado pela origem da solicitação. O LogVault converte esse horário para UTC e exibe a conversão na linha de auditoria.</p></div></li>
+                    <li><span>3</span><div><strong>Adicione porta e protocolo</strong><p>Quando esses dados estiverem disponíveis, informe a porta pública e selecione TCP, UDP ou ICMP. Eles são essenciais para diferenciar assinantes que compartilhavam o mesmo IP.</p></div></li>
+                    <li><span>4</span><div><strong>Decida sobre a consulta ao ERP</strong><p>Mantenha a opção marcada para tentar relacionar o IP privado a um assinante. A identificação depende de uma integração disponível e de uma sessão correspondente no horário pesquisado.</p></div></li>
+                    <li><span>5</span><div><strong>Consulte e revise</strong><p>Confira todos os resultados, abra o ciclo da alocação escolhida e somente depois gere a exportação ou o relatório para ofício.</p></div></li>
                   </ol>
+                  <div class="manual-callout warning"><strong>Consulta sem porta</strong><p>Sem a porta pública, o LogVault apresenta todas as traduções compatíveis com o IP, protocolo e horário informados, podendo retornar mais de um assinante. Para uma identificação conclusiva em CGNAT, solicite sempre IP público, porta de origem, protocolo, data, hora e fuso.</p></div>
+
+                  <h4>O que significa cada campo do resultado</h4>
+                  <div class="manual-table-wrap"><table class="manual-table"><thead><tr><th>Campo</th><th>Como interpretar</th></tr></thead><tbody>
+                    <tr><td><strong>IP público</strong></td><td>Endereço externo compartilhado que foi pesquisado.</td></tr>
+                    <tr><td><strong>IP privado</strong></td><td>Endereço interno ao qual o equipamento CGNAT havia associado a tradução naquele instante.</td></tr>
+                    <tr><td><strong>Protocolo</strong></td><td>Protocolo da tradução: TCP, UDP ou ICMP. Ele faz parte da identificação e deve coincidir com o registro investigado.</td></tr>
+                    <tr><td><strong>Porta início e porta fim</strong></td><td>Faixa de portas públicas reservada para o IP privado. Quando uma porta foi informada na consulta, ela precisa pertencer a essa faixa e respeitar o modo de alocação registrado pelo equipamento.</td></tr>
+                    <tr><td><strong>Último evento</strong></td><td>Último evento explícito dessa tradução existente até a data e o horário pesquisados. O resultado aparece como <strong>Alocado · data e hora</strong> quando a alocação ainda era válida naquele instante.</td></tr>
+                    <tr><td><strong>Assinante ERP</strong></td><td>Resultado da correlação com a integração do cliente. Pode mostrar o assinante, “Não identificado”, “Correlação ambígua”, “Não consultado”, “Integração indisponível” ou “ERP não configurado”.</td></tr>
+                    <tr><td><strong>Ações</strong></td><td>“Ver ciclo” detalha o início e o encerramento da alocação; “Relatório para ofício” cria um documento formal somente para a linha escolhida.</td></tr>
+                  </tbody></table></div>
+
+                  <h4>Como interpretar “Alocado” e o último evento</h4>
+                  <div class="manual-definition-list">
+                    <div><strong>Alocado · data e hora</strong><p>Indica que, entre os eventos recebidos até o momento consultado, o mais recente era uma alocação. A data exibida é o início dessa alocação; não é o horário da consulta, o horário de recebimento pelo LogVault nem o encerramento do ciclo.</p></div>
+                    <div><strong>Por que uma desalocação não aparece na lista?</strong><p>Se o último evento existente até o horário pesquisado já era a desalocação, a tradução não estava ativa naquele instante e não é apresentada como resultado válido.</p></div>
+                    <div><strong>Ver ciclo</strong><p>Parte da alocação selecionada e procura o próximo evento correspondente, inclusive depois do horário pesquisado. Assim, é possível confirmar quando a faixa foi liberada sem alterar o estado que era válido no instante da consulta.</p></div>
+                  </div>
+                  <div class="manual-callout info"><strong>Exemplo</strong><p>Uma alocação começou às 03:31, a consulta foi realizada para 08:10 e a desalocação ocorreu às 13:11. O resultado mostra “Alocado · 03:31”, pois às 08:10 a tradução estava ativa. Em “Ver ciclo”, o LogVault também mostra o encerramento às 13:11 e a duração total.</p></div>
+
+                  <h4>Estados apresentados em “Ver ciclo”</h4>
+                  <div class="manual-table-wrap"><table class="manual-table"><thead><tr><th>Estado</th><th>Significado</th></tr></thead><tbody>
+                    <tr><td><strong>Ciclo completo</strong></td><td>Existe uma desalocação explícita correspondente. A tela apresenta início, fim, duração e os horários em que ambos os eventos foram recebidos pelo LogVault.</td></tr>
+                    <tr><td><strong>Alocação sem desalocação recebida</strong></td><td>Nenhum encerramento correspondente foi localizado na retenção disponível. A alocação pode continuar ativa ou o evento de desalocação pode não ter sido recebido; o LogVault não presume um horário ausente.</td></tr>
+                    <tr><td><strong>Ciclo sem pareamento seguro</strong></td><td>Outra alocação igual apareceu antes de uma desalocação compatível. Para evitar uma associação incorreta, o LogVault mantém o encerramento como não confirmado.</td></tr>
+                  </tbody></table></div>
+
+                  <h4>Auditoria da consulta</h4>
+                  <p>A linha exibida acima do resultado registra o identificador de auditoria, o horário local pesquisado, o fuso selecionado, o horário equivalente em UTC e se o escopo foi com ou sem porta. Guarde esse identificador para rastrear quem realizou a pesquisa e quais parâmetros foram utilizados.</p>
+
+                  <h4>Exportação rápida da pesquisa</h4>
+                  <ol class="manual-steps compact">
+                    <li><span>1</span><div><strong>Revise a pesquisa</strong><p>Confirme os parâmetros, a linha de auditoria e todas as traduções retornadas.</p></div></li>
+                    <li><span>2</span><div><strong>Escolha Baixar CSV ou Baixar PDF</strong><p>Os dois botões exportam o conjunto completo de resultados da consulta atual. Use CSV para análise em planilha e PDF para uma cópia de leitura rápida.</p></div></li>
+                    <li><span>3</span><div><strong>Preserve o arquivo</strong><p>A exportação fica vinculada à consulta na auditoria, mas esse arquivo não substitui o relatório formal de uma tradução específica.</p></div></li>
+                  </ol>
+
+                  <h4>Como gerar um relatório para ofício</h4>
+                  <ol class="manual-steps">
+                    <li><span>1</span><div><strong>Escolha a tradução correta</strong><p>Na linha desejada, selecione “Ver ciclo” e valide IP privado, protocolo, faixa de portas, início e eventual fim da alocação.</p></div></li>
+                    <li><span>2</span><div><strong>Abra Relatório para ofício</strong><p>O relatório será produzido somente para o registro selecionado, e não para todas as linhas da pesquisa.</p></div></li>
+                    <li><span>3</span><div><strong>Preencha os dados da solicitação</strong><p>Informe, quando disponíveis, o número do ofício ou processo, o órgão solicitante e observações relevantes. Revise o resumo do IP público, IP privado, protocolo e faixa de portas.</p></div></li>
+                    <li><span>4</span><div><strong>Selecione Solicitar relatório</strong><p>O documento entra na fila de geração. Feche a janela e acompanhe-o em “Relatórios para ofício”.</p></div></li>
+                    <li><span>5</span><div><strong>Aguarde a situação Pronto</strong><p>Os estados “Na fila” e “Preparando” são atualizados automaticamente. Se aparecer “Falhou”, revise a consulta e solicite novamente.</p></div></li>
+                    <li><span>6</span><div><strong>Baixe o PDF</strong><p>Quando estiver pronto, use “Baixar PDF”. O documento inclui identificação da empresa e da solicitação, parâmetros pesquisados, registro CGNAT, início e fim da alocação, assinante quando identificado e os IDs de auditoria e evento.</p></div></li>
+                  </ol>
+                  <div class="manual-callout"><strong>Alocação sem encerramento</strong><p>Quando não existe uma desalocação correspondente, o relatório informa “Sem horário de encerramento”. Quando há conflito entre eventos, informa “Sem horário de encerramento confirmado”. O LogVault nunca cria ou estima uma data ausente.</p></div>
                 </div>
               </article>
 
-              <article class="manual-section">
-                <div class="manual-section-number">05</div><div class="manual-section-body">
-                  <p class="eyebrow">Acompanhamento</p><h3>Entender estados e alertas</h3>
+              <article class="manual-section" id="client-manual-operation">
+                <div class="manual-section-number">07</div><div class="manual-section-body">
+                  <p class="eyebrow">Operação e capacidade</p><h3>Acompanhar saúde, consumo e alertas</h3>
+                  <div class="manual-definition-list">
+                    <div><strong>Dashboard</strong><p>Resume equipamentos, coletores, volume recebido, eventos normalizados e ocorrências abertas do ambiente.</p></div>
+                    <div><strong>Sistema</strong><p>Mostra a disponibilidade dos componentes necessários para receber, processar e consultar os registros.</p></div>
+                    <div><strong>Servidores</strong><p>Apresenta CPU, RAM, armazenamento e rede dos servidores LogVault e dos coletores locais monitorados, com seu histórico de uso.</p></div>
+                    <div><strong>Capacidade</strong><p>Permite acompanhar o consumo real e simular crescimento, retenção, períodos sem Internet e espaço recomendado para o coletor local.</p></div>
+                    <div><strong>Alertas</strong><p>Centraliza falhas de coleta, filas, interpretação, servidores e alta disponibilidade. A investigação apresenta a origem e as evidências da ocorrência.</p></div>
+                    <div><strong>Alta Disponibilidade</strong><p>Confirma o papel do servidor acessado, os ambientes pareados e o recebimento independente nos dois destinos.</p></div>
+                  </div>
+                  <div class="manual-status-line"><span class="healthy">Saudável</span><b>Operação dentro dos limites</b><span class="attention">Atenção</span><b>Degradação ou risco</b><span class="critical">Crítico</span><b>Indisponibilidade ou perda de proteção</b></div>
+                  <h4>Como investigar ocorrências comuns</h4>
                   <div class="manual-table-wrap"><table class="manual-table"><thead><tr><th>Indicação</th><th>O que verificar</th></tr></thead><tbody>
                     <tr><td><strong>Equipamento sem recebimento</strong></td><td>Processo de exportação, rota, ACL, firewall, IP de origem e porta do coletor.</td></tr>
                     <tr><td><strong>Falha de interpretação</strong></td><td>Fabricante cadastrado, formato do Syslog ou disponibilidade dos templates NetFlow v9.</td></tr>
                     <tr><td><strong>Coletor desconectado</strong></td><td>Conectividade, serviço do coletor e acesso HTTPS aos destinos configurados.</td></tr>
                     <tr><td><strong>Fila pendente</strong></td><td>Comunicação com os destinos. A fila é persistida e volta a andar quando a conexão é restabelecida.</td></tr>
+                    <tr><td><strong>Uso elevado de servidor</strong></td><td>Histórico de CPU, RAM, disco e rede, crescimento recente e volume recebido por equipamento.</td></tr>
+                    <tr><td><strong>Destino da dupla ingestão sem dados</strong></td><td>Configuração do segundo destino, DNS, porta, regras de saída e último recebimento apresentado no servidor correspondente.</td></tr>
                   </tbody></table></div>
-                  <div class="manual-footer-note"><svg><use href="#icon-book"/></svg><div><strong>Precisa de ajuda?</strong><p>Ao abrir um chamado, informe equipamento, IP de origem, coletor, horário aproximado e uma amostra sanitizada do registro.</p></div></div>
+                  <div class="manual-callout warning"><strong>Encerramento de alertas</strong><p>Limpe ou encerre um alerta somente depois de corrigir a causa e confirmar que a telemetria voltou ao estado esperado. A ausência momentânea do sintoma não substitui a análise da causa.</p></div>
                 </div>
               </article>
 
-              <article class="manual-section">
-                <div class="manual-section-number">06</div><div class="manual-section-body">
+              <article class="manual-section" id="client-manual-firewall">
+                <div class="manual-section-number">08</div><div class="manual-section-body">
+                  <p class="eyebrow">Segurança e firewall</p><h3>Controlar as origens dos coletores Cloud</h3>
+                  <p>No ambiente do cliente, o menu Firewall protege a ingestão dos coletores Cloud. Ele mostra quais endereços estão enviando pacotes, permite autorizar IPs ou redes conhecidos e controla quando a política passa de monitoramento para proteção ativa.</p>
+                  <div class="manual-comparison"><article><span>MONITORAMENTO</span><h4>Observar antes de bloquear</h4><p>Os pacotes continuam sendo recebidos enquanto o LogVault registra as origens observadas. Use esse modo para identificar o IP público real após NAT e preparar a lista autorizada.</p><ul><li>Não bloqueia origens</li><li>Exibe IP, porta e atividade observada</li><li>Indicado durante implantação ou mudança de rota</li></ul></article><article><span>PROTEÇÃO ATIVA</span><h4>Aceitar somente origens autorizadas</h4><p>Somente os IPs ou blocos CIDR cadastrados podem enviar registros às portas do coletor.</p><ul><li>Reduz exposição da ingestão</li><li>Bloqueia origens não autorizadas</li><li>Exige lista válida antes da ativação</li></ul></article></div>
+                  <ol class="manual-steps compact"><li><span>1</span><div><strong>Observe a origem</strong><p>Envie logs com o coletor em monitoramento e confira qual IP público chega ao LogVault.</p></div></li><li><span>2</span><div><strong>Autorize o endereço</strong><p>Cadastre o IP ou a rede CIDR com uma descrição que identifique equipamento, site ou link.</p></div></li><li><span>3</span><div><strong>Ative a proteção</strong><p>Somente depois de validar todas as origens legítimas, altere a política para proteção ativa.</p></div></li><li><span>4</span><div><strong>Confirme o recebimento</strong><p>Verifique Equipamentos, Coletores e Alertas para garantir que o fluxo permaneceu normal.</p></div></li></ol>
+                  <div class="manual-callout warning"><strong>Evite perda de logs</strong><p>Uma origem incorreta ou incompleta pode bloquear a coleta. Considere NAT, troca de link, endereços de contingência e os dois destinos da dupla ingestão antes de ativar a proteção.</p></div>
+                  <div class="manual-callout info"><strong>Coletor local</strong><p>O firewall de ingestão Cloud não controla a escuta dentro da rede do cliente. No coletor local, as regras do sistema operacional e da infraestrutura local continuam sob responsabilidade da organização.</p></div>
+                </div>
+              </article>
+
+              <article class="manual-section" id="client-manual-users">
+                <div class="manual-section-number">09</div><div class="manual-section-body">
                   <p class="eyebrow">Usuários e permissões</p><h3>Entender os perfis de acesso do cliente</h3>
                   <p>O ambiente do cliente utiliza três perfis fixos. Eles não podem ser personalizados; ao cadastrar ou editar um usuário, escolha o perfil de acordo com a responsabilidade da pessoa.</p>
                   <div class="manual-table-wrap"><table class="manual-table"><thead><tr><th>Perfil</th><th>O que pode fazer</th><th>Uso recomendado</th></tr></thead><tbody>
@@ -1511,6 +1668,33 @@
                     <tr><td><strong>Auditor</strong><small>Consulta ampliada</small></td><td>Possui acesso de leitura às áreas operacionais e também pode consultar Firewall, Capacidade e Auditoria. Não cadastra usuários nem altera configurações.</td><td>Auditoria, conformidade, segurança e responsáveis por revisões sem permissão de mudança.</td></tr>
                   </tbody></table></div>
                   <div class="manual-callout info"><strong>Perfis fixos</strong><p>O botão “Adicionar perfil” existe somente na administração da plataforma LogVault. No ambiente do cliente, o administrador escolhe entre Administrador, Operador e Auditor.</p></div>
+                </div>
+              </article>
+
+              <article class="manual-section" id="client-manual-glossary">
+                <div class="manual-section-number">10</div><div class="manual-section-body">
+                  <p class="eyebrow">Estados e glossário</p><h3>Termos usados no LogVault</h3>
+                  <div class="manual-glossary">
+                    <div><strong>CGNAT</strong><p>Técnica que permite a vários assinantes compartilhar um mesmo endereço IP público.</p></div>
+                    <div><strong>Alocação</strong><p>Evento que associa IP privado, IP público, protocolo e faixa de portas a partir de determinado horário.</p></div>
+                    <div><strong>Desalocação</strong><p>Evento explícito que encerra uma alocação e libera a tradução correspondente.</p></div>
+                    <div><strong>Ciclo de alocação</strong><p>Período entre uma alocação e sua desalocação correspondente.</p></div>
+                    <div><strong>Registro bruto</strong><p>Conteúdo original recebido do equipamento antes da interpretação.</p></div>
+                    <div><strong>Evento normalizado</strong><p>Representação padronizada de uma alocação ou desalocação usada nas consultas.</p></div>
+                    <div><strong>Coletor local</strong><p>Serviço instalado na infraestrutura do cliente para receber logs e sincronizá-los com o LogVault.</p></div>
+                    <div><strong>Coletor Cloud</strong><p>Serviço hospedado pela LogVault que recebe logs pela Internet em portas exclusivas.</p></div>
+                    <div><strong>Spool</strong><p>Fila persistente usada pelo coletor local enquanto aguarda a confirmação de envio.</p></div>
+                    <div><strong>Heartbeat</strong><p>Mensagem periódica que informa que o coletor está ativo e envia sua telemetria.</p></div>
+                    <div><strong>Retenção</strong><p>Período durante o qual registros e eventos permanecem disponíveis para consulta.</p></div>
+                    <div><strong>Parser</strong><p>Componente que interpreta o formato do fabricante e produz eventos normalizados.</p></div>
+                    <div><strong>Dupla ingestão</strong><p>Envio do mesmo fluxo de logs diretamente para dois servidores independentes.</p></div>
+                    <div><strong>Servidor principal</strong><p>Servidor que mantém a autoridade das configurações administrativas do ambiente.</p></div>
+                    <div><strong>Servidor standby</strong><p>Segundo servidor LogVault, que recebe e armazena sua própria cópia dos logs.</p></div>
+                    <div><strong>NTP</strong><p>Serviço de sincronização de data e hora usado para manter os eventos temporalmente corretos.</p></div>
+                    <div><strong>CIDR</strong><p>Notação de IP ou rede usada para autorizar origens no firewall, como 198.51.100.10/32 ou 198.51.100.0/24.</p></div>
+                    <div><strong>Sem telemetria</strong><p>Recurso cadastrado que ainda não enviou uma leitura recente suficiente.</p></div>
+                  </div>
+                  <div class="manual-footer-note"><svg><use href="#icon-book"/></svg><div><strong>Precisa de ajuda?</strong><p>Ao abrir um chamado, informe equipamento, IP de origem, coletor, horário aproximado e uma amostra sanitizada do registro.</p></div></div>
                 </div>
               </article>
             </div>

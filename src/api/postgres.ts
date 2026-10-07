@@ -10,7 +10,7 @@ import type {
   ManagedCloudCollectorTelemetry
 } from '../domain/models.js';
 import type { HostMetrics } from '../core/host-metrics.js';
-import type { CgnatSearchRow } from './clickhouse.js';
+import type { CgnatAllocationCycle, CgnatSearchRow } from './clickhouse.js';
 import type { SubscriberSnapshot } from './subscribers.js';
 import type { PlatformPermissions } from './access-control.js';
 import { normalizePlatformPermissions } from './access-control.js';
@@ -191,6 +191,10 @@ export interface OfficialReportRequestSnapshot {
   notes: string;
 }
 
+export interface OfficialReportCgnatSnapshot extends CgnatSearchRow {
+  allocationCycle?: CgnatAllocationCycle;
+}
+
 export interface OfficialReportJob {
   id: string;
   tenantId: string;
@@ -200,7 +204,7 @@ export interface OfficialReportJob {
   selectedEventId: string;
   status: 'pending' | 'processing' | 'ready' | 'failed';
   request: OfficialReportRequestSnapshot;
-  cgnat: CgnatSearchRow;
+  cgnat: OfficialReportCgnatSnapshot;
   company: CompanyProfile;
   subscriber: SubscriberSnapshot;
   sha256: string | null;
@@ -4414,7 +4418,7 @@ export class PostgresRepository {
     queryAuditId: string;
     selectedEventId: string;
     request: OfficialReportRequestSnapshot;
-    cgnat: CgnatSearchRow;
+    cgnat: OfficialReportCgnatSnapshot;
     company: CompanyProfile;
     logo: { data: Buffer; mime: 'image/png' | 'image/jpeg' } | null;
     subscriber?: SubscriberSnapshot;
@@ -4436,7 +4440,7 @@ export class PostgresRepository {
   private mapOfficialReportJob(row: {
     id: string; tenant_id: string; requested_by_user_id: string; requested_by_name: string;
     query_audit_id: string; selected_event_id: string; status: OfficialReportJob['status'];
-    request_snapshot: OfficialReportRequestSnapshot; cgnat_snapshot: CgnatSearchRow;
+    request_snapshot: OfficialReportRequestSnapshot; cgnat_snapshot: OfficialReportCgnatSnapshot;
     company_snapshot: CompanyProfile; subscriber_snapshot: SubscriberSnapshot;
     pdf_sha256: string | null; error_message: string; requested_at: string; completed_at: string | null;
   }): OfficialReportJob {

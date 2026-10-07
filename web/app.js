@@ -1215,8 +1215,8 @@ function showApplication(user) {
     : 'Acompanhe ocorrências de equipamentos, coletores, servidores e processamento.';
   alertsTenantHeading.hidden = !platformContext;
   serversIntroCopy.textContent = platformContext
-    ? 'Monitore os servidores principal e secundário e os coletores locais de todos os clientes ativos.'
-    : 'Monitore os recursos dos servidores principal e secundário e dos servidores locais que executam coletores.';
+    ? 'Monitore os servidores principal e standby e os coletores locais de todos os clientes ativos.'
+    : 'Monitore os recursos dos servidores principal e standby e dos servidores locais que executam coletores.';
   firewallIntroCopy.textContent = platformContext
     ? 'Cadastre manualmente os IPs permitidos para Acesso WEB e SSH, e gerencie separadamente a ingestão dos coletores.'
     : 'Valide as origens que chegam às portas do seu coletor Cloud e controle quais redes podem enviar logs.';
@@ -1297,7 +1297,7 @@ function navigateTo(view) {
           : ['company', 'integrations', 'users', 'manual'].includes(view) ? 'Administração' : ['system', 'servers', 'continuity', 'firewall', 'alerts', 'capacity'].includes(view) ? 'Infraestrutura' : 'Operação CGNAT';
   pageTitle.textContent = view === 'devices'
     ? 'Equipamentos'
-    : view === 'dashboard' ? 'Dashboard' : view === 'collectors' ? 'Coletores' : view === 'system' ? 'Sistema' : view === 'continuity' ? 'Redundância' : view === 'firewall' ? 'Firewall' : view === 'alerts' ? 'Alertas' : view === 'servers' ? 'Servidores' : view === 'capacity' ? 'Capacidade' : view === 'clients' ? 'Clientes' : view === 'plans' ? 'Planos' : view === 'platform-settings' ? 'Configurações' : view === 'manual' ? 'Manual' : view === 'users' ? 'Usuários' : view === 'company' ? 'Dados da empresa' : view === 'integrations' ? 'Integrações' : view === 'audit' ? 'Auditoria' : 'Consulta CGNAT';
+    : view === 'dashboard' ? 'Dashboard' : view === 'collectors' ? 'Coletores' : view === 'system' ? 'Sistema' : view === 'continuity' ? 'Alta Disponibilidade' : view === 'firewall' ? 'Firewall' : view === 'alerts' ? 'Alertas' : view === 'servers' ? 'Servidores' : view === 'capacity' ? 'Capacidade' : view === 'clients' ? 'Clientes' : view === 'plans' ? 'Planos' : view === 'platform-settings' ? 'Configurações' : view === 'manual' ? 'Manual' : view === 'users' ? 'Usuários' : view === 'company' ? 'Dados da empresa' : view === 'integrations' ? 'Integrações' : view === 'audit' ? 'Auditoria' : 'Consulta CGNAT';
   navLinks.forEach((link) => link.classList.toggle('active', link.dataset.view === view));
   document.body.classList.remove('menu-open');
   menuButton.setAttribute('aria-expanded', 'false');
@@ -2754,8 +2754,8 @@ function renderCollectors(collectors) {
           metric('NetFlow principal', `${primaryIngress.publicUrl} · ${primaryIngress.netflowPort}/UDP`),
           metric('Syslog principal', `${primaryIngress.publicUrl} · ${primaryIngress.syslogPort}/UDP`),
           ...(secondaryIngress ? [
-            metric('NetFlow redundante', `${secondaryIngress.publicUrl} · ${secondaryIngress.netflowPort}/UDP`),
-            metric('Syslog redundante', `${secondaryIngress.publicUrl} · ${secondaryIngress.syslogPort}/UDP`)
+            metric('NetFlow standby', `${secondaryIngress.publicUrl} · ${secondaryIngress.netflowPort}/UDP`),
+            metric('Syslog standby', `${secondaryIngress.publicUrl} · ${secondaryIngress.syslogPort}/UDP`)
           ] : [])
         ]
       : [
@@ -3240,7 +3240,7 @@ function renderFirewallCollectors(collectors) {
     if (collector.collectorMode === 'cloud') {
       const ports = document.createElement('div');
       ports.className = 'firewall-port-list';
-      ports.innerHTML = `<span><small>NETFLOW PRINCIPAL</small><strong>${collector.netflowPort}/UDP</strong></span><span><small>SYSLOG PRINCIPAL</small><strong>${collector.syslogPort}/UDP</strong></span>${collector.secondaryNetflowPort ? `<span><small>NETFLOW REDUNDANTE</small><strong>${collector.secondaryNetflowPort}/UDP</strong></span><span><small>SYSLOG REDUNDANTE</small><strong>${collector.secondarySyslogPort}/UDP</strong></span>` : ''}`;
+      ports.innerHTML = `<span><small>NETFLOW PRINCIPAL</small><strong>${collector.netflowPort}/UDP</strong></span><span><small>SYSLOG PRINCIPAL</small><strong>${collector.syslogPort}/UDP</strong></span>${collector.secondaryNetflowPort ? `<span><small>NETFLOW STANDBY</small><strong>${collector.secondaryNetflowPort}/UDP</strong></span><span><small>SYSLOG STANDBY</small><strong>${collector.secondarySyslogPort}/UDP</strong></span>` : ''}`;
       copy.append(ports);
     } else {
       const localDescription = document.createElement('p');
@@ -4547,7 +4547,7 @@ function renderServers(servers, thresholds) {
     name.textContent = server.name;
     const platform = document.createElement('small');
     platform.textContent = server.status === 'not_implemented'
-      ? 'DC-B ainda não cadastrado'
+      ? 'Servidor standby ainda não cadastrado'
       : server.infrastructureRole === 'standby' && server.status === 'collecting'
         ? 'Aguardando inventário da VM'
         : server.platform || 'Sistema operacional não informado';
@@ -4603,7 +4603,7 @@ function renderServers(servers, thresholds) {
           ? collector.status : collector.placement;
         placement.className = `server-hosted-placement ${effectivePlacement}`;
         placement.textContent = {
-          active: 'Ativo', standby: 'Standby', not_implemented: 'Aguardando DC-B',
+          active: 'Ativo', standby: 'Standby', not_implemented: 'Aguardando standby',
           offline: 'Offline', disabled: 'Desativado'
         }[effectivePlacement] || effectivePlacement;
         row.append(copy, placement);
@@ -5072,7 +5072,8 @@ const continuityPhaseLabels = {
   not_configured: 'Não implementado', preparing: 'Em preparação', protected: 'Protegido'
 };
 let latestRedundancyStatus = null;
-const redundancyModeLabels = { standalone: 'Não configurado', primary: 'Principal', secondary: 'Secundário' };
+const redundancyModeLabels = { standalone: 'Não configurado', primary: 'Principal', secondary: 'Standby' };
+const redundancySiteStatusLabels = { active: 'Ativo', inactive: 'Inativo', pending: 'Pendente' };
 function renderRedundancyStatus(payload) {
   latestRedundancyStatus = payload;
   const canManage = hasPlatformPermission('continuity', 'manage');
@@ -5105,7 +5106,7 @@ function renderRedundancyStatus(payload) {
     const state = document.createElement('em');
     name.textContent = site.name;
     detail.textContent = `${site.publicUrl} · versão ${site.version || 'não informada'} · ${site.lastSeenAt ? `visto ${formatDeviceMoment(site.lastSeenAt)}` : 'aguardando sincronização'}`;
-    state.textContent = site.status;
+    state.textContent = redundancySiteStatusLabels[site.status] || site.status;
     copy.append(name, detail);
     stateBox.append(state);
     if (canManage && payload.mode === 'primary') {
@@ -5127,7 +5128,7 @@ function renderRedundancyStatus(payload) {
 
 redundancySites.addEventListener('click', async (event) => {
   const button = event.target.closest('.redundancy-remove-site');
-  if (!button?.dataset.siteId || !window.confirm('Desvincular este servidor secundário? Ele deixará de receber configurações.')) return;
+  if (!button?.dataset.siteId || !window.confirm('Desvincular este servidor standby? Ele deixará de receber configurações.')) return;
   button.disabled = true;
   try {
     const response = await authenticatedFetch(`${API_BASE}/v1/redundancy/sites/${encodeURIComponent(button.dataset.siteId)}`, {
@@ -5146,7 +5147,7 @@ async function loadRedundancyStatus() {
     headers: { Accept: 'application/json' }, cache: 'no-store'
   });
   const payload = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error('Não foi possível consultar a nova redundância.');
+  if (!response.ok) throw new Error('Não foi possível consultar a alta disponibilidade.');
   renderRedundancyStatus(payload);
 }
 
@@ -5179,7 +5180,7 @@ createRedundancyEnrollmentButton.addEventListener('click', async () => {
     if (!response.ok) throw new Error('Não foi possível gerar o código de pareamento.');
     redundancyToken.value = payload.token;
     redundancyEnrollmentCommand.hidden = false;
-    setFormFeedback(redundancyFeedback, `Código válido até ${formatDeviceMoment(payload.expiresAt)}. Na VM secundária, cole somente este código quando o instalador solicitar o pareamento.`);
+    setFormFeedback(redundancyFeedback, `Código válido até ${formatDeviceMoment(payload.expiresAt)}. Na VM standby, cole somente este código quando o instalador solicitar o pareamento.`);
   } catch (error) {
     setFormFeedback(redundancyFeedback, error instanceof Error ? error.message : 'Falha inesperada.', true);
   } finally { createRedundancyEnrollmentButton.disabled = false; }
@@ -5193,8 +5194,8 @@ copyRedundancyTokenButton.addEventListener('click', async () => {
 });
 
 promoteRedundancySecondaryButton.addEventListener('click', async () => {
-  const confirmation = window.prompt('Isole o servidor principal antigo e digite PROMOVER SECUNDARIO:');
-  if (confirmation !== 'PROMOVER SECUNDARIO') return;
+  const confirmation = window.prompt('Isole o servidor principal antigo e digite PROMOVER STANDBY:');
+  if (confirmation !== 'PROMOVER STANDBY') return;
   promoteRedundancySecondaryButton.disabled = true;
   try {
     const response = await authenticatedFetch(`${API_BASE}/v1/redundancy/promote`, {
@@ -7806,7 +7807,7 @@ const platformPermissionDefinitions = [
   { key: 'collectors', label: 'Coletores', description: 'Coletores Cloud e Edge e suas filas.', group: 'Operação CGNAT' },
   { key: 'system', label: 'Sistema', description: 'Serviços locais e backups.', group: 'Infraestrutura' },
   { key: 'servers', label: 'Servidores', description: 'Saúde e histórico dos recursos.', group: 'Infraestrutura' },
-  { key: 'continuity', label: 'Continuidade', description: 'Replicação e prontidão do datacenter standby.', group: 'Infraestrutura' },
+  { key: 'continuity', label: 'Alta Disponibilidade', description: 'Dupla ingestão e prontidão do servidor standby.', group: 'Infraestrutura' },
   { key: 'firewall', label: 'Firewall', description: 'Origens autorizadas e políticas de entrada.', group: 'Infraestrutura' },
   { key: 'alerts', label: 'Alertas', description: 'Ocorrências e canais de notificação.', group: 'Infraestrutura' },
   { key: 'capacity', label: 'Capacidade', description: 'Consumo e projeções de armazenamento.', group: 'Infraestrutura' },
@@ -8752,7 +8753,8 @@ officialReportForm.addEventListener('submit', async (event) => {
       const messages = {
         query_audit_not_found: 'A consulta não está mais disponível para gerar o documento.',
         query_time_mismatch: 'O horário da consulta não corresponde à auditoria registrada.',
-        selected_cgnat_record_not_found: 'O registro CGNAT selecionado não pôde ser confirmado.'
+        selected_cgnat_record_not_found: 'O registro CGNAT selecionado não pôde ser confirmado.',
+        selected_cgnat_cycle_not_found: 'O ciclo desta alocação não está mais disponível para o relatório.'
       };
       throw new Error(messages[payload.error] || 'Não foi possível solicitar o relatório.');
     }
@@ -8842,7 +8844,10 @@ function normalizedManualText(value) {
 manualIndexButtons.forEach((button) => button.addEventListener('click', () => {
   const section = document.getElementById(button.dataset.manualTarget);
   if (!section || section.hidden) return;
-  manualIndexButtons.forEach((candidate) => candidate.classList.toggle('active', candidate === button));
+  const manualView = button.closest('.manual-view');
+  manualIndexButtons
+    .filter((candidate) => candidate.closest('.manual-view') === manualView)
+    .forEach((candidate) => candidate.classList.toggle('active', candidate === button));
   section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }));
 

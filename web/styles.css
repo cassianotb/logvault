@@ -2209,7 +2209,6 @@ button.integration-catalog-option:hover:not(:disabled) { border-color: #76a8e5; 
   .manual-purpose-grid, .manual-card-grid, .manual-comparison, .manual-definition-list, .manual-routine-grid, .manual-glossary, .manual-steps.compact, .manual-runbook { grid-template-columns: 1fr; }
 }
 
-.tenant-manual-shell { grid-template-columns: minmax(0, 1fr); }
 .manual-config-example { overflow-x: auto; margin: 14px 0; padding: 16px 18px; border: 1px solid #d9e2ef; border-radius: 10px; color: #dce9ff; background: #101d32; }
 .manual-config-example code { font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: nowrap; }
 
