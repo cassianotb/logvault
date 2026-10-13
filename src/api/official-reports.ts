@@ -109,12 +109,13 @@ export function registerOfficialReportRoutes(app: FastifyInstance, dependencies:
       const resolution = await dependencies.subscriberResolver({
         tenantId: session.tenantId,
         privateIps: [selected.privateIp],
-        at: audit.searchedAt
+        at: audit.searchedAt,
+        timezone: session.tenantTimezone
       });
       if (resolution.status === 'success') {
-        subscriber = resolution.subscribers.get(selected.privateIp) ?? { status: 'not_found', provider: 'elleven' };
+        subscriber = resolution.subscribers.get(selected.privateIp) ?? { status: 'not_found', provider: resolution.provider };
       } else if (resolution.status === 'unavailable') {
-        subscriber = { status: 'integration_unavailable', provider: 'elleven' };
+        subscriber = { status: 'integration_unavailable', provider: resolution.provider };
       }
     }
     const reportId = await dependencies.postgres.createOfficialReportJob({

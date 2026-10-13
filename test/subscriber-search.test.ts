@@ -57,7 +57,8 @@ describe('correlação de assinante na consulta CGNAT', () => {
     expect(subscriberResolver).toHaveBeenCalledWith({
       tenantId: session.tenantId,
       privateIps: [row.privateIp],
-      at: '2026-08-06T23:57:00.000Z'
+      at: '2026-08-06T23:57:00.000Z',
+      timezone: 'America/Sao_Paulo'
     });
     await app.close();
   });

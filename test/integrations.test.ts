@@ -140,7 +140,8 @@ describe('integração Elleven/Voalle', () => {
 
     expect(catalog.statusCode).toBe(200);
     expect(catalog.json().providers).toEqual([
-      expect.objectContaining({ provider: 'elleven', name: 'Elleven', enabled: true })
+      expect.objectContaining({ provider: 'elleven', name: 'Elleven', enabled: true }),
+      expect.objectContaining({ provider: 'ixc', name: 'IXC Provedor', enabled: true })
     ]);
     await app.close();
   });

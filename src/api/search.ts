@@ -66,7 +66,8 @@ export function registerSearchRoutes(
       const resolution = await dependencies.subscriberResolver({
         tenantId: session.tenantId,
         privateIps: rows.map((row) => row.privateIp),
-        at: searchedAtUtc
+        at: searchedAtUtc,
+        timezone: session.tenantTimezone
       });
       erp = { status: resolution.status, provider: resolution.provider };
       if (resolution.message) erp.message = resolution.message;

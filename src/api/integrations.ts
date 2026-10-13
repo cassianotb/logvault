@@ -6,7 +6,7 @@ import { authenticateRequest } from './auth.js';
 import type { AuthSession, ErpIntegrationRecord, PostgresRepository } from './postgres.js';
 
 const provider = 'elleven';
-const providerSchema = z.enum(['elleven']);
+const providerSchema = z.enum(['elleven', 'ixc']);
 const providerParamsSchema = z.object({ provider: providerSchema });
 const providerAvailabilitySchema = z.object({ enabled: z.boolean() });
 const connectionStatusSchema = z.object({
@@ -286,11 +286,11 @@ export function registerIntegrationRoutes(app: FastifyInstance, dependencies: {
   radiusTester?: typeof discoverRadiusSchema;
   voalleDatabaseTester?: typeof discoverVoalleDatabaseSchema;
 }): void {
-  const providerDescription = (enabled: boolean, extra: Record<string, unknown> = {}) => ({
-    provider,
-    name: 'Elleven',
-    group: 'Grupo Voalle',
-    description: 'RADIUS + Voalle Database',
+  const providerDescription = (targetProvider: z.infer<typeof providerSchema>, enabled: boolean, extra: Record<string, unknown> = {}) => ({
+    provider: targetProvider,
+    name: targetProvider === 'elleven' ? 'Elleven' : 'IXC Provedor',
+    group: targetProvider === 'elleven' ? 'Grupo Voalle' : 'IXC Soft',
+    description: targetProvider === 'elleven' ? 'RADIUS + Voalle Database' : 'API IXC · RADIUS, clientes e contratos',
     enabled,
     ...extra
   });
@@ -298,8 +298,14 @@ export function registerIntegrationRoutes(app: FastifyInstance, dependencies: {
   app.get('/v1/integrations/catalog', async (request, reply) => {
     const session = await authenticateRequest(request, reply, dependencies.postgres, { allowPlatformContext: true });
     if (!session) return;
-    const enabled = await dependencies.postgres.isIntegrationProviderEnabled(provider);
-    return reply.send({ providers: enabled ? [providerDescription(true)] : [] });
+    const available = await Promise.all(providerSchema.options.map(async (targetProvider) => ({
+      provider: targetProvider,
+      enabled: await dependencies.postgres.isIntegrationProviderEnabled(targetProvider)
+    })));
+    return reply.send({
+      providers: available.filter((item) => item.enabled)
+        .map((item) => providerDescription(item.provider, true))
+    });
   });
 
   app.get('/v1/platform/integrations', async (request, reply) => {
@@ -309,13 +315,15 @@ export function registerIntegrationRoutes(app: FastifyInstance, dependencies: {
       return reply.code(403).send({ error: 'platform_administrator_required' });
     }
     const providers = await dependencies.postgres.listPlatformIntegrationProviders();
-    const elleven = providers.find((item) => item.provider === provider);
     return reply.send({
-      providers: [providerDescription(elleven?.enabled ?? false, {
-        configuredTenants: elleven?.configuredTenants ?? 0,
-        enabledTenants: elleven?.enabledTenants ?? 0,
-        updatedAt: elleven?.updatedAt ?? null
-      })]
+      providers: providerSchema.options.map((targetProvider) => {
+        const stored = providers.find((item) => item.provider === targetProvider);
+        return providerDescription(targetProvider, stored?.enabled ?? false, {
+          configuredTenants: stored?.configuredTenants ?? 0,
+          enabledTenants: stored?.enabledTenants ?? 0,
+          updatedAt: stored?.updatedAt ?? null
+        });
+      })
     });
   });
 
@@ -333,7 +341,7 @@ export function registerIntegrationRoutes(app: FastifyInstance, dependencies: {
       enabled: body.data.enabled,
       actorUserId: session.id
     });
-    return reply.send({ provider: providerDescription(updated.enabled, {
+    return reply.send({ provider: providerDescription(params.data.provider, updated.enabled, {
       configuredTenants: updated.configuredTenants,
       enabledTenants: updated.enabledTenants,
       updatedAt: updated.updatedAt

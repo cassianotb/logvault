@@ -326,6 +326,9 @@ export async function buildOfficialReportPdf(job: OfficialReportClaim): Promise<
       { label: 'RG / identidade', value: job.subscriber.identity },
       { label: 'Usuário RADIUS', value: job.subscriber.username },
       { label: 'Contrato', value: job.subscriber.contractNumber || job.subscriber.contractId },
+      ...(job.subscriber.contractStatus
+        ? [{ label: 'Situação atual do contrato', value: job.subscriber.contractStatus }]
+        : []),
       { label: 'Telefone', value: job.subscriber.phone },
       { label: 'E-mail', value: job.subscriber.email },
       { label: 'Endereço de instalação', value: address || 'Não informado', regularValue: true }
@@ -334,7 +337,7 @@ export async function buildOfficialReportPdf(job: OfficialReportClaim): Promise<
     const statusCopy: [string, string] = job.subscriber.status === 'ambiguous'
       ? ['Correlação ambígua', 'Mais de uma sessão RADIUS utilizava o IP privado no horário consultado; o LogVault não atribuiu um assinante.']
       : job.subscriber.status === 'not_found'
-        ? ['Assinante não localizado', 'A integração foi consultada, mas não encontrou uma sessão RADIUS e um cadastro Voalle correspondentes.']
+        ? ['Assinante não localizado', 'A integração ERP foi consultada, mas não encontrou uma sessão RADIUS e um cadastro de assinante correspondentes.']
         : job.subscriber.status === 'integration_unavailable'
           ? ['Integração temporariamente indisponível', 'O assinante não pôde ser consultado no momento da geração deste documento.']
           : ['ERP ainda não integrado', 'O assinante não foi identificado. Este relatório contém exclusivamente os dados do registro CGNAT.'];

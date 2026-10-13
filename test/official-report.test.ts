@@ -166,6 +166,7 @@ describe('relatório oficial CGNAT', () => {
         username: 'fulano.silva_1',
         contractId: '117658',
         contractNumber: '117658',
+        contractStatus: 'Inativo',
         radiusSession: {
           startedAt: '2026-08-06T22:00:00.000Z',
           updatedAt: '2026-08-06T23:56:00.000Z',

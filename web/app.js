@@ -125,6 +125,11 @@ const platformEllevenActive = document.querySelector('#platform-elleven-active')
 const platformEllevenEnabled = document.querySelector('#platform-elleven-enabled');
 const platformEllevenActionLabel = document.querySelector('#platform-elleven-action-label');
 const platformEllevenFeedback = document.querySelector('#platform-elleven-feedback');
+const platformIxcConfigured = document.querySelector('#platform-ixc-configured');
+const platformIxcActive = document.querySelector('#platform-ixc-active');
+const platformIxcEnabled = document.querySelector('#platform-ixc-enabled');
+const platformIxcActionLabel = document.querySelector('#platform-ixc-action-label');
+const platformIxcFeedback = document.querySelector('#platform-ixc-feedback');
 const integrationTarget = document.querySelector('#integration-target');
 const integrationTenant = document.querySelector('#integration-tenant');
 const integrationStatePill = document.querySelector('#integration-state-pill');
@@ -134,6 +139,12 @@ const integrationVoalleDatabaseCheck = document.querySelector('#integration-voal
 const integrationsUnavailable = document.querySelector('#integrations-unavailable');
 const integrationsEmpty = document.querySelector('#integrations-empty');
 const integrationList = document.querySelector('#integration-list');
+const ellevenIntegrationCard = document.querySelector('#elleven-integration-card');
+const ixcIntegrationCard = document.querySelector('#ixc-integration-card');
+const ixcIntegrationStatePill = document.querySelector('#ixc-integration-state-pill');
+const ixcIntegrationLastUpdate = document.querySelector('#ixc-integration-last-update');
+const ixcIntegrationApiCheck = document.querySelector('#ixc-integration-api-check');
+const ixcIntegrationResourceCheck = document.querySelector('#ixc-integration-resource-check');
 const addIntegrationButton = document.querySelector('#add-integration');
 const addFirstIntegrationButton = document.querySelector('#add-first-integration');
 const editIntegrationButton = document.querySelector('#edit-integration');
@@ -141,6 +152,7 @@ const deleteIntegrationButton = document.querySelector('#delete-integration');
 const integrationCatalogDialog = document.querySelector('#integration-catalog-dialog');
 const closeIntegrationCatalogButton = document.querySelector('#close-integration-catalog');
 const selectEllevenIntegrationButton = document.querySelector('#select-elleven-integration');
+const selectIxcIntegrationButton = document.querySelector('#select-ixc-integration');
 const integrationWizardDialog = document.querySelector('#integration-wizard-dialog');
 const closeIntegrationWizardButton = document.querySelector('#close-integration-wizard');
 const integrationWizardMode = document.querySelector('#integration-wizard-mode');
@@ -173,6 +185,23 @@ const integrationSaveFeedback = document.querySelector('#integration-save-feedba
 const testRadiusButton = document.querySelector('#test-radius');
 const testVoalleDatabaseButton = document.querySelector('#test-voalle-database');
 const saveIntegrationButton = document.querySelector('#save-integration');
+const ixcIntegrationDialog = document.querySelector('#ixc-integration-dialog');
+const ixcIntegrationForm = document.querySelector('#ixc-integration-form');
+const ixcIntegrationMode = document.querySelector('#ixc-integration-mode');
+const closeIxcIntegrationButton = document.querySelector('#close-ixc-integration');
+const ixcTestState = document.querySelector('#ixc-test-state');
+const ixcTestFeedback = document.querySelector('#ixc-test-feedback');
+const ixcSaveFeedback = document.querySelector('#ixc-save-feedback');
+const testIxcButton = document.querySelector('#test-ixc');
+const saveIxcIntegrationButton = document.querySelector('#save-ixc-integration');
+const ixcResourceStates = [...document.querySelectorAll('[data-ixc-resource]')];
+const editIxcIntegrationButton = document.querySelector('#edit-ixc-integration');
+const deleteIxcIntegrationButton = document.querySelector('#delete-ixc-integration');
+const deleteIxcIntegrationDialog = document.querySelector('#delete-ixc-integration-dialog');
+const deleteIxcIntegrationForm = document.querySelector('#delete-ixc-integration-form');
+const closeDeleteIxcIntegrationButton = document.querySelector('#close-delete-ixc-integration');
+const confirmDeleteIxcIntegrationButton = document.querySelector('#confirm-delete-ixc-integration');
+const deleteIxcIntegrationFeedback = document.querySelector('#delete-ixc-integration-feedback');
 const refreshDevicesButton = document.querySelector('#refresh-devices');
 const devicesLoading = document.querySelector('#devices-loading');
 const devicesError = document.querySelector('#devices-error');
@@ -797,6 +826,9 @@ const officialReportDialog = document.querySelector('#official-report-dialog');
 const officialReportForm = document.querySelector('#official-report-form');
 const officialReportSelection = document.querySelector('#official-report-selection');
 const officialReportFeedback = document.querySelector('#official-report-feedback');
+const officialErpNotice = document.querySelector('#official-erp-notice');
+const officialErpNoticeTitle = document.querySelector('#official-erp-notice-title');
+const officialErpNoticeCopy = document.querySelector('#official-erp-notice-copy');
 const generateOfficialReportButton = document.querySelector('#generate-official-report');
 const closeOfficialReportDialogButton = document.querySelector('#close-official-report-dialog');
 const deleteOfficialReportDialog = document.querySelector('#delete-official-report-dialog');
@@ -862,6 +894,7 @@ let integrationTargetsLoaded = false;
 let integrationProviderAvailability = null;
 let availableIntegrationProviders = [];
 let currentIntegration = null;
+let currentIxcIntegration = null;
 let integrationWizardStep = 1;
 let integrationWizardEditing = false;
 let currentUser = null;
@@ -1038,6 +1071,8 @@ function showLogin(message = '', messageType = 'error') {
   integrationTargetsLoaded = false;
   integrationProviderAvailability = null;
   availableIntegrationProviders = [];
+  currentIntegration = null;
+  currentIxcIntegration = null;
   lastSearchContext = null;
   if (clientsPollTimer) window.clearTimeout(clientsPollTimer);
   clientsPollTimer = null;
@@ -1550,6 +1585,21 @@ function openOfficialReportDialog(row) {
     item.append(labelElement, valueElement);
     officialReportSelection.append(item);
   });
+  officialErpNotice.classList.toggle('success', row.subscriber?.status === 'identified');
+  if (row.subscriber?.status === 'identified') {
+    const provider = row.subscriber.provider === 'ixc' ? 'IXC' : 'Elleven/Voalle';
+    officialErpNoticeTitle.textContent = `Assinante identificado via ${provider}`;
+    officialErpNoticeCopy.textContent = 'O ERP será consultado novamente e os dados atuais do assinante e do contrato serão incluídos no PDF.';
+  } else if (row.subscriber?.status === 'ambiguous') {
+    officialErpNoticeTitle.textContent = 'Correlação ambígua';
+    officialErpNoticeCopy.textContent = 'Mais de uma sessão corresponde ao horário. O relatório não atribuirá o registro a um assinante sem uma correlação inequívoca.';
+  } else if (row.subscriber?.status === 'not_found') {
+    officialErpNoticeTitle.textContent = 'Assinante não localizado';
+    officialErpNoticeCopy.textContent = 'O ERP será consultado novamente. Se a correlação continuar sem resultado, o PDF registrará essa situação.';
+  } else {
+    officialErpNoticeTitle.textContent = 'Correlação com o ERP';
+    officialErpNoticeCopy.textContent = 'Se houver uma integração ativa, o ERP será consultado ao gerar o documento; caso contrário, o PDF conterá somente o registro CGNAT.';
+  }
   setFormFeedback(officialReportFeedback, '');
   officialReportDialog.showModal();
 }
@@ -6482,7 +6532,10 @@ function platformAuditDetail(event) {
     return `${details.name || 'Perfil'} · permissões por menu atualizadas`;
   }
   if (String(event.action).startsWith('integration_provider_')) {
-    return `${details.provider === 'elleven' ? 'Elleven · Grupo Voalle' : details.provider || 'Integração'} · ${details.enabled ? 'disponível para clientes' : 'oculta para clientes'}`;
+    const providerName = details.provider === 'elleven'
+      ? 'Elleven · Grupo Voalle'
+      : details.provider === 'ixc' ? 'IXC Provedor · IXC Soft' : details.provider || 'Integração';
+    return `${providerName} · ${details.enabled ? 'disponível para clientes' : 'oculta para clientes'}`;
   }
   const plan = details.planCode ? ` · plano ${details.planCode}` : '';
   const limit = details.deviceLimit === null
@@ -6561,10 +6614,10 @@ async function loadPlatformAudit() {
   }
 }
 
-function integrationEndpoint(path = '') {
+function integrationEndpoint(path = '', provider = 'elleven') {
   const tenantId = isPlatformContext() ? integrationTenant.value : '';
   const query = tenantId ? `?tenantId=${encodeURIComponent(tenantId)}` : '';
-  return `${API_BASE}/v1/integrations/elleven${path}${query}`;
+  return `${API_BASE}/v1/integrations/${provider}${path}${query}`;
 }
 
 async function fetchAvailableIntegrationProviders() {
@@ -6578,10 +6631,12 @@ async function fetchAvailableIntegrationProviders() {
 
 function applyAvailableIntegrationProviders(providers) {
   availableIntegrationProviders = providers;
-  integrationProviderAvailability = providers.some((item) => item.provider === 'elleven');
+  integrationProviderAvailability = providers.length > 0;
   integrationsNav.hidden = isPlatformContext() || currentUser?.role !== 'admin';
   erpQueryOption.hidden = !integrationProviderAvailability;
   if (!integrationProviderAvailability) erpQueryOption.querySelector('input').checked = false;
+  selectEllevenIntegrationButton.hidden = !providers.some((item) => item.provider === 'elleven');
+  selectIxcIntegrationButton.hidden = !providers.some((item) => item.provider === 'ixc');
 }
 
 async function loadIntegrationProviderAvailability() {
@@ -6597,13 +6652,26 @@ async function loadIntegrationProviderAvailability() {
   }
 }
 
+function platformIntegrationElements(provider) {
+  return provider === 'ixc'
+    ? {
+        enabled: platformIxcEnabled, configured: platformIxcConfigured, active: platformIxcActive,
+        actionLabel: platformIxcActionLabel, feedback: platformIxcFeedback
+      }
+    : {
+        enabled: platformEllevenEnabled, configured: platformEllevenConfigured, active: platformEllevenActive,
+        actionLabel: platformEllevenActionLabel, feedback: platformEllevenFeedback
+      };
+}
+
 function renderPlatformIntegrationProvider(item) {
+  const elements = platformIntegrationElements(item?.provider || 'elleven');
   const enabled = Boolean(item?.enabled);
-  platformEllevenEnabled.checked = enabled;
-  platformEllevenConfigured.textContent = formatNumber(Number(item?.configuredTenants || 0));
-  platformEllevenActive.textContent = `${formatNumber(Number(item?.enabledTenants || 0))} com integração ativa`;
-  platformEllevenActionLabel.textContent = enabled ? 'Disponível para clientes' : 'Oculta para clientes';
-  platformEllevenFeedback.textContent = enabled
+  elements.enabled.checked = enabled;
+  elements.configured.textContent = formatNumber(Number(item?.configuredTenants || 0));
+  elements.active.textContent = `${formatNumber(Number(item?.enabledTenants || 0))} com integração ativa`;
+  elements.actionLabel.textContent = enabled ? 'Disponível para clientes' : 'Oculta para clientes';
+  elements.feedback.textContent = enabled
     ? 'Os clientes podem adicionar e configurar esta integração.'
     : 'A integração não aparece no catálogo dos clientes e a utilização fica bloqueada.';
   platformIntegrationsUpdated.textContent = item?.updatedAt
@@ -6616,13 +6684,15 @@ async function loadPlatformIntegrations() {
   platformIntegrationsError.hidden = true;
   platformIntegrationCatalog.hidden = true;
   platformEllevenEnabled.disabled = !hasPlatformPermission('integrations', 'manage');
+  platformIxcEnabled.disabled = !hasPlatformPermission('integrations', 'manage');
   try {
     const response = await authenticatedFetch(`${API_BASE}/v1/platform/integrations`, {
       headers: { Accept: 'application/json' }, cache: 'no-store'
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error('O catálogo de integrações não respondeu corretamente.');
-    renderPlatformIntegrationProvider(payload.providers?.find((item) => item.provider === 'elleven'));
+    renderPlatformIntegrationProvider(payload.providers?.find((item) => item.provider === 'elleven') || { provider: 'elleven' });
+    renderPlatformIntegrationProvider(payload.providers?.find((item) => item.provider === 'ixc') || { provider: 'ixc' });
     platformIntegrationCatalog.hidden = false;
     integrationsLoaded = true;
   } catch (error) {
@@ -6633,11 +6703,12 @@ async function loadPlatformIntegrations() {
   }
 }
 
-async function updatePlatformIntegrationAvailability(enabled) {
-  platformEllevenEnabled.disabled = true;
-  platformEllevenFeedback.textContent = enabled ? 'Liberando a integração para os clientes…' : 'Ocultando a integração dos clientes…';
+async function updatePlatformIntegrationAvailability(provider, enabled) {
+  const elements = platformIntegrationElements(provider);
+  elements.enabled.disabled = true;
+  elements.feedback.textContent = enabled ? 'Liberando a integração para os clientes…' : 'Ocultando a integração dos clientes…';
   try {
-    const response = await authenticatedFetch(`${API_BASE}/v1/platform/integrations/elleven`, {
+    const response = await authenticatedFetch(`${API_BASE}/v1/platform/integrations/${provider}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify({ enabled })
@@ -6646,10 +6717,10 @@ async function updatePlatformIntegrationAvailability(enabled) {
     if (!response.ok) throw new Error('Não foi possível alterar a disponibilidade da integração.');
     renderPlatformIntegrationProvider(payload.provider);
   } catch (error) {
-    platformEllevenEnabled.checked = !enabled;
-    platformEllevenFeedback.textContent = error instanceof Error ? error.message : 'Falha inesperada.';
+    elements.enabled.checked = !enabled;
+    elements.feedback.textContent = error instanceof Error ? error.message : 'Falha inesperada.';
   } finally {
-    platformEllevenEnabled.disabled = !hasPlatformPermission('integrations', 'manage');
+    elements.enabled.disabled = !hasPlatformPermission('integrations', 'manage');
   }
 }
 
@@ -6756,12 +6827,54 @@ function renderIntegration(integration) {
   integrationVoalleDatabaseCheck.textContent = voalleDatabase.lastTest?.status === 'success' ? '✓ Voalle DB validado' : voalleDatabase.lastTest?.status === 'failed' ? '! Voalle DB com falha' : '○ Voalle DB pendente';
   integrationRadiusCheck.className = radius.lastTest?.status || '';
   integrationVoalleDatabaseCheck.className = voalleDatabase.lastTest?.status || '';
-  integrationsEmpty.hidden = integration.configured;
-  integrationList.hidden = !integration.configured;
+  ellevenIntegrationCard.hidden = !integration.configured;
   selectEllevenIntegrationButton.disabled = integration.configured;
   selectEllevenIntegrationButton.classList.toggle('configured', integration.configured);
   selectEllevenIntegrationButton.querySelector('em').textContent = integration.configured ? 'Já adicionada' : 'Disponível';
   updateIntegrationReview();
+}
+
+function updateIntegrationsOverview() {
+  const configured = Boolean(currentIntegration?.configured || currentIxcIntegration?.configured);
+  integrationsEmpty.hidden = configured;
+  integrationList.hidden = !configured;
+}
+
+function renderIxcIntegration(integration) {
+  currentIxcIntegration = integration;
+  const form = ixcIntegrationForm.elements;
+  form.baseUrl.value = integration.baseUrl || '';
+  form.token.value = '';
+  form.token.placeholder = integration.tokenConfigured ? 'Token mantido · digite para trocar' : 'ID:chave';
+  setIntegrationTestState(ixcTestState, integration.lastTest);
+  saveIxcIntegrationButton.disabled = integration.lastTest?.status !== 'success';
+  const testedResources = new Set(integration.lastTest?.status === 'success' ? integration.lastTest.resources || [] : []);
+  ixcResourceStates.forEach((element) => {
+    element.classList.toggle('success', testedResources.has(element.dataset.ixcResource));
+  });
+  ixcIntegrationStatePill.classList.remove('success', 'warning');
+  if (integration.enabled && integration.lastTest?.status === 'success') {
+    ixcIntegrationStatePill.textContent = 'Ativa';
+    ixcIntegrationStatePill.classList.add('success');
+  } else if (integration.configured) {
+    ixcIntegrationStatePill.textContent = integration.lastTest?.status === 'success' ? 'Desativada' : 'Configuração pendente';
+    ixcIntegrationStatePill.classList.add('warning');
+  } else {
+    ixcIntegrationStatePill.textContent = 'Não configurada';
+  }
+  ixcIntegrationLastUpdate.textContent = integration.updatedAt
+    ? `Atualizada em ${formatDeviceMoment(integration.updatedAt)}` : 'Ainda não atualizada';
+  ixcIntegrationApiCheck.textContent = integration.lastTest?.status === 'success'
+    ? '✓ API validada' : integration.lastTest?.status === 'failed' ? '! API com falha' : '○ API pendente';
+  ixcIntegrationApiCheck.className = integration.lastTest?.status || '';
+  ixcIntegrationResourceCheck.textContent = testedResources.size
+    ? `✓ ${testedResources.size}/4 recursos` : '○ Recursos pendentes';
+  ixcIntegrationResourceCheck.className = testedResources.size === 4 ? 'success' : '';
+  ixcIntegrationCard.hidden = !integration.configured;
+  selectIxcIntegrationButton.disabled = integration.configured;
+  selectIxcIntegrationButton.classList.toggle('configured', integration.configured);
+  selectIxcIntegrationButton.querySelector('em').textContent = integration.configured ? 'Já adicionada' : 'Disponível';
+  ixcTestFeedback.hidden = true;
 }
 
 function updateIntegrationReview() {
@@ -6807,6 +6920,13 @@ function openIntegrationWizard(editing = false) {
   integrationWizardDialog.showModal();
 }
 
+function openIxcIntegration(editing = false) {
+  ixcIntegrationMode.textContent = editing ? 'Editar integração' : 'Nova integração';
+  setFormFeedback(ixcTestFeedback, '');
+  setFormFeedback(ixcSaveFeedback, '');
+  ixcIntegrationDialog.showModal();
+}
+
 async function loadIntegrationTargets() {
   integrationTarget.hidden = !isPlatformContext();
   if (!isPlatformContext() || integrationTargetsLoaded) return;
@@ -6838,8 +6958,11 @@ async function loadIntegrations() {
   integrationsUnavailable.hidden = true;
   integrationsEmpty.hidden = true;
   integrationList.hidden = true;
+  ellevenIntegrationCard.hidden = true;
+  ixcIntegrationCard.hidden = true;
   addIntegrationButton.hidden = true;
-  ellevenIntegrationForm.hidden = true;
+  currentIntegration = null;
+  currentIxcIntegration = null;
   integrationTenant.disabled = true;
   try {
     await loadIntegrationTargets();
@@ -6850,22 +6973,22 @@ async function loadIntegrations() {
       integrationsLoaded = true;
       return;
     }
-    const ellevenAvailable = availableIntegrationProviders.some((item) => item.provider === 'elleven');
-    if (!ellevenAvailable) {
-      integrationsUnavailable.hidden = false;
-      integrationsLoaded = true;
-      return;
-    }
-    const response = await authenticatedFetch(integrationEndpoint(), {
-      headers: { Accept: 'application/json' }, cache: 'no-store'
+    const integrations = await Promise.all(availableIntegrationProviders.map(async ({ provider }) => {
+      const response = await authenticatedFetch(integrationEndpoint('', provider), {
+        headers: { Accept: 'application/json' }, cache: 'no-store'
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(response.status === 403
+        ? 'Somente administradores podem configurar integrações.'
+        : 'O serviço de integrações não respondeu corretamente.');
+      return { provider, integration: payload.integration };
+    }));
+    integrations.forEach(({ provider, integration }) => {
+      if (provider === 'elleven') renderIntegration(integration);
+      if (provider === 'ixc') renderIxcIntegration(integration);
     });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(response.status === 403
-      ? 'Somente administradores podem configurar integrações.'
-      : 'O serviço de integrações não respondeu corretamente.');
-    renderIntegration(payload.integration);
+    updateIntegrationsOverview();
     addIntegrationButton.hidden = false;
-    ellevenIntegrationForm.hidden = false;
     integrationsLoaded = true;
   } catch (error) {
     integrationsError.hidden = false;
@@ -6967,6 +7090,91 @@ async function removeIntegration() {
   const payload = await response.json().catch(() => ({}));
   throw new Error(payload.error === 'integration_not_configured'
     ? 'A integração já foi removida.' : 'Não foi possível excluir a integração.');
+}
+
+function ixcErrorMessage(payload, fallback) {
+  const messages = {
+    integration_configuration_incomplete: 'Informe a URL e o token completo da API IXC.',
+    invalid_ixc_settings: 'Revise a URL da API IXC. Ela deve usar HTTPS e terminar em /webservice/v1.',
+    ixc_test_required: 'Teste e aprove a conexão antes de concluir a integração.',
+    another_integration_active: 'Já existe outra integração ERP ativa para este cliente.',
+    integration_provider_unavailable: 'A integração IXC não está disponível para este cliente.'
+  };
+  return payload.message || messages[payload.error] || fallback;
+}
+
+function ixcPayload(enabled) {
+  const form = ixcIntegrationForm.elements;
+  return {
+    baseUrl: form.baseUrl.value.trim(),
+    token: form.token.value,
+    enabled
+  };
+}
+
+async function persistIxcIntegration(enabled, { quiet = false } = {}) {
+  if (!quiet) setFormFeedback(ixcSaveFeedback, 'Salvando configuração…');
+  const response = await authenticatedFetch(integrationEndpoint('', 'ixc'), {
+    method: 'PUT',
+    headers: { Accept: 'application/json', 'content-type': 'application/json' },
+    body: JSON.stringify(ixcPayload(enabled))
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(ixcErrorMessage(payload, 'Não foi possível salvar a integração IXC.'));
+  renderIxcIntegration(payload.integration);
+  updateIntegrationsOverview();
+  return payload.integration;
+}
+
+async function testIxcIntegration() {
+  if (!ixcIntegrationForm.reportValidity()) return;
+  setButtonLoading(testIxcButton, true);
+  setFormFeedback(ixcTestFeedback, 'Salvando e validando os quatro recursos da API…');
+  try {
+    const baseUrl = ixcIntegrationForm.elements.baseUrl.value.trim().replace(/\/+$/, '');
+    const credentialsChanged = Boolean(ixcIntegrationForm.elements.token.value)
+      || baseUrl !== String(currentIxcIntegration?.baseUrl || '').replace(/\/+$/, '');
+    await persistIxcIntegration(credentialsChanged ? false : Boolean(currentIxcIntegration?.enabled), { quiet: true });
+    const response = await authenticatedFetch(integrationEndpoint('/test', 'ixc'), {
+      method: 'POST', headers: { Accept: 'application/json' }
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (payload.integration) renderIxcIntegration(payload.integration);
+    if (!response.ok) throw new Error(ixcErrorMessage(payload, 'O teste da API IXC falhou.'));
+    setFormFeedback(ixcTestFeedback, 'Conexão aprovada. Sessões RADIUS, usuários, clientes e contratos estão acessíveis.');
+  } catch (error) {
+    setFormFeedback(ixcTestFeedback, error instanceof Error ? error.message : 'Falha no teste da API IXC.', true);
+  } finally {
+    setButtonLoading(testIxcButton, false);
+  }
+}
+
+async function concludeIxcIntegration() {
+  if (!ixcIntegrationForm.reportValidity()) return;
+  setButtonLoading(saveIxcIntegrationButton, true);
+  setFormFeedback(ixcSaveFeedback, 'Ativando integração…');
+  try {
+    await persistIxcIntegration(true, { quiet: true });
+    setFormFeedback(ixcSaveFeedback, 'Integração IXC ativada com sucesso.');
+    ixcIntegrationDialog.close();
+    integrationsLoaded = false;
+    await loadIntegrations();
+  } catch (error) {
+    setFormFeedback(ixcSaveFeedback, error instanceof Error ? error.message : 'Falha ao concluir a integração.', true);
+  } finally {
+    setButtonLoading(saveIxcIntegrationButton, false);
+    saveIxcIntegrationButton.disabled = currentIxcIntegration?.lastTest?.status !== 'success';
+  }
+}
+
+async function removeIxcIntegration() {
+  const response = await authenticatedFetch(integrationEndpoint('', 'ixc'), {
+    method: 'DELETE', headers: { Accept: 'application/json' }
+  });
+  if (response.ok) return;
+  const payload = await response.json().catch(() => ({}));
+  throw new Error(payload.error === 'integration_not_configured'
+    ? 'A integração já foi removida.' : 'Não foi possível excluir a integração IXC.');
 }
 
 async function loadClients() {
@@ -8794,7 +9002,30 @@ selectEllevenIntegrationButton.addEventListener('click', () => {
   integrationCatalogDialog.close();
   openIntegrationWizard(false);
 });
+selectIxcIntegrationButton.addEventListener('click', () => {
+  integrationCatalogDialog.close();
+  openIxcIntegration(false);
+});
 editIntegrationButton.addEventListener('click', () => openIntegrationWizard(true));
+editIxcIntegrationButton.addEventListener('click', () => openIxcIntegration(true));
+closeIxcIntegrationButton.addEventListener('click', () => ixcIntegrationDialog.close());
+testIxcButton.addEventListener('click', () => void testIxcIntegration());
+ixcIntegrationForm.addEventListener('submit', (event) => {
+  event.preventDefault();
+  void concludeIxcIntegration();
+});
+ixcIntegrationForm.addEventListener('input', () => {
+  const baseUrl = ixcIntegrationForm.elements.baseUrl.value.trim().replace(/\/+$/, '');
+  const changed = Boolean(ixcIntegrationForm.elements.token.value)
+    || baseUrl !== String(currentIxcIntegration?.baseUrl || '').replace(/\/+$/, '');
+  const validTest = changed ? null : currentIxcIntegration?.lastTest;
+  setIntegrationTestState(ixcTestState, validTest);
+  const resources = new Set(validTest?.status === 'success' ? validTest.resources || [] : []);
+  ixcResourceStates.forEach((element) => {
+    element.classList.toggle('success', resources.has(element.dataset.ixcResource));
+  });
+  saveIxcIntegrationButton.disabled = validTest?.status !== 'success';
+});
 closeIntegrationWizardButton.addEventListener('click', () => integrationWizardDialog.close());
 integrationWizardBackButton.addEventListener('click', () => setIntegrationWizardStep(integrationWizardStep - 1));
 integrationWizardNextButton.addEventListener('click', () => {
@@ -8830,12 +9061,35 @@ deleteIntegrationForm.addEventListener('submit', async (event) => {
     setButtonLoading(confirmDeleteIntegrationButton, false);
   }
 });
+deleteIxcIntegrationButton.addEventListener('click', () => {
+  setFormFeedback(deleteIxcIntegrationFeedback, '');
+  deleteIxcIntegrationDialog.showModal();
+});
+closeDeleteIxcIntegrationButton.addEventListener('click', () => deleteIxcIntegrationDialog.close());
+deleteIxcIntegrationForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  setButtonLoading(confirmDeleteIxcIntegrationButton, true);
+  setFormFeedback(deleteIxcIntegrationFeedback, 'Excluindo integração…');
+  try {
+    await removeIxcIntegration();
+    deleteIxcIntegrationDialog.close();
+    integrationsLoaded = false;
+    await loadIntegrations();
+  } catch (error) {
+    setFormFeedback(deleteIxcIntegrationFeedback, error instanceof Error ? error.message : 'Falha ao excluir integração.', true);
+  } finally {
+    setButtonLoading(confirmDeleteIxcIntegrationButton, false);
+  }
+});
 integrationTenant.addEventListener('change', () => {
   integrationsLoaded = false;
   void loadIntegrations();
 });
 platformEllevenEnabled.addEventListener('change', () => {
-  void updatePlatformIntegrationAvailability(platformEllevenEnabled.checked);
+  void updatePlatformIntegrationAvailability('elleven', platformEllevenEnabled.checked);
+});
+platformIxcEnabled.addEventListener('change', () => {
+  void updatePlatformIntegrationAvailability('ixc', platformIxcEnabled.checked);
 });
 
 function normalizedManualText(value) {
