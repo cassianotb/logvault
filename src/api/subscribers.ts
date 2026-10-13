@@ -1,6 +1,7 @@
 import { Client, type ClientConfig } from 'pg';
 import { z } from 'zod';
 import { openSecret } from '../core/secret-box.js';
+import { resolveIxcSubscribers } from './ixc-subscribers.js';
 import type { ErpIntegrationRecord, PostgresRepository } from './postgres.js';
 
 const provider = 'elleven';
@@ -31,9 +32,11 @@ const secretsSchema = z.object({
   voalleDatabasePassword: z.string().min(1)
 });
 
+export type SubscriberProvider = 'elleven' | 'ixc';
+
 export type SubscriberIdentity = {
   status: 'identified';
-  provider: 'elleven';
+  provider: SubscriberProvider;
   name: string;
   taxId: string;
   identity: string;
@@ -51,22 +54,23 @@ export type SubscriberIdentity = {
   username: string;
   contractId: string;
   contractNumber: string;
+  contractStatus?: string;
   radiusSession: { startedAt: string; updatedAt: string | null; stoppedAt: string | null };
 };
 
 export type SubscriberLookup = SubscriberIdentity | {
   status: 'not_found' | 'ambiguous';
-  provider: 'elleven';
+  provider: SubscriberProvider;
 };
 
 export type SubscriberSnapshot = SubscriberLookup | {
   status: 'erp_not_integrated' | 'integration_unavailable';
-  provider?: 'elleven';
+  provider?: SubscriberProvider;
 };
 
 export interface SubscriberResolution {
   status: 'success' | 'not_configured' | 'unavailable';
-  provider: 'elleven';
+  provider: SubscriberProvider;
   message?: string;
   subscribers: Map<string, SubscriberLookup>;
 }
@@ -75,6 +79,7 @@ export type SubscriberResolver = (input: {
   tenantId: string;
   privateIps: string[];
   at: string;
+  timezone: string;
 }) => Promise<SubscriberResolution>;
 
 function quoteIdentifier(value: string): string {
@@ -116,16 +121,23 @@ export function createSubscriberResolver(dependencies: {
   postgres: PostgresRepository;
   encryptionKey: string;
 }): SubscriberResolver {
-  return async ({ tenantId, privateIps, at }) => {
+  return async ({ tenantId, privateIps, at, timezone }) => {
     const uniqueIps = [...new Set(privateIps)];
     const empty = new Map<string, SubscriberLookup>();
     if (!uniqueIps.length) return { status: 'success', provider, subscribers: empty };
-    if (!await dependencies.postgres.isIntegrationProviderEnabled(provider)) {
-      return { status: 'not_configured', provider, subscribers: empty };
+    if (await dependencies.postgres.isIntegrationProviderEnabled(provider)) {
+      const record = await dependencies.postgres.getErpIntegration(tenantId, provider);
+      if (record?.enabled) return resolveEllevenSubscribers(record, dependencies.encryptionKey, uniqueIps, at);
     }
-    const record = await dependencies.postgres.getErpIntegration(tenantId, provider);
-    if (!record?.enabled) return { status: 'not_configured', provider, subscribers: empty };
-    return resolveEllevenSubscribers(record, dependencies.encryptionKey, uniqueIps, at);
+    const ixcProvider = 'ixc' as const;
+    if (await dependencies.postgres.isIntegrationProviderEnabled(ixcProvider)) {
+      const record = await dependencies.postgres.getErpIntegration(tenantId, ixcProvider);
+      if (record?.enabled) {
+        return resolveIxcSubscribers(record, dependencies.encryptionKey, uniqueIps, at, timezone);
+      }
+      if (record) return { status: 'not_configured', provider: ixcProvider, subscribers: empty };
+    }
+    return { status: 'not_configured', provider, subscribers: empty };
   };
 }
 

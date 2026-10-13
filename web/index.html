@@ -1115,6 +1115,15 @@
                     <small id="platform-elleven-feedback">Os clientes podem adicionar e configurar esta integração.</small>
                   </div>
                 </article>
+                <article class="platform-integration-card">
+                  <div class="integration-provider-mark ixc-logo" aria-hidden="true"><img src="/assets/ixc-provedor-logo.png" alt=""></div>
+                  <div class="platform-integration-copy"><div><h3>IXC Provedor</h3><span>IXC Soft</span></div><p>Identificação histórica por API IXC.</p></div>
+                  <div class="platform-integration-usage"><span>CLIENTES CONFIGURADOS</span><strong id="platform-ixc-configured">0</strong><small id="platform-ixc-active">0 com integração ativa</small></div>
+                  <div class="platform-integration-availability">
+                    <label class="integration-availability-switch" for="platform-ixc-enabled"><input id="platform-ixc-enabled" type="checkbox"><span aria-hidden="true"></span><strong id="platform-ixc-action-label">Disponível para clientes</strong></label>
+                    <small id="platform-ixc-feedback">Os clientes podem adicionar e configurar esta integração.</small>
+                  </div>
+                </article>
               </div>
             </section>
           </div>
@@ -1135,12 +1144,19 @@
             <div class="integration-empty" id="integrations-unavailable" hidden><span class="integration-empty-icon"><svg aria-hidden="true"><use href="#icon-plug"/></svg></span><h2>Nenhuma integração disponível</h2><p>A administração da plataforma ainda não disponibilizou integrações para este ambiente.</p></div>
             <div class="integration-empty" id="integrations-empty" hidden><span class="integration-empty-icon"><svg aria-hidden="true"><use href="#icon-plug"/></svg></span><h2>Nenhuma integração adicionada</h2><p>Adicione o ERP utilizado pelo cliente para iniciar a identificação assistida dos assinantes.</p><button class="primary-button" id="add-first-integration" type="button">Adicionar primeira integração</button></div>
             <section class="integration-list" id="integration-list" hidden>
-              <article class="integration-list-card">
+              <article class="integration-list-card" id="elleven-integration-card">
                 <div class="integration-provider-mark elleven-logo" aria-hidden="true"><span>e<span>ll</span>even</span></div>
                 <div class="integration-list-copy"><div><h2>Elleven</h2><span>Grupo Voalle</span></div><p>RADIUS + Voalle Database</p></div>
                 <div class="integration-list-health"><span class="integration-state-pill" id="integration-state-pill">Configuração pendente</span><small id="integration-last-update">Ainda não atualizada</small></div>
                 <div class="integration-list-checks"><span id="integration-radius-check">RADIUS pendente</span><span id="integration-voalle-database-check">Voalle DB pendente</span></div>
                 <div class="integration-list-actions"><button class="table-action" id="edit-integration" type="button">Editar</button><button class="table-action danger" id="delete-integration" type="button">Excluir</button></div>
+              </article>
+              <article class="integration-list-card" id="ixc-integration-card" hidden>
+                <div class="integration-provider-mark ixc-logo" aria-hidden="true"><img src="/assets/ixc-provedor-logo.png" alt=""></div>
+                <div class="integration-list-copy"><div><h2>IXC Provedor</h2><span>IXC Soft</span></div><p>API IXC · RADIUS, clientes e contratos</p></div>
+                <div class="integration-list-health"><span class="integration-state-pill" id="ixc-integration-state-pill">Configuração pendente</span><small id="ixc-integration-last-update">Ainda não atualizada</small></div>
+                <div class="integration-list-checks"><span id="ixc-integration-api-check">API pendente</span><span id="ixc-integration-resource-check">Recursos pendentes</span></div>
+                <div class="integration-list-actions"><button class="table-action" id="edit-ixc-integration" type="button">Editar</button><button class="table-action danger" id="delete-ixc-integration" type="button">Excluir</button></div>
               </article>
             </section>
           </div>
@@ -2102,9 +2118,29 @@
         <header class="integration-dialog-head"><div><p class="eyebrow">Catálogo de integrações</p><h2>Qual ERP deseja adicionar?</h2><span>Escolha o sistema para iniciar a configuração guiada.</span></div><button type="button" id="close-integration-catalog" aria-label="Fechar">×</button></header>
         <div class="integration-catalog-grid">
           <button class="integration-catalog-option" id="select-elleven-integration" type="button"><span class="integration-provider-mark elleven-logo" aria-hidden="true"><span>e<span>ll</span>even</span></span><span><strong>Elleven</strong><small>Grupo Voalle</small><em>Disponível</em></span><i aria-hidden="true">›</i></button>
-          <article class="integration-catalog-option unavailable"><span class="integration-provider-placeholder">ERP</span><span><strong>Novos ERPs</strong><small>Outros conectores serão adicionados aqui.</small><em>Em breve</em></span></article>
+          <button class="integration-catalog-option" id="select-ixc-integration" type="button"><span class="integration-provider-mark ixc-logo" aria-hidden="true"><img src="/assets/ixc-provedor-logo.png" alt=""></span><span><strong>IXC Provedor</strong><small>IXC Soft</small><em>Disponível</em></span><i aria-hidden="true">›</i></button>
         </div>
       </div>
+    </dialog>
+
+    <dialog class="integration-wizard-dialog ixc-integration-dialog" id="ixc-integration-dialog">
+      <form id="ixc-integration-form" class="integration-wizard-form">
+        <header class="integration-dialog-head ixc-dialog-head"><div class="ixc-dialog-title"><img src="/assets/ixc-provedor-logo.png" alt="IXC Provedor"><div><p class="eyebrow" id="ixc-integration-mode">Nova integração</p><h2>IXC Provedor</h2><span>Conecte a API para localizar sessões, clientes e contratos.</span></div></div><button type="button" id="close-ixc-integration" aria-label="Fechar">×</button></header>
+        <div class="integration-wizard-body">
+          <section class="integration-wizard-step">
+            <div class="integration-wizard-step-head"><div><span>CONEXÃO VIA API</span><h3>Dados de acesso ao IXC</h3><p>O token é armazenado criptografado. Nenhum cadastro do ERP será copiado para o LogVault.</p></div><span class="source-test-state" id="ixc-test-state">Não testado</span></div>
+            <div class="integration-fields ixc-fields">
+              <div class="field"><label for="ixc-base-url">URL da API</label><input id="ixc-base-url" name="baseUrl" type="url" required maxlength="2048" placeholder="https://seu-ixc.exemplo/webservice/v1" autocomplete="off"><small class="field-help">Informe a URL completa terminando em /webservice/v1.</small></div>
+              <div class="field"><label for="ixc-token">Token completo</label><input id="ixc-token" name="token" type="password" maxlength="2048" autocomplete="new-password" placeholder="ID:chave"><small class="field-help">Use o token completo fornecido pelo IXC, incluindo o identificador antes dos dois-pontos.</small></div>
+            </div>
+            <div class="ixc-resource-status" aria-label="Recursos verificados pela integração">
+              <span data-ixc-resource="radacct">Sessões RADIUS</span><span data-ixc-resource="radusuarios">Usuários RADIUS</span><span data-ixc-resource="cliente">Clientes</span><span data-ixc-resource="cliente_contrato">Contratos</span>
+            </div>
+            <div class="integration-test-row"><p class="form-feedback" id="ixc-test-feedback" hidden></p><button class="secondary-button" id="test-ixc" type="button"><span class="button-label">Testar conexão</span><span class="spinner" aria-hidden="true"></span></button></div>
+          </section>
+        </div>
+        <footer class="integration-wizard-footer"><p class="form-feedback" id="ixc-save-feedback" hidden></p><div><button class="primary-button" id="save-ixc-integration" type="submit" disabled><span class="button-label">Concluir integração</span><span class="spinner" aria-hidden="true"></span></button></div></footer>
+      </form>
     </dialog>
 
     <dialog class="integration-wizard-dialog" id="integration-wizard-dialog">
@@ -2164,6 +2200,10 @@
       <form id="delete-integration-form"><div class="dialog-head"><div><p class="eyebrow">Remover conexão</p><h2>Excluir integração Elleven</h2></div><button type="button" id="close-delete-integration" aria-label="Fechar">×</button></div><div class="deletion-warning"><strong>As credenciais serão apagadas</strong><span>Os acessos ao RADIUS e ao Voalle Database, junto com os testes salvos, serão removidos deste cliente.</span></div><p class="dialog-copy">Os logs CGNAT e as consultas existentes não serão afetados.</p><p class="form-feedback" id="delete-integration-feedback" hidden></p><button class="primary-button danger-submit" id="confirm-delete-integration" type="submit"><span class="button-label">Excluir integração</span><span class="spinner" aria-hidden="true"></span></button></form>
     </dialog>
 
+    <dialog class="password-dialog danger-dialog" id="delete-ixc-integration-dialog">
+      <form id="delete-ixc-integration-form"><div class="dialog-head"><div><p class="eyebrow">Remover conexão</p><h2>Excluir integração IXC</h2></div><button type="button" id="close-delete-ixc-integration" aria-label="Fechar">×</button></div><div class="deletion-warning"><strong>O token será apagado</strong><span>A URL, o token criptografado e os testes salvos serão removidos deste cliente.</span></div><p class="dialog-copy">Os logs CGNAT e as consultas existentes não serão afetados.</p><p class="form-feedback" id="delete-ixc-integration-feedback" hidden></p><button class="primary-button danger-submit" id="confirm-delete-ixc-integration" type="submit"><span class="button-label">Excluir integração</span><span class="spinner" aria-hidden="true"></span></button></form>
+    </dialog>
+
     <dialog class="password-dialog official-report-dialog" id="official-report-dialog">
       <form id="official-report-form">
         <div class="dialog-head"><div><p class="eyebrow">Documento oficial</p><h2>Gerar relatório para ofício</h2></div><button type="button" id="close-official-report-dialog" aria-label="Fechar">×</button></div>
@@ -2172,7 +2212,7 @@
         <div class="field"><label for="official-reference">Número do ofício ou processo <span>opcional</span></label><input id="official-reference" name="referenceNumber" maxlength="120"></div>
         <div class="field"><label for="official-authority">Órgão solicitante <span>opcional</span></label><input id="official-authority" name="requestingAuthority" maxlength="200"></div>
         <div class="field"><label for="official-notes">Observações <span>opcional</span></label><textarea id="official-notes" name="notes" maxlength="1500"></textarea></div>
-        <div class="official-erp-notice"><strong>Assinante não identificado nesta versão</strong><span>O ERP ainda não está integrado. O PDF apresentará somente os dados do registro CGNAT selecionado.</span></div>
+        <div class="official-erp-notice" id="official-erp-notice"><strong id="official-erp-notice-title">Correlação com o ERP</strong><span id="official-erp-notice-copy">O ERP será consultado novamente ao gerar o documento.</span></div>
         <p class="form-feedback" id="official-report-feedback" hidden></p>
         <button class="primary-button dialog-submit" id="generate-official-report" type="submit"><span class="button-label">Solicitar relatório</span><span class="spinner" aria-hidden="true"></span></button>
       </form>
