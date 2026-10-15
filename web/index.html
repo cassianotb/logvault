@@ -1117,7 +1117,7 @@
                 </article>
                 <article class="platform-integration-card">
                   <div class="integration-provider-mark ixc-logo" aria-hidden="true"><img src="/assets/ixc-provedor-logo.png" alt=""></div>
-                  <div class="platform-integration-copy"><div><h3>IXC Provedor</h3><span>IXC Soft</span></div><p>Identificação histórica por API IXC.</p></div>
+                  <div class="platform-integration-copy"><div><h3>IXC Provedor</h3><span>IXC Soft</span></div><p>Identificação do assinante por API IXC.</p></div>
                   <div class="platform-integration-usage"><span>CLIENTES CONFIGURADOS</span><strong id="platform-ixc-configured">0</strong><small id="platform-ixc-active">0 com integração ativa</small></div>
                   <div class="platform-integration-availability">
                     <label class="integration-availability-switch" for="platform-ixc-enabled"><input id="platform-ixc-enabled" type="checkbox"><span aria-hidden="true"></span><strong id="platform-ixc-action-label">Disponível para clientes</strong></label>
@@ -1614,11 +1614,23 @@
                     <tr><td><strong>IP público</strong></td><td>Endereço externo compartilhado que foi pesquisado.</td></tr>
                     <tr><td><strong>IP privado</strong></td><td>Endereço interno ao qual o equipamento CGNAT havia associado a tradução naquele instante.</td></tr>
                     <tr><td><strong>Protocolo</strong></td><td>Protocolo da tradução: TCP, UDP ou ICMP. Ele faz parte da identificação e deve coincidir com o registro investigado.</td></tr>
-                    <tr><td><strong>Porta início e porta fim</strong></td><td>Faixa de portas públicas reservada para o IP privado. Quando uma porta foi informada na consulta, ela precisa pertencer a essa faixa e respeitar o modo de alocação registrado pelo equipamento.</td></tr>
+                    <tr><td><strong>Porta início e porta fim</strong></td><td>Primeira e última porta possíveis no conjunto informado pelo equipamento. Esses limites não significam necessariamente que todas as portas intermediárias foram alocadas: quando existe um passo maior que 1, somente as portas que respeitam esse espaçamento pertencem ao conjunto.</td></tr>
                     <tr><td><strong>Último evento</strong></td><td>Último evento explícito dessa tradução existente até a data e o horário pesquisados. O resultado aparece como <strong>Alocado · data e hora</strong> quando a alocação ainda era válida naquele instante.</td></tr>
                     <tr><td><strong>Assinante ERP</strong></td><td>Resultado da correlação com a integração do cliente. Pode mostrar o assinante, “Não identificado”, “Correlação ambígua”, “Não consultado”, “Integração indisponível” ou “ERP não configurado”.</td></tr>
                     <tr><td><strong>Ações</strong></td><td>“Ver ciclo” detalha o início e o encerramento da alocação; “Relatório para ofício” cria um documento formal somente para a linha escolhida.</td></tr>
                   </tbody></table></div>
+
+                  <h4>Como interpretar a quantidade e o passo das portas</h4>
+                  <p>Alguns equipamentos CGNAT registram a alocação por meio de uma porta inicial, uma quantidade de portas e um passo. A quantidade informa quantas portas foram efetivamente alocadas; o passo informa o espaçamento entre elas. O LogVault utiliza esses valores automaticamente para verificar se a porta pública pesquisada pertence ao conjunto do assinante.</p>
+                  <div class="manual-callout warning"><strong>Início e fim não indicam sempre uma faixa contínua</strong><p>Quando o passo é maior que 1, existem números entre a porta inicial e a última porta que não fazem parte daquela alocação. Eles podem estar livres ou associados a outro conjunto. Por isso, não conclua a quantidade de portas apenas subtraindo o início do fim.</p></div>
+                  <div class="manual-callout info"><strong>Cálculo utilizado</strong><p>A última porta é calculada como: porta inicial + passo × (quantidade − 1). Uma porta pertence ao conjunto quando está entre os limites e a diferença entre ela e a porta inicial é divisível pelo passo.</p></div>
+                  <div class="manual-table-wrap"><table class="manual-table"><thead><tr><th>Quantidade</th><th>Passo</th><th>Início</th><th>Última porta</th><th>Como fica o conjunto</th></tr></thead><tbody>
+                    <tr><td><strong>512 portas</strong></td><td>1</td><td>1024</td><td>1535</td><td>1024, 1025, 1026… Todas as portas são contíguas.</td></tr>
+                    <tr><td><strong>1.024 portas</strong></td><td>2</td><td>9217</td><td>11263</td><td>9217, 9219, 9221… Uma porta a cada dois números.</td></tr>
+                    <tr><td><strong>512 portas</strong></td><td>4</td><td>10000</td><td>12044</td><td>10000, 10004, 10008… Uma porta a cada quatro números.</td></tr>
+                    <tr><td><strong>512 portas</strong></td><td>8</td><td>21508</td><td>25596</td><td>21508, 21516, 21524… Uma porta a cada oito números.</td></tr>
+                  </tbody></table></div>
+                  <div class="manual-callout"><strong>Os exemplos não limitam o cálculo</strong><p>Os passos 1, 2, 4 e 8 são apenas exemplos didáticos. A consulta aplica o valor positivo registrado pelo equipamento, qualquer que seja ele. O operador não precisa calcular a sequência: deve informar a porta pública e o protocolo exatamente como constam no registro investigado.</p></div>
 
                   <h4>Como interpretar “Alocado” e o último evento</h4>
                   <div class="manual-definition-list">

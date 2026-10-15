@@ -55,6 +55,18 @@ describe('manual do cliente', () => {
     expect(html).toContain('Sem horário de encerramento confirmado');
   });
 
+  it('explica conjuntos de portas contíguos e intercalados na consulta', () => {
+    const html = readFileSync('web/index.html', 'utf8');
+
+    expect(html).toContain('Como interpretar a quantidade e o passo das portas');
+    expect(html).toContain('Início e fim não indicam sempre uma faixa contínua');
+    expect(html).toContain('porta inicial + passo × (quantidade − 1)');
+    expect(html).toContain('9217, 9219, 9221…');
+    expect(html).toContain('21508, 21516, 21524…');
+    expect(html).toContain('Os exemplos não limitam o cálculo');
+    expect(html).toContain('qualquer que seja ele');
+  });
+
   it('apresenta visão geral, arquitetura, operação, firewall e glossário ao cliente', () => {
     const html = readFileSync('web/index.html', 'utf8');
 

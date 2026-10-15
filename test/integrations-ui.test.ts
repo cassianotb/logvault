@@ -19,6 +19,7 @@ describe('catálogo de integrações do cliente', () => {
 
     expect(html).toContain('id="select-ixc-integration"');
     expect(html).toContain('/assets/ixc-provedor-logo.png');
+    expect(html).toContain('Identificação do assinante por API IXC.');
     expect(html).toContain('id="ixc-base-url"');
     expect(html).toContain('id="ixc-token"');
     expect(html).toContain('id="test-ixc"');
